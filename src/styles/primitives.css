@@ -1,0 +1,319 @@
+/* ============================================================
+   PRIMITIVES
+   ------------------------------------------------------------
+   Low-level building blocks. Composed into all other components.
+   No business logic. No data. Just shape, surface, motion.
+   ============================================================ */
+
+/* ---------- CARD ----------
+   The chiaroscuro card. Raised surface, hairline border,
+   top-edge highlight (catches the "light"), soft shadow below.
+   This is the single most important component. Get it right
+   and everything built on it looks expensive. */
+
+.card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    var(--highlight-top),
+    var(--shadow-md);
+  padding: var(--space-5);
+  position: relative;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              transform var(--duration-base) var(--ease-out);
+}
+
+.card--interactive {
+  cursor: pointer;
+}
+.card--interactive:hover {
+  border-color: var(--border-default);
+  transform: translateY(-1px);
+  box-shadow:
+    var(--highlight-top),
+    var(--shadow-lg);
+}
+
+.card--flush {
+  padding: 0;
+}
+
+/* ---------- GLASS PANEL ----------
+   Three-glass technique. Stack these for depth. */
+
+.glass {
+  background: var(--glass-medium);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--highlight-top);
+}
+
+.glass--thin {
+  background: var(--glass-thin);
+  backdrop-filter: blur(12px);
+}
+
+.glass--thick {
+  background: var(--glass-thick);
+  backdrop-filter: blur(32px) saturate(160%);
+}
+
+/* ---------- BUTTON ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 32px;
+  padding: 0 var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--highlight-top);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.btn:active {
+  transform: translateY(0.5px);
+}
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn--primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.btn--ghost:hover {
+  background: var(--surface-hover);
+}
+
+.btn--sm {
+  height: 26px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.btn--icon {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
+/* ---------- STAT ----------
+   The bread and butter of a financial UI. Label + big number +
+   delta. Tabular numerics enforced. Color only for delta. */
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.stat__label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.stat__value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-2xl);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+  line-height: var(--leading-tight);
+}
+
+.stat__value--display {
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-feature-settings: "tnum" 1;
+}
+
+.stat__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.stat__delta--gain { color: var(--gain); }
+.stat__delta--loss { color: var(--loss); }
+.stat__delta--neutral { color: var(--text-tertiary); }
+
+/* ---------- BADGE / PILL ---------- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 22px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  border-radius: var(--radius-full);
+  background: var(--glass-thin);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.badge--gain {
+  background: var(--gain-muted);
+  border-color: transparent;
+  color: var(--gain);
+}
+
+.badge--loss {
+  background: var(--loss-muted);
+  border-color: transparent;
+  color: var(--loss);
+}
+
+.badge--accent {
+  background: var(--accent-muted);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+/* ---------- DIVIDER ---------- */
+
+.divider {
+  height: 1px;
+  background: var(--border-subtle);
+  border: 0;
+  margin: var(--space-4) 0;
+}
+
+.divider--vertical {
+  width: 1px;
+  height: 100%;
+  margin: 0 var(--space-4);
+}
+
+/* ---------- TABLE ----------
+   Financial-density table. Tight rows, tabular numerics
+   on numeric columns, hairline dividers. */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.table th {
+  text-align: left;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-tertiary);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-base);
+  position: sticky;
+  top: 0;
+}
+
+.table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  transition: background var(--duration-instant) var(--ease-out);
+}
+
+.table tr:hover td {
+  background: var(--surface-hover);
+}
+
+.table .num,
+.table td.num,
+.table th.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- TAB BAR ---------- */
+
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  width: fit-content;
+}
+
+.tab {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.tab--active {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--highlight-top), var(--shadow-sm);
+}
+
+/* ---------- KBD ---------- */
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  box-shadow: 0 1px 0 var(--border-subtle);
+}
