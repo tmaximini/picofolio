@@ -7,9 +7,10 @@ type SidebarProps = {
   onSelect: (id: string) => void;
   primary: ReadonlyArray<NavItem>;
   accounts: ReadonlyArray<NavItem>;
+  footer?: ReactNode;
 };
 
-export function Sidebar({ active, onSelect, primary, accounts }: SidebarProps) {
+export function Sidebar({ active, onSelect, primary, accounts, footer }: SidebarProps) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -46,6 +47,8 @@ export function Sidebar({ active, onSelect, primary, accounts }: SidebarProps) {
           </button>
         ))}
       </nav>
+
+      {footer}
     </aside>
   );
 }

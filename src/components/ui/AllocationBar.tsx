@@ -4,8 +4,7 @@ import { useAccounts } from "@/store/selectors";
 
 const ALLOCATION_COLORS: Record<string, string> = {
   Trading: "#C44536",
-  "Core Long-Term": "#6BCB97",
-  Roth: "#8B9DC3",
+  "Long-Term": "#6BCB97",
 };
 const FALLBACK_COLORS = ["#D9A86C", "#7D77C3", "#6E7480"];
 

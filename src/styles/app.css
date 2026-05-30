@@ -18,6 +18,8 @@
   position: sticky;
   top: 0;
   height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .brand {
@@ -97,6 +99,10 @@
 .main {
   padding: var(--space-8) var(--space-10);
   max-width: 1400px;
+  width: 100%;
+  min-width: 0;
+  justify-self: center;
+  box-sizing: border-box;
 }
 
 .topbar {
@@ -132,6 +138,13 @@
   grid-template-columns: 2fr 1fr 1fr 1fr;
   gap: var(--space-4);
   margin-bottom: var(--space-6);
+}
+
+.accountStatsRow {
+  display: grid;
+  grid-template-columns: 1.5fr repeat(4, 1fr);
+  gap: var(--space-6);
+  align-items: end;
 }
 .grid2 {
   display: grid;
@@ -402,6 +415,16 @@
 
 .holdings__row {
   cursor: pointer;
+}
+.holdings__row--cash {
+  cursor: default;
+  background: var(--surface-base);
+}
+.holdings__row--cash td {
+  color: var(--text-secondary);
+}
+.holdings__row--cash:hover td {
+  background: var(--surface-base);
 }
 .holdings__caret {
   width: 18px;

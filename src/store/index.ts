@@ -8,8 +8,12 @@ import {
   type Holding,
   type WeekBar,
 } from "@/lib/mock";
+import { setupsSeed, tradesSeed } from "@/lib/mockTrades";
 import type { PricePoint } from "@/lib/priceHistory";
-import { fetchYahooDaily } from "@/lib/yahoo";
+import type { Trade, TradeSetup } from "@/lib/trades";
+import type { DateRangeKey } from "@/lib/dateRange";
+import { fetchYahooDaily, fetchYahooIntraday, type IntradayPoint } from "@/lib/yahoo";
+import { fetchFlexStatement, parseFlexXml } from "@/lib/ibkr";
 
 export type PriceStatus = "idle" | "loading" | "ready" | "error";
 
@@ -21,22 +25,98 @@ export type PriceEntry = {
   fetchedAt?: number;
 };
 
+/** Intraday cache entry. `null` points = no data available (e.g. outside Yahoo retention). */
+export type IntradayEntry = {
+  points: IntradayPoint[] | null;
+  status: PriceStatus;
+  error?: string;
+  fetchedAt?: number;
+};
+
+export type ToastKind = "success" | "error" | "info" | "warning";
+
+export type Toast = {
+  id: string;
+  kind: ToastKind;
+  title: string;
+  body?: string;
+  /** Auto-dismiss after this many ms. Omit = sticky (errors). */
+  duration?: number;
+};
+
 type StoreState = {
   // Raw, seeded from mock; real data via actions
   accounts: Account[];
   holdings: Holding[];
   weeklyPnl: WeekBar[];
 
+  // Journal
+  trades: Trade[];
+  setups: TradeSetup[];
+  journalRange: DateRangeKey;
+  /** Calendar viewing month — first-of-month ISO date. */
+  calendarMonth: string;
+
+  // IBKR
+  ibkrToken: string;
+  ibkrQueryId: string;
+  ibkrLastSyncAt: number | null;
+  ibkrStatus: "idle" | "sending" | "polling" | "parsing" | "error";
+  ibkrError: string | null;
+  ibkrLastSummary: {
+    added: number;
+    skipped: number;
+    warnings: string[];
+    accountIds: string[];
+  } | null;
+
   // Async price data, keyed by symbol
   prices: Record<string, PriceEntry>;
+
+  /** Intraday cache keyed by `${symbol}|${YYYY-MM-DD}`. */
+  intraday: Record<string, IntradayEntry>;
+
+  // Toasts
+  toasts: Toast[];
 
   lastSyncAt: number | null;
   syncing: boolean;
 
-  // Actions
+  // Price actions
   loadPrice: (symbol: string) => Promise<void>;
+  /** Fetch + cache intraday for [startKey, endKey] (single-day when endKey omitted). */
+  loadIntraday: (symbol: string, startKey: string, endKey?: string) => Promise<void>;
   refreshAll: () => Promise<void>;
+
+  // Journal actions
+  addTrade: (t: Trade) => void;
+  updateTrade: (id: string, patch: Partial<Trade>) => void;
+  deleteTrade: (id: string) => void;
+  addSetup: (s: TradeSetup) => void;
+  deleteSetup: (id: string) => void;
+  setJournalRange: (key: DateRangeKey) => void;
+  setCalendarMonth: (iso: string) => void;
+  clearDemoTrades: () => void;
+  restoreDemoTrades: () => void;
+  clearDemoPortfolio: () => void;
+  restoreDemoPortfolio: () => void;
+
+  // IBKR actions
+  setIbkrToken: (t: string) => void;
+  setIbkrQueryId: (q: string) => void;
+  clearIbkrCredentials: () => void;
+  syncIbkr: () => Promise<void>;
+  importIbkrXml: (xml: string) => { added: number; skipped: number; warnings: string[] };
+
+  // Toast actions
+  pushToast: (t: Omit<Toast, "id">) => string;
+  dismissToast: (id: string) => void;
 };
+
+function firstOfThisMonthISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+}
 
 const STALE_MS = 60 * 60 * 1000; // 1h
 
@@ -54,7 +134,19 @@ export const useStore = create<StoreState>()(
       accounts: accountsSeed,
       holdings: holdingsSeed,
       weeklyPnl: weeklyPnlSeed,
+      trades: tradesSeed,
+      setups: setupsSeed,
+      journalRange: "ALL",
+      calendarMonth: firstOfThisMonthISO(),
+      ibkrToken: "",
+      ibkrQueryId: "",
+      ibkrLastSyncAt: null,
+      ibkrStatus: "idle",
+      ibkrError: null,
+      ibkrLastSummary: null,
+      toasts: [],
       prices: {},
+      intraday: {},
       lastSyncAt: null,
       syncing: false,
 
@@ -95,6 +187,41 @@ export const useStore = create<StoreState>()(
         }
       },
 
+      loadIntraday: async (symbol, startKey, endKey = startKey) => {
+        const key = `${symbol}|${startKey}|${endKey}`;
+        const cur = get().intraday[key];
+        if (cur?.status === "loading") return;
+        if (cur?.status === "ready" && cur.fetchedAt && Date.now() - cur.fetchedAt < STALE_MS) {
+          return;
+        }
+        set((s) => ({
+          intraday: {
+            ...s.intraday,
+            [key]: { points: cur?.points ?? null, status: "loading" },
+          },
+        }));
+        try {
+          const points = await fetchYahooIntraday(symbol, startKey, endKey);
+          set((s) => ({
+            intraday: {
+              ...s.intraday,
+              [key]: { points, status: "ready", fetchedAt: Date.now() },
+            },
+          }));
+        } catch (err) {
+          set((s) => ({
+            intraday: {
+              ...s.intraday,
+              [key]: {
+                points: null,
+                status: "error",
+                error: err instanceof Error ? err.message : String(err),
+              },
+            },
+          }));
+        }
+      },
+
       refreshAll: async () => {
         if (get().syncing) return;
         set({ syncing: true });
@@ -102,14 +229,189 @@ export const useStore = create<StoreState>()(
         await Promise.allSettled(symbols.map((s) => get().loadPrice(s)));
         set({ syncing: false, lastSyncAt: Date.now() });
       },
+
+      addTrade: (t) =>
+        set((s) => {
+          // First non-demo addition (no real trades yet) graduates the
+          // journal from sample data → silently clear the demo seed.
+          // Once any real trade exists, this skip lets the user restore
+          // demos and keep adding without losing them again.
+          const hasReal = s.trades.some((x) => x.source !== "demo");
+          if (t.source && t.source !== "demo" && !hasReal) {
+            return {
+              trades: [t, ...s.trades.filter((x) => x.source !== "demo")],
+            };
+          }
+          return { trades: [t, ...s.trades] };
+        }),
+      updateTrade: (id, patch) =>
+        set((s) => ({
+          trades: s.trades.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+        })),
+      deleteTrade: (id) =>
+        set((s) => ({ trades: s.trades.filter((t) => t.id !== id) })),
+
+      addSetup: (sp) => set((s) => ({ setups: [sp, ...s.setups] })),
+      deleteSetup: (id) =>
+        set((s) => ({ setups: s.setups.filter((sp) => sp.id !== id) })),
+
+      setJournalRange: (key) => set({ journalRange: key }),
+      setCalendarMonth: (iso) => set({ calendarMonth: iso }),
+
+      clearDemoTrades: () =>
+        set((s) => ({ trades: s.trades.filter((t) => t.source !== "demo") })),
+      restoreDemoTrades: () =>
+        set((s) => {
+          const existing = new Set(s.trades.map((t) => t.id));
+          const fresh = tradesSeed.filter((t) => !existing.has(t.id));
+          return { trades: [...s.trades, ...fresh] };
+        }),
+
+      clearDemoPortfolio: () =>
+        set((s) => ({
+          accounts: s.accounts.filter((a) => a.source !== "demo"),
+          holdings: s.holdings.filter((h) => h.source !== "demo"),
+        })),
+      restoreDemoPortfolio: () =>
+        set((s) => {
+          const existingAccountIds = new Set(s.accounts.map((a) => a.id));
+          const existingHoldingKeys = new Set(
+            s.holdings.map((h) => `${h.account}|${h.symbol}`),
+          );
+          const freshAccounts = accountsSeed.filter(
+            (a) => !existingAccountIds.has(a.id),
+          );
+          const freshHoldings = holdingsSeed.filter(
+            (h) => !existingHoldingKeys.has(`${h.account}|${h.symbol}`),
+          );
+          return {
+            accounts: [...s.accounts, ...freshAccounts],
+            holdings: [...s.holdings, ...freshHoldings],
+          };
+        }),
+
+      // ---------- IBKR ----------
+
+      setIbkrToken: (t) => set({ ibkrToken: t.trim() }),
+      setIbkrQueryId: (q) => set({ ibkrQueryId: q.trim() }),
+      clearIbkrCredentials: () =>
+        set({
+          ibkrToken: "",
+          ibkrQueryId: "",
+          ibkrLastSyncAt: null,
+          ibkrStatus: "idle",
+          ibkrError: null,
+          ibkrLastSummary: null,
+        }),
+
+      importIbkrXml: (xml) => {
+        const result = parseFlexXml(xml);
+        const existing = new Set(get().trades.map((t) => t.id));
+        const fresh = result.trades.filter((t) => !existing.has(t.id));
+        if (fresh.length > 0) {
+          set((s) => {
+            // First real import (no existing real trades) drops the demo
+            // seed; subsequent imports preserve whatever is present
+            // including any demos the user restored on purpose.
+            const hadReal = s.trades.some((t) => t.source !== "demo");
+            if (!hadReal) {
+              return {
+                trades: [...fresh, ...s.trades.filter((t) => t.source !== "demo")],
+              };
+            }
+            return { trades: [...fresh, ...s.trades] };
+          });
+        }
+        const summary = {
+          added: fresh.length,
+          skipped: result.trades.length - fresh.length,
+          warnings: result.warnings,
+        };
+        set({
+          ibkrLastSummary: { ...summary, accountIds: result.accountIds },
+          ibkrLastSyncAt: Date.now(),
+        });
+        return summary;
+      },
+
+      syncIbkr: async () => {
+        const { ibkrToken, ibkrQueryId, ibkrStatus, pushToast } = get();
+        if (ibkrStatus === "sending" || ibkrStatus === "polling") return;
+        if (!ibkrToken || !ibkrQueryId) {
+          set({ ibkrStatus: "error", ibkrError: "Missing token or query ID" });
+          pushToast({
+            kind: "error",
+            title: "Missing credentials",
+            body: "Add a Flex token and Query ID before syncing.",
+          });
+          return;
+        }
+        set({ ibkrStatus: "sending", ibkrError: null });
+        try {
+          set({ ibkrStatus: "polling" });
+          const xml = await fetchFlexStatement(ibkrToken, ibkrQueryId);
+          set({ ibkrStatus: "parsing" });
+          const summary = get().importIbkrXml(xml);
+          set({ ibkrStatus: "idle" });
+          if (summary.added > 0) {
+            pushToast({
+              kind: "success",
+              title: `Synced ${summary.added} trade${summary.added === 1 ? "" : "s"}`,
+              body:
+                summary.skipped > 0
+                  ? `Skipped ${summary.skipped} already-imported.`
+                  : undefined,
+              duration: 5000,
+            });
+          } else {
+            pushToast({
+              kind: "info",
+              title: "Up to date",
+              body:
+                summary.skipped > 0
+                  ? `${summary.skipped} trade${summary.skipped === 1 ? "" : "s"} already imported.`
+                  : "No new trades in the Flex window.",
+              duration: 5000,
+            });
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          set({ ibkrStatus: "error", ibkrError: msg });
+          pushToast({
+            kind: "error",
+            title: "Sync failed",
+            body: msg,
+          });
+        }
+      },
+
+      pushToast: (t) => {
+        const id = `toast-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        set((s) => ({ toasts: [...s.toasts, { ...t, id }] }));
+        return id;
+      },
+      dismissToast: (id) =>
+        set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
     }),
     {
       name: "picofolio:store:v1",
       storage: createJSONStorage(() => localStorage),
-      // Only persist prices + last sync. Seeds reload from code.
+      // Persist trades + setups + price cache + IBKR credentials.
+      // Persisting trades is what lets the demo seed stay cleared after a
+      // real import survives a reload, and what keeps manual / synced
+      // entries across sessions.
+      // NOTE: IBKR token is sensitive — localStorage is fine for the PoC
+      // but production needs OS keychain (Tauri) or Web Crypto encryption.
       partialize: (s) => ({
+        accounts: s.accounts,
+        holdings: s.holdings,
+        trades: s.trades,
+        setups: s.setups,
         prices: s.prices,
         lastSyncAt: s.lastSyncAt,
+        ibkrToken: s.ibkrToken,
+        ibkrQueryId: s.ibkrQueryId,
+        ibkrLastSyncAt: s.ibkrLastSyncAt,
       }),
       version: 1,
     },

@@ -25,6 +25,25 @@ export default defineConfig({
           });
         },
       },
+      // IBKR Flex Web Service. Two endpoints: SendRequest + GetStatement.
+      // Maps /api/ibkr/flex/FlexStatementService.* → gdcdyn.interactivebrokers.com/Universal/servlet/*
+      "/api/ibkr/flex": {
+        target: "https://gdcdyn.interactivebrokers.com",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) =>
+          path.replace(/^\/api\/ibkr\/flex/, "/Universal/servlet"),
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq) => {
+            proxyReq.removeHeader("origin");
+            proxyReq.removeHeader("referer");
+            proxyReq.setHeader(
+              "User-Agent",
+              "picofolio/0.1 (dev) flex-client",
+            );
+          });
+        },
+      },
     },
   },
   resolve: {

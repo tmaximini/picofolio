@@ -13,6 +13,8 @@ export type Account = {
   kind: "trading" | "long-term";
   /** Static seed for now; derived from holdings + cash once prices land. */
   cashCents: number;
+  /** Provenance — lets us distinguish seeded demo data from real entries. */
+  source?: "demo" | "manual" | "ibkr";
 };
 
 export type Holding = {
@@ -22,6 +24,7 @@ export type Holding = {
   account: string;
   qty: number;
   avgCostCents: number;
+  source?: "demo" | "manual" | "ibkr";
 };
 
 export type WeekBar = {
@@ -31,19 +34,22 @@ export type WeekBar = {
   winRate: number;
 };
 
+// Trading positions + cash are *derived* from mockTrades so the journal,
+// holdings, and cash all tie out to the same set of executions.
+import { tradingCashCents, tradingHoldingsSeed } from "./mockTrades";
+
 export const accountsSeed: Account[] = [
-  { id: "U-trade", name: "Trading", kind: "trading", cashCents: 4_280_00 },
-  { id: "U-core", name: "Core Long-Term", kind: "long-term", cashCents: 12_440_11 },
-  { id: "U-roth", name: "Roth", kind: "long-term", cashCents: 1_812_77 },
+  { id: "U-trade",     name: "Trading",   kind: "trading",   cashCents: tradingCashCents, source: "demo" },
+  { id: "U-long-term", name: "Long-Term", kind: "long-term", cashCents:    2_840_00,      source: "demo" },
 ];
 
 export const holdingsSeed: Holding[] = [
-  { symbol: "NVDA",  name: "NVIDIA Corp",         account: "Trading",        qty: 42,  avgCostCents:  98_44 },
-  { symbol: "AAPL",  name: "Apple Inc",           account: "Core Long-Term", qty: 320, avgCostCents: 168_22 },
-  { symbol: "MSFT",  name: "Microsoft Corp",      account: "Core Long-Term", qty: 180, avgCostCents: 322_18 },
-  { symbol: "TSM",   name: "Taiwan Semi",         account: "Roth",           qty: 240, avgCostCents: 142_88 },
-  { symbol: "ASML",  name: "ASML Holding",        account: "Roth",           qty: 32,  avgCostCents: 612_44 },
-  { symbol: "BRK.B", name: "Berkshire Hathaway",  account: "Core Long-Term", qty: 110, avgCostCents: 388_10 },
+  ...tradingHoldingsSeed,
+  { symbol: "AAPL",  name: "Apple Inc",           account: "Long-Term", qty: 320, avgCostCents: 168_22, source: "demo" },
+  { symbol: "MSFT",  name: "Microsoft Corp",      account: "Long-Term", qty: 180, avgCostCents: 322_18, source: "demo" },
+  { symbol: "TSM",   name: "Taiwan Semi",         account: "Long-Term", qty: 240, avgCostCents: 142_88, source: "demo" },
+  { symbol: "ASML",  name: "ASML Holding",        account: "Long-Term", qty:  32, avgCostCents: 612_44, source: "demo" },
+  { symbol: "BRK.B", name: "Berkshire Hathaway",  account: "Long-Term", qty: 110, avgCostCents: 388_10, source: "demo" },
 ];
 
 export const weeklyPnlSeed: WeekBar[] = [

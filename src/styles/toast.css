@@ -1,0 +1,112 @@
+/* ============================================================
+   TOAST LAYER
+   Bottom-right stack. Slide + fade in. Click to dismiss.
+   Auto-dismisses after `duration` ms (handled in the component).
+   ============================================================ */
+
+.toaster {
+  position: fixed;
+  bottom: var(--space-5);
+  right: var(--space-5);
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--space-2);
+  z-index: var(--z-toast);
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: 18px 1fr 18px;
+  align-items: start;
+  gap: var(--space-3);
+  width: min(360px, calc(100vw - 2 * var(--space-5)));
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--highlight-top), var(--shadow-lg);
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  transform: translateY(8px);
+  opacity: 0;
+  animation: toastIn var(--duration-base) var(--ease-out) forwards;
+  transition: background var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
+}
+
+.toast:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+@keyframes toastIn {
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.toast__icon {
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
+}
+
+.toast__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.toast__title {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+}
+
+.toast__text {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: var(--leading-snug);
+}
+
+.toast__close {
+  color: var(--text-tertiary);
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
+}
+.toast:hover .toast__close {
+  color: var(--text-primary);
+}
+
+/* Tone-keyed via background tint + brighter border. No accent edge bars. */
+.toast--success {
+  background: rgba(107, 203, 151, 0.10);
+  border-color: rgba(107, 203, 151, 0.40);
+}
+.toast--success .toast__icon { color: var(--gain); }
+
+.toast--error {
+  background: rgba(229, 116, 107, 0.10);
+  border-color: rgba(229, 116, 107, 0.40);
+}
+.toast--error .toast__icon { color: var(--loss); }
+
+.toast--warning {
+  background: rgba(229, 116, 107, 0.08);
+  border-color: rgba(229, 116, 107, 0.32);
+}
+.toast--warning .toast__icon { color: var(--loss-strong); }
+
+.toast--info {
+  background: rgba(196, 69, 54, 0.10);
+  border-color: rgba(196, 69, 54, 0.40);
+}
+.toast--info .toast__icon { color: var(--accent); }

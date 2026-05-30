@@ -3,19 +3,43 @@ import { ChevronRight } from "lucide-react";
 import type { Holding } from "@/lib/mock";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
 import {
+  useAccountValueCents,
   useHoldingDelta,
   useHoldingValueCents,
   useHoldings,
   useLatestPrice,
+  useUnrealizedCents,
 } from "@/store/selectors";
 import { HoldingDetail } from "./HoldingDetail";
 
-export function HoldingsTable() {
-  const rows = useHoldings();
+type HoldingsTableProps = {
+  /** Account NAME (matches Holding.account) to filter rows by. Omit = all accounts. */
+  account?: string;
+  /** When set together with `account`, renders a Cash row + Weight column
+   *  so each position's share of total account value is visible. */
+  cashCents?: number;
+};
+
+export function HoldingsTable({ account, cashCents }: HoldingsTableProps = {}) {
+  const all = useHoldings();
+  const rows = account ? all.filter((h) => h.account === account) : all;
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  // Total value of the filtered account (holdings + cash). Used as the
+  // denominator for weight %. Computed here so each row gets a stable
+  // shared value rather than recomputing per render.
+  const totalValueCents = useAccountValueCents(account ?? "");
 
   const toggle = (symbol: string) =>
     setExpanded((cur) => (cur === symbol ? null : symbol));
+
+  const showAccount = !account;
+  const showWeight = Boolean(account);
+  const showCashRow = Boolean(account) && cashCents != null;
+
+  // Header column count for expand-row colSpan. Both filtered and
+  // unfiltered shapes land at 8.
+  const colSpan = 8;
 
   return (
     <table className="table holdings">
@@ -23,12 +47,13 @@ export function HoldingsTable() {
         <tr>
           <th style={{ width: 18 }} />
           <th>Symbol</th>
-          <th>Account</th>
+          {showAccount && <th>Account</th>}
           <th className="num">Qty</th>
           <th className="num">Price</th>
           <th className="num">Value</th>
+          {showWeight && <th className="num">Weight</th>}
           <th className="num">Day</th>
-          <th className="num">Week</th>
+          <th className="num">Unreal. P/L</th>
         </tr>
       </thead>
       <tbody>
@@ -38,8 +63,19 @@ export function HoldingsTable() {
             holding={r}
             isOpen={expanded === r.symbol}
             onToggle={toggle}
+            showAccount={showAccount}
+            showWeight={showWeight}
+            totalValueCents={totalValueCents}
+            colSpan={colSpan}
           />
         ))}
+        {showCashRow && (
+          <CashRow
+            cashCents={cashCents!}
+            totalValueCents={totalValueCents}
+            showWeight={showWeight}
+          />
+        )}
       </tbody>
     </table>
   );
@@ -49,13 +85,35 @@ type HoldingRowProps = {
   holding: Holding;
   isOpen: boolean;
   onToggle: (symbol: string) => void;
+  showAccount: boolean;
+  showWeight: boolean;
+  totalValueCents: number | null;
+  colSpan: number;
 };
 
-function HoldingRow({ holding, isOpen, onToggle }: HoldingRowProps) {
+function HoldingRow({
+  holding,
+  isOpen,
+  onToggle,
+  showAccount,
+  showWeight,
+  totalValueCents,
+  colSpan,
+}: HoldingRowProps) {
   const latest = useLatestPrice(holding.symbol);
   const value = useHoldingValueCents(holding.symbol);
   const dayDelta = useHoldingDelta(holding.symbol, "1D");
-  const weekDelta = useHoldingDelta(holding.symbol, "1W");
+  const unrealizedCents = useUnrealizedCents(holding.symbol);
+
+  const weight =
+    showWeight && value != null && totalValueCents != null && totalValueCents > 0
+      ? value / totalValueCents
+      : null;
+
+  // Unrealized return relative to cost basis (qty × avg cost).
+  const basisCents = holding.qty * holding.avgCostCents;
+  const unrealizedPct =
+    unrealizedCents != null && basisCents > 0 ? unrealizedCents / basisCents : null;
 
   return (
     <Fragment>
@@ -80,19 +138,106 @@ function HoldingRow({ holding, isOpen, onToggle }: HoldingRowProps) {
             </span>
           </div>
         </td>
-        <td style={{ color: "var(--text-secondary)" }}>{holding.account}</td>
+        {showAccount && (
+          <td style={{ color: "var(--text-secondary)" }}>{holding.account}</td>
+        )}
         <td className="num">{holding.qty.toLocaleString("en-US")}</td>
         <td className="num">{latest != null ? formatCents(Math.round(latest * 100)) : <Dash />}</td>
         <td className="num">{value != null ? formatCents(value) : <Dash />}</td>
+        {showWeight && (
+          <td className="num" style={{ color: "var(--text-secondary)" }}>
+            {weight != null ? formatPct(weight).replace("+", "") : <Dash />}
+          </td>
+        )}
         <td className="num">
           <Pct value={dayDelta} />
         </td>
         <td className="num">
-          <Pct value={weekDelta} />
+          <UnrealizedCell cents={unrealizedCents} pct={unrealizedPct} />
         </td>
       </tr>
-      <ExpandRow holding={holding} open={isOpen} />
+      <ExpandRow holding={holding} open={isOpen} colSpan={colSpan} />
     </Fragment>
+  );
+}
+
+function UnrealizedCell({
+  cents,
+  pct,
+}: {
+  cents: number | null;
+  pct: number | null;
+}) {
+  if (cents == null) return <Dash />;
+  const tone = toneOf(cents);
+  const color = tone === "neutral" ? "var(--text-primary)" : `var(--${tone})`;
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        lineHeight: 1.2,
+      }}
+    >
+      <span style={{ color }}>{formatCents(cents)}</span>
+      {pct != null && (
+        <span style={{ color, fontSize: "var(--text-xs)", opacity: 0.85 }}>
+          {formatPct(pct)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function CashRow({
+  cashCents,
+  totalValueCents,
+  showWeight,
+}: {
+  cashCents: number;
+  totalValueCents: number | null;
+  showWeight: boolean;
+}) {
+  const weight =
+    totalValueCents != null && totalValueCents > 0
+      ? cashCents / totalValueCents
+      : null;
+  return (
+    <tr className="holdings__row holdings__row--cash">
+      <td />
+      <td>
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <span style={{ fontWeight: 500 }}>Cash</span>
+          <span
+            style={{
+              color: "var(--text-tertiary)",
+              fontSize: "var(--text-xs)",
+            }}
+          >
+            Available balance
+          </span>
+        </div>
+      </td>
+      <td className="num">
+        <Dash />
+      </td>
+      <td className="num">
+        <Dash />
+      </td>
+      <td className="num">{formatCents(cashCents)}</td>
+      {showWeight && (
+        <td className="num" style={{ color: "var(--text-secondary)" }}>
+          {weight != null ? formatPct(weight).replace("+", "") : <Dash />}
+        </td>
+      )}
+      <td className="num">
+        <Dash />
+      </td>
+      <td className="num">
+        <Dash />
+      </td>
+    </tr>
   );
 }
 
@@ -107,9 +252,9 @@ function Dash() {
   return <span style={{ color: "var(--text-tertiary)" }}>—</span>;
 }
 
-type ExpandRowProps = { holding: Holding; open: boolean };
+type ExpandRowProps = { holding: Holding; open: boolean; colSpan: number };
 
-function ExpandRow({ holding, open }: ExpandRowProps) {
+function ExpandRow({ holding, open, colSpan }: ExpandRowProps) {
   const [render, setRender] = useState(open);
 
   useEffect(() => {
@@ -123,7 +268,7 @@ function ExpandRow({ holding, open }: ExpandRowProps) {
 
   return (
     <tr className="holdings__expand" aria-hidden={!open}>
-      <td colSpan={8} className="holdings__expandCell">
+      <td colSpan={colSpan} className="holdings__expandCell">
         <div className={open ? "rowExpand rowExpand--open" : "rowExpand"}>
           <div className="rowExpand__inner">
             {render ? <HoldingDetail holding={holding} /> : null}

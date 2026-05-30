@@ -37,9 +37,10 @@ export function PriceChart({ data, height = 280 }: PriceChartProps) {
     if (!el) return;
 
     const chart = createChart(el, {
-      width: el.clientWidth,
+      // autoSize handles container resize internally — needed for charts
+      // inside animating modals where clientWidth is 0 at mount time.
+      autoSize: true,
       height,
-      autoSize: false,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: tokens.text,
@@ -60,8 +61,9 @@ export function PriceChart({ data, height = 280 }: PriceChartProps) {
       timeScale: {
         borderVisible: false,
         timeVisible: false,
-        fixLeftEdge: true,
+        fixLeftEdge: false,
         fixRightEdge: true,
+        rightOffset: 2,
       },
       crosshair: {
         mode: CrosshairMode.Magnet,
@@ -78,21 +80,23 @@ export function PriceChart({ data, height = 280 }: PriceChartProps) {
           labelBackgroundColor: "#1C1F26",
         },
       },
-      handleScale: false,
-      handleScroll: false,
+      handleScale: {
+        mouseWheel: true,
+        pinch: true,
+        axisPressedMouseMove: { time: true, price: false },
+        axisDoubleClickReset: { time: true, price: false },
+      },
+      handleScroll: {
+        mouseWheel: false,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false,
+      },
     });
 
     chartRef.current = chart;
 
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        chart.applyOptions({ width: Math.floor(entry.contentRect.width) });
-      }
-    });
-    ro.observe(el);
-
     return () => {
-      ro.disconnect();
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -119,8 +123,10 @@ export function PriceChart({ data, height = 280 }: PriceChartProps) {
       topColor: palette.top,
       bottomColor: palette.bottom,
       lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
+      // Always show the most-recent price as both a dashed line and an
+      // axis-label tag on the right.
+      priceLineVisible: true,
+      lastValueVisible: true,
       crosshairMarkerBorderColor: palette.line,
       crosshairMarkerBackgroundColor: "#14161B",
       crosshairMarkerRadius: 4,
