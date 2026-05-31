@@ -33,6 +33,26 @@ export type IntradayEntry = {
   fetchedAt?: number;
 };
 
+export type IbkrStatus = "idle" | "sending" | "polling" | "parsing" | "error";
+
+export type IbkrConnection = {
+  id: string;
+  /** User-facing label (e.g. "Paper", "Live Cash"). Imported trades are
+   *  tagged with this so each connection's trades segregate cleanly. */
+  label: string;
+  token: string;
+  queryId: string;
+  lastSyncAt: number | null;
+  status: IbkrStatus;
+  error: string | null;
+  lastSummary: {
+    added: number;
+    skipped: number;
+    warnings: string[];
+    accountIds: string[];
+  } | null;
+};
+
 export type ToastKind = "success" | "error" | "info" | "warning";
 
 export type Toast = {
@@ -57,18 +77,8 @@ type StoreState = {
   /** Calendar viewing month — first-of-month ISO date. */
   calendarMonth: string;
 
-  // IBKR
-  ibkrToken: string;
-  ibkrQueryId: string;
-  ibkrLastSyncAt: number | null;
-  ibkrStatus: "idle" | "sending" | "polling" | "parsing" | "error";
-  ibkrError: string | null;
-  ibkrLastSummary: {
-    added: number;
-    skipped: number;
-    warnings: string[];
-    accountIds: string[];
-  } | null;
+  // IBKR — list of broker connections (paper + live + any extra accounts).
+  ibkrConnections: IbkrConnection[];
 
   // Async price data, keyed by symbol
   prices: Record<string, PriceEntry>;
@@ -101,12 +111,20 @@ type StoreState = {
   clearDemoPortfolio: () => void;
   restoreDemoPortfolio: () => void;
 
-  // IBKR actions
-  setIbkrToken: (t: string) => void;
-  setIbkrQueryId: (q: string) => void;
-  clearIbkrCredentials: () => void;
-  syncIbkr: () => Promise<void>;
-  importIbkrXml: (xml: string) => { added: number; skipped: number; warnings: string[] };
+  // IBKR actions — per-connection
+  addIbkrConnection: (label: string) => string;
+  updateIbkrConnection: (
+    id: string,
+    patch: Partial<Pick<IbkrConnection, "label" | "token" | "queryId">>,
+  ) => void;
+  removeIbkrConnection: (id: string) => void;
+  syncIbkrConnection: (id: string) => Promise<void>;
+  /** Wipe IBKR trades for this connection's label, then sync. */
+  resyncIbkrConnection: (id: string) => Promise<void>;
+  importIbkrXml: (
+    xml: string,
+    accountLabel?: string,
+  ) => { added: number; skipped: number; warnings: string[] };
 
   // Toast actions
   pushToast: (t: Omit<Toast, "id">) => string;
@@ -138,12 +156,7 @@ export const useStore = create<StoreState>()(
       setups: setupsSeed,
       journalRange: "ALL",
       calendarMonth: firstOfThisMonthISO(),
-      ibkrToken: "",
-      ibkrQueryId: "",
-      ibkrLastSyncAt: null,
-      ibkrStatus: "idle",
-      ibkrError: null,
-      ibkrLastSummary: null,
+      ibkrConnections: [],
       toasts: [],
       prices: {},
       intraday: {},
@@ -290,29 +303,55 @@ export const useStore = create<StoreState>()(
           };
         }),
 
-      // ---------- IBKR ----------
+      // ---------- IBKR (multi-connection) ----------
 
-      setIbkrToken: (t) => set({ ibkrToken: t.trim() }),
-      setIbkrQueryId: (q) => set({ ibkrQueryId: q.trim() }),
-      clearIbkrCredentials: () =>
-        set({
-          ibkrToken: "",
-          ibkrQueryId: "",
-          ibkrLastSyncAt: null,
-          ibkrStatus: "idle",
-          ibkrError: null,
-          ibkrLastSummary: null,
-        }),
+      addIbkrConnection: (label) => {
+        const id = `ibkr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        set((s) => ({
+          ibkrConnections: [
+            ...s.ibkrConnections,
+            {
+              id,
+              label: label.trim() || "New connection",
+              token: "",
+              queryId: "",
+              lastSyncAt: null,
+              status: "idle",
+              error: null,
+              lastSummary: null,
+            },
+          ],
+        }));
+        return id;
+      },
+      updateIbkrConnection: (id, patch) =>
+        set((s) => ({
+          ibkrConnections: s.ibkrConnections.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  ...(patch.label != null ? { label: patch.label.trim() || c.label } : {}),
+                  ...(patch.token != null ? { token: patch.token.trim() } : {}),
+                  ...(patch.queryId != null ? { queryId: patch.queryId.trim() } : {}),
+                }
+              : c,
+          ),
+        })),
+      removeIbkrConnection: (id) =>
+        set((s) => ({ ibkrConnections: s.ibkrConnections.filter((c) => c.id !== id) })),
 
-      importIbkrXml: (xml) => {
+      importIbkrXml: (xml, accountLabel) => {
         const result = parseFlexXml(xml);
+        // If a label is provided (sync via connection), override the
+        // raw IBKR accountId with the user's friendly label so trades
+        // segregate by connection in the sidebar.
+        const stamped = accountLabel
+          ? result.trades.map((t) => ({ ...t, account: accountLabel }))
+          : result.trades;
         const existing = new Set(get().trades.map((t) => t.id));
-        const fresh = result.trades.filter((t) => !existing.has(t.id));
+        const fresh = stamped.filter((t) => !existing.has(t.id));
         if (fresh.length > 0) {
           set((s) => {
-            // First real import (no existing real trades) drops the demo
-            // seed; subsequent imports preserve whatever is present
-            // including any demos the user restored on purpose.
             const hadReal = s.trades.some((t) => t.source !== "demo");
             if (!hadReal) {
               return {
@@ -322,41 +361,70 @@ export const useStore = create<StoreState>()(
             return { trades: [...fresh, ...s.trades] };
           });
         }
-        const summary = {
+        return {
           added: fresh.length,
           skipped: result.trades.length - fresh.length,
           warnings: result.warnings,
         };
-        set({
-          ibkrLastSummary: { ...summary, accountIds: result.accountIds },
-          ibkrLastSyncAt: Date.now(),
-        });
-        return summary;
       },
 
-      syncIbkr: async () => {
-        const { ibkrToken, ibkrQueryId, ibkrStatus, pushToast } = get();
-        if (ibkrStatus === "sending" || ibkrStatus === "polling") return;
-        if (!ibkrToken || !ibkrQueryId) {
-          set({ ibkrStatus: "error", ibkrError: "Missing token or query ID" });
+      syncIbkrConnection: async (id) => {
+        const conn = get().ibkrConnections.find((c) => c.id === id);
+        const { pushToast } = get();
+        if (!conn) return;
+        if (conn.status === "sending" || conn.status === "polling") return;
+
+        const patch = (p: Partial<IbkrConnection>) =>
+          set((s) => ({
+            ibkrConnections: s.ibkrConnections.map((c) =>
+              c.id === id ? { ...c, ...p } : c,
+            ),
+          }));
+
+        if (!conn.token || !conn.queryId) {
+          patch({ status: "error", error: "Missing token or Query ID" });
           pushToast({
             kind: "error",
-            title: "Missing credentials",
+            title: `${conn.label}: missing credentials`,
             body: "Add a Flex token and Query ID before syncing.",
           });
           return;
         }
-        set({ ibkrStatus: "sending", ibkrError: null });
+        patch({ status: "sending", error: null });
         try {
-          set({ ibkrStatus: "polling" });
-          const xml = await fetchFlexStatement(ibkrToken, ibkrQueryId);
-          set({ ibkrStatus: "parsing" });
-          const summary = get().importIbkrXml(xml);
-          set({ ibkrStatus: "idle" });
+          patch({ status: "polling" });
+          const xml = await fetchFlexStatement(conn.token, conn.queryId);
+          patch({ status: "parsing" });
+          const result = parseFlexXml(xml);
+          const stamped = result.trades.map((t) => ({ ...t, account: conn.label }));
+          const existing = new Set(get().trades.map((t) => t.id));
+          const fresh = stamped.filter((t) => !existing.has(t.id));
+          if (fresh.length > 0) {
+            set((s) => {
+              const hadReal = s.trades.some((t) => t.source !== "demo");
+              if (!hadReal) {
+                return {
+                  trades: [...fresh, ...s.trades.filter((t) => t.source !== "demo")],
+                };
+              }
+              return { trades: [...fresh, ...s.trades] };
+            });
+          }
+          const summary = {
+            added: fresh.length,
+            skipped: result.trades.length - fresh.length,
+            warnings: result.warnings,
+            accountIds: result.accountIds,
+          };
+          patch({
+            status: "idle",
+            lastSyncAt: Date.now(),
+            lastSummary: summary,
+          });
           if (summary.added > 0) {
             pushToast({
               kind: "success",
-              title: `Synced ${summary.added} trade${summary.added === 1 ? "" : "s"}`,
+              title: `${conn.label}: synced ${summary.added} trade${summary.added === 1 ? "" : "s"}`,
               body:
                 summary.skipped > 0
                   ? `Skipped ${summary.skipped} already-imported.`
@@ -366,7 +434,7 @@ export const useStore = create<StoreState>()(
           } else {
             pushToast({
               kind: "info",
-              title: "Up to date",
+              title: `${conn.label}: up to date`,
               body:
                 summary.skipped > 0
                   ? `${summary.skipped} trade${summary.skipped === 1 ? "" : "s"} already imported.`
@@ -376,13 +444,26 @@ export const useStore = create<StoreState>()(
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          set({ ibkrStatus: "error", ibkrError: msg });
+          patch({ status: "error", error: msg });
           pushToast({
             kind: "error",
-            title: "Sync failed",
+            title: `${conn.label}: sync failed`,
             body: msg,
           });
         }
+      },
+
+      resyncIbkrConnection: async (id) => {
+        const conn = get().ibkrConnections.find((c) => c.id === id);
+        if (!conn) return;
+        // Wipe IBKR-sourced trades that belong to this connection's label,
+        // then run a fresh sync. Token + Query ID stay intact.
+        set((s) => ({
+          trades: s.trades.filter(
+            (t) => !(t.source === "ibkr" && t.account === conn.label),
+          ),
+        }));
+        await get().syncIbkrConnection(id);
       },
 
       pushToast: (t) => {
@@ -409,11 +490,42 @@ export const useStore = create<StoreState>()(
         setups: s.setups,
         prices: s.prices,
         lastSyncAt: s.lastSyncAt,
-        ibkrToken: s.ibkrToken,
-        ibkrQueryId: s.ibkrQueryId,
-        ibkrLastSyncAt: s.ibkrLastSyncAt,
+        ibkrConnections: s.ibkrConnections,
       }),
-      version: 1,
+      version: 2,
+      migrate: (persistedState, version) => {
+        // v1 → v2: collapse the single ibkrToken/ibkrQueryId/ibkrLastSyncAt
+        // into a one-element ibkrConnections array (labelled "Default") so
+        // existing users don't lose their saved credentials on upgrade.
+        if (version < 2 && persistedState && typeof persistedState === "object") {
+          const old = persistedState as Record<string, unknown>;
+          const token = (old.ibkrToken as string | undefined) ?? "";
+          const queryId = (old.ibkrQueryId as string | undefined) ?? "";
+          const lastSyncAt =
+            (old.ibkrLastSyncAt as number | null | undefined) ?? null;
+          const ibkrConnections: IbkrConnection[] = [];
+          if (token || queryId) {
+            ibkrConnections.push({
+              id: "ibkr-default",
+              label: "Default",
+              token,
+              queryId,
+              lastSyncAt,
+              status: "idle",
+              error: null,
+              lastSummary: null,
+            });
+          }
+          delete old.ibkrToken;
+          delete old.ibkrQueryId;
+          delete old.ibkrLastSyncAt;
+          delete old.ibkrStatus;
+          delete old.ibkrError;
+          delete old.ibkrLastSummary;
+          old.ibkrConnections = ibkrConnections;
+        }
+        return persistedState as StoreState;
+      },
     },
   ),
 );

@@ -24,6 +24,9 @@ import type {
 export type ParsedExecution = {
   /** IBKR tradeID — globally unique per execution. Used for dedupe. */
   tradeID: string;
+  /** IBKR ibOrderID — shared by all slot fills from the same order.
+   *  Used to coalesce slot fills into a single execution at parse time. */
+  ibOrderID: string;
   symbol: string;
   market: Market;
   /** Account id from IBKR (Uxxxxx). */
@@ -141,8 +144,11 @@ function parseTradeElement(el: Element, warnings: string[]): ParsedExecution | n
   const ocRaw = (el.getAttribute("openCloseIndicator") ?? "").toUpperCase();
   const openClose = ocRaw === "O" || ocRaw === "C" ? (ocRaw as "O" | "C") : "";
 
+  const ibOrderID = el.getAttribute("ibOrderID") ?? "";
+
   return {
     tradeID,
+    ibOrderID,
     symbol,
     market,
     accountId,
@@ -224,6 +230,66 @@ function groupIntoTrades(execs: ParsedExecution[]): Trade[] {
   return out;
 }
 
+/**
+ * Merge IBKR slot fills (multiple executions sharing one ibOrderID — e.g.
+ * a 200-share order that filled as 27 + 100 + 73 chunks) into a single
+ * execution. Qty and fees sum; price is volume-weighted; the earliest
+ * timestamp wins. Executions without an ibOrderID pass through individually.
+ *
+ * Doing this at parse time keeps the data model clean — every downstream
+ * surface (table, chart markers, modal exec list) sees the consolidated
+ * view automatically.
+ */
+function coalesceByOrderId(bucket: ParsedExecution[]): TradeExecution[] {
+  const groups = new Map<string, ParsedExecution[]>();
+  const standalone: ParsedExecution[] = [];
+  for (const ex of bucket) {
+    if (ex.ibOrderID) {
+      const arr = groups.get(ex.ibOrderID) ?? [];
+      arr.push(ex);
+      groups.set(ex.ibOrderID, arr);
+    } else {
+      standalone.push(ex);
+    }
+  }
+
+  const out: TradeExecution[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      out.push(toTradeExecution(group[0]!));
+      continue;
+    }
+    const sorted = [...group].sort((a, b) => a.at.localeCompare(b.at));
+    const totalQty = group.reduce((s, e) => s + e.qty, 0);
+    const totalFee = group.reduce((s, e) => s + e.feeCents, 0);
+    const totalNotional = group.reduce((s, e) => s + e.qty * e.priceCents, 0);
+    const avgPriceCents = totalQty > 0 ? Math.round(totalNotional / totalQty) : sorted[0]!.priceCents;
+    out.push({
+      id: `ibkr-${sorted[0]!.tradeID}`,
+      action: sorted[0]!.action,
+      at: sorted[0]!.at,
+      qty: totalQty,
+      priceCents: avgPriceCents,
+      feeCents: totalFee,
+    });
+  }
+  for (const ex of standalone) out.push(toTradeExecution(ex));
+
+  out.sort((a, b) => a.at.localeCompare(b.at));
+  return out;
+}
+
+function toTradeExecution(ex: ParsedExecution): TradeExecution {
+  return {
+    id: `ibkr-${ex.tradeID}`,
+    action: ex.action,
+    at: ex.at,
+    qty: ex.qty,
+    priceCents: ex.priceCents,
+    feeCents: ex.feeCents,
+  };
+}
+
 function buildTradeFromBucket(
   symbol: string,
   side: Side,
@@ -232,14 +298,7 @@ function buildTradeFromBucket(
 ): Trade {
   const market = bucket[0]!.market;
   const accountId = bucket[0]!.accountId;
-  const executions: TradeExecution[] = bucket.map((ex) => ({
-    id: `ibkr-${ex.tradeID}`,
-    action: ex.action,
-    at: ex.at,
-    qty: ex.qty,
-    priceCents: ex.priceCents,
-    feeCents: ex.feeCents,
-  }));
+  const executions: TradeExecution[] = coalesceByOrderId(bucket);
 
   // We use IBKR's tradeIDs to make a stable Trade id — first exec's tradeID
   // suffices since it identifies the position's open.

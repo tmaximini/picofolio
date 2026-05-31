@@ -241,18 +241,18 @@ export const usePortfolioDemoCounts = (): {
   }, [accounts, holdings]);
 };
 
-// ---------- IBKR ----------
+// ---------- IBKR (multi-connection) ----------
 
-export const useIbkrToken = () => useStore((s) => s.ibkrToken);
-export const useIbkrQueryId = () => useStore((s) => s.ibkrQueryId);
-export const useIbkrStatus = () => useStore((s) => s.ibkrStatus);
-export const useIbkrError = () => useStore((s) => s.ibkrError);
-export const useIbkrLastSyncAt = () => useStore((s) => s.ibkrLastSyncAt);
-export const useIbkrLastSummary = () => useStore((s) => s.ibkrLastSummary);
-export const useSetIbkrToken = () => useStore((s) => s.setIbkrToken);
-export const useSetIbkrQueryId = () => useStore((s) => s.setIbkrQueryId);
-export const useClearIbkrCredentials = () => useStore((s) => s.clearIbkrCredentials);
-export const useSyncIbkr = () => useStore((s) => s.syncIbkr);
+export const useIbkrConnections = () => useStore((s) => s.ibkrConnections);
+export const useIbkrConnection = (id: string | null | undefined) =>
+  useStore((s) =>
+    id ? s.ibkrConnections.find((c) => c.id === id) ?? null : null,
+  );
+export const useAddIbkrConnection = () => useStore((s) => s.addIbkrConnection);
+export const useUpdateIbkrConnection = () => useStore((s) => s.updateIbkrConnection);
+export const useRemoveIbkrConnection = () => useStore((s) => s.removeIbkrConnection);
+export const useSyncIbkrConnection = () => useStore((s) => s.syncIbkrConnection);
+export const useResyncIbkrConnection = () => useStore((s) => s.resyncIbkrConnection);
 export const useImportIbkrXml = () => useStore((s) => s.importIbkrXml);
 
 // ---------- toasts ----------

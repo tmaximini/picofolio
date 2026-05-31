@@ -745,6 +745,11 @@
   animation: modalRise var(--duration-base) var(--ease-out) forwards;
 }
 
+/* Wider variant for chart-heavy modals (Trade View, TradingView embed). */
+.modal--wide {
+  width: min(1080px, 100%);
+}
+
 @keyframes modalRise {
   to { transform: translateY(0) scale(1); }
 }
@@ -1070,6 +1075,57 @@
 }
 .tradeChart__overlay > * {
   pointer-events: auto;
+}
+
+/* Toolbar above the trade chart — TradingView embed toggle + external link. */
+.chartToolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.chartToolbar__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 24px;
+  padding: 0 var(--space-3);
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.chartToolbar__btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+  background: var(--surface-hover);
+}
+.chartToolbar__btn--active {
+  background: var(--accent-muted);
+  color: var(--accent);
+  border-color: transparent;
+}
+.chartToolbar__tv {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 14px;
+  padding: 0 4px;
+  background: #1e88e5;
+  color: #fff;
+  border-radius: 2px;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 /* Empty-state for the trade chart (unknown symbol, no overlap, etc.) */
