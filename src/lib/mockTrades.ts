@@ -38,10 +38,10 @@ type OpenPositionSpec = {
 };
 
 const OPEN_POSITIONS: OpenPositionSpec[] = [
-  { sym: "NVDA", name: "NVIDIA Corp",            qty:  42, basePrice: 138_50 },
-  { sym: "TSLA", name: "Tesla Inc",              qty:  35, basePrice: 295_00 },
-  { sym: "AMD",  name: "Advanced Micro Devices", qty:  80, basePrice: 175_00 },
-  { sym: "PLTR", name: "Palantir Technologies",  qty: 350, basePrice:  42_50 },
+  { sym: "NVDA", name: "NVIDIA Corp",            qty: 180, basePrice: 138_50 },
+  { sym: "TSLA", name: "Tesla Inc",              qty:  75, basePrice: 295_00 },
+  { sym: "AMD",  name: "Advanced Micro Devices", qty: 130, basePrice: 175_00 },
+  { sym: "PLTR", name: "Palantir Technologies",  qty: 500, basePrice:  42_50 },
 ];
 
 /** Pool for closed-trade generation. Includes the held names (biased
@@ -66,7 +66,7 @@ function pickActiveIdx(rng: () => number): number {
   return Math.floor(rng() * ACTIVE_POOL.length);
 }
 
-const STARTING_CASH_CENTS = 60_000_00;
+const STARTING_CASH_CENTS = 130_000_00;
 
 function makeRng(seed: number) {
   let s = seed >>> 0;
@@ -108,11 +108,16 @@ function generateClosedTrade(
   const side: Side = rng() < 0.18 ? "SHORT" : "LONG";
   const openedAt = randomWeekday(rng, windowStart, windowEnd);
 
-  // Log-uniform quantity: smaller positions more common.
-  const qty = Math.max(5, Math.round(10 + rng() * rng() * 390));
-
   const drift = (rng() - 0.5) * 0.08;
   const entryCents = Math.max(50, Math.round(symbol.basePrice * (1 + drift)));
+
+  // Size each trade in DOLLARS, then derive share qty — so a single trade's
+  // notional always fits inside the trading account. A ~$130k book takes
+  // $1.5k–$26k positions (log-skewed toward small), never a $100k position
+  // that the account couldn't hold. This is the coherence fix: trade
+  // notionals, account value, and allocation % all tie out.
+  const targetNotionalCents = 1_500_00 + Math.round(rng() * rng() * 24_500_00);
+  const qty = Math.max(1, Math.round(targetNotionalCents / entryCents));
 
   // Hold time: half intraday, half multi-day.
   const holdMin = Math.round(
@@ -121,10 +126,13 @@ function generateClosedTrade(
       : 60 + rng() * 60 * 24 * 3,
   );
 
+  // Positive-expectancy distribution: a believable ~56% win rate where
+  // winners run slightly larger than losers, so the cumulative equity
+  // curve trends up ("look what you've done") without looking too clean.
   let returnPct = (rng() + rng() - 1) * symbol.vol * 2.2;
   if (forceLoss) returnPct = -Math.abs(returnPct) - 0.005;
-  else if (rng() < 0.58) returnPct = Math.abs(returnPct) + 0.002;
-  else returnPct = -Math.abs(returnPct);
+  else if (rng() < 0.6) returnPct = Math.abs(returnPct) + 0.011;
+  else returnPct = -Math.abs(returnPct) * 0.7;
 
   const exitCents =
     side === "LONG"

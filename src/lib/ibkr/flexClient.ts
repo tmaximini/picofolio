@@ -21,6 +21,30 @@ const GET_PATH = `${FLEX_BASE}/FlexStatementService.GetStatement`;
 /** IBKR's "statement not ready yet" warning code — we treat it as retry-able. */
 const NOT_READY_CODE = "1019";
 
+/**
+ * Transient IBKR-side errors worth retrying on SendRequest:
+ *   1001 — Statement could not be generated at this time
+ *   1006 — FlexQueryResponse is not ready
+ *   1009 — Statement generation is in progress
+ *   1011 — Service unavailable
+ *   1018 — Too many requests; try again shortly (rate-limited)
+ *   1019 — Statement generation in progress
+ *   1021 — Statement could not be retrieved
+ * Token / permission errors (1012, 1013, 1015, 1016, 1017, 1020) fail fast.
+ */
+const TRANSIENT_SEND_CODES = new Set([
+  "1001",
+  "1006",
+  "1009",
+  "1011",
+  "1018",
+  "1019",
+  "1021",
+]);
+
+const SEND_MAX_ATTEMPTS = 4;
+const SEND_INITIAL_BACKOFF_MS = 5_000;
+
 export type FlexClientOptions = {
   /** Total poll budget in ms. Default 60s. */
   pollTimeoutMs?: number;
@@ -49,18 +73,33 @@ export async function sendFlexRequest(
   opts: FlexClientOptions = {},
 ): Promise<{ referenceCode: string }> {
   const url = `${SEND_PATH}?t=${encodeURIComponent(token)}&q=${encodeURIComponent(queryId)}&v=3`;
-  const res = await fetch(url, { signal: opts.signal });
-  if (!res.ok) {
-    throw new Error(`IBKR SendRequest HTTP ${res.status}`);
-  }
-  const xml = await res.text();
-  const ref = extractTag(xml, "ReferenceCode");
-  if (!ref) {
+
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < SEND_MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(url, { signal: opts.signal });
+    if (!res.ok) {
+      throw new Error(`IBKR SendRequest HTTP ${res.status}`);
+    }
+    const xml = await res.text();
+    const ref = extractTag(xml, "ReferenceCode");
+    if (ref) return { referenceCode: ref };
+
     const code = extractTag(xml, "ErrorCode") ?? "?";
     const msg = extractTag(xml, "ErrorMessage") ?? "No reference code in response";
-    throw new Error(`IBKR SendRequest failed (${code}): ${msg}`);
+    const errMsg = `IBKR SendRequest failed (${code}): ${msg}`;
+    lastError = new Error(errMsg);
+
+    // Retry on transient codes; bail fast on token/permission errors.
+    const isTransient = TRANSIENT_SEND_CODES.has(code);
+    const isLastAttempt = attempt === SEND_MAX_ATTEMPTS - 1;
+    if (!isTransient || isLastAttempt) {
+      throw lastError;
+    }
+    // Exponential backoff: 5s, 10s, 20s
+    const backoff = SEND_INITIAL_BACKOFF_MS * 2 ** attempt;
+    await delay(backoff, opts.signal);
   }
-  return { referenceCode: ref };
+  throw lastError ?? new Error("IBKR SendRequest exhausted retries");
 }
 
 export async function pollFlexStatement(

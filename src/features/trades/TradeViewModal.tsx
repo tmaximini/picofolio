@@ -1,9 +1,14 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { Pencil, X } from "lucide-react";
+import { ExternalLink, Pencil, X } from "lucide-react";
 import { formatCents, formatPct } from "@/lib/money";
 import { formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import { coalesceExecutions, deriveTotals, formatHold } from "@/lib/tradeMath";
+import {
+  tradingViewChartUrl,
+  tradingViewEmbedUrl,
+  tradingViewSymbolFor,
+} from "@/lib/tradingview";
 import { useDeleteTrade, useTrade, useUpdateTrade } from "@/store/selectors";
 import { TradeForm } from "./TradeForm";
 import { TradeChart } from "./TradeChart";
@@ -19,6 +24,7 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
   const deleteTrade = useDeleteTrade();
   const [isEditing, setIsEditing] = useState(false);
   const [tab, setTab] = useState<"general" | "journal">("general");
+  const [tvEmbedded, setTvEmbedded] = useState(false);
 
   if (!trade) return null;
 
@@ -27,7 +33,7 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
   if (isEditing) {
     return createPortal(
       <div className="modalBackdrop" onClick={onClose}>
-        <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div className="modal modal--wide" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
           <div className="modal__head">
             <div className="modal__title">Edit Trade</div>
             <button className="modal__close" onClick={onClose} aria-label="Close">
@@ -104,7 +110,16 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
             </div>
           </div>
 
-          <TradeChart trade={trade} />
+          <ChartToolbar
+            trade={trade}
+            tvEmbedded={tvEmbedded}
+            onToggleEmbed={() => setTvEmbedded((v) => !v)}
+          />
+          {tvEmbedded ? (
+            <TradingViewEmbed trade={trade} />
+          ) : (
+            <TradeChart trade={trade} />
+          )}
           <ExecutionList trade={trade} />
 
           {(trade.notes || trade.confidence != null) && (
@@ -159,6 +174,87 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
       </div>
     </div>,
     document.body,
+  );
+}
+
+function ChartToolbar({
+  trade,
+  tvEmbedded,
+  onToggleEmbed,
+}: {
+  trade: import("@/lib/trades").Trade;
+  tvEmbedded: boolean;
+  onToggleEmbed: () => void;
+}) {
+  const tvSymbol = tradingViewSymbolFor(trade);
+  return (
+    <div className="chartToolbar">
+      <div className="chartSource" role="tablist" aria-label="Chart source">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!tvEmbedded}
+          className={
+            tvEmbedded ? "chartSource__seg" : "chartSource__seg chartSource__seg--active"
+          }
+          onClick={() => {
+            if (tvEmbedded) onToggleEmbed();
+          }}
+        >
+          Picofolio
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tvEmbedded}
+          className={
+            tvEmbedded ? "chartSource__seg chartSource__seg--active" : "chartSource__seg"
+          }
+          onClick={() => {
+            if (!tvEmbedded) onToggleEmbed();
+          }}
+        >
+          TradingView
+        </button>
+      </div>
+      <a
+        className="chartToolbar__btn"
+        href={tradingViewChartUrl(tvSymbol)}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`Open ${tvSymbol} on TradingView`}
+      >
+        <span>Open in TradingView</span>
+        <ExternalLink size={11} strokeWidth={1.75} />
+      </a>
+    </div>
+  );
+}
+
+function TradingViewEmbed({ trade }: { trade: import("@/lib/trades").Trade }) {
+  const sym = tradingViewSymbolFor(trade);
+  // 60m for short trades, daily for long. Matches the spirit of our own
+  // interval picker so the embed defaults feel similar.
+  const interval = "D";
+  const url = tradingViewEmbedUrl(sym, { interval });
+  return (
+    <div
+      className="tvEmbed"
+      style={{
+        height: 380,
+        background: "var(--surface-base)",
+        border: "1px solid var(--border-subtle)",
+        borderRadius: "var(--radius-md)",
+        overflow: "hidden",
+      }}
+    >
+      <iframe
+        title={`TradingView ${sym}`}
+        src={url}
+        style={{ width: "100%", height: "100%", border: 0, display: "block" }}
+        allowFullScreen
+      />
+    </div>
   );
 }
 

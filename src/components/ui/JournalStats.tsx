@@ -1,12 +1,12 @@
+import { useMemo } from "react";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
 import { useTradeStats } from "@/store/selectors";
-import { JournalSpark } from "./JournalSpark";
-import { WinRateDonut } from "./WinRateDonut";
+import { PerformanceChart } from "./PerformanceChart";
 
 const TIPS = {
+  winRate: "Share of closed trades that were profitable.",
   wins: "Closed trades with positive realized P/L.",
   losses: "Closed trades with negative realized P/L.",
-  open: "Positions still open — at least one execution leg without a matching close.",
   avgWin: "Average realized profit across winning trades.",
   avgLoss: "Average realized loss across losing trades.",
   pnl: "Sum of realized P/L across all closed trades in the selected range.",
@@ -15,116 +15,103 @@ const TIPS = {
 export function JournalStats() {
   const stats = useTradeStats();
   const pnlTone = toneOf(stats.pnlCents);
-  const closedCount = stats.wins + stats.losses;
-  const lossRate = closedCount > 0 ? stats.losses / closedCount : 0;
-  const openShare = stats.open + closedCount > 0
-    ? stats.open / (stats.open + closedCount)
-    : 0;
+  const closed = stats.wins + stats.losses;
+
+  // Collapse the per-trade running total to one point per day (last value of
+  // the day) — Lightweight Charts needs ascending, unique times. Prepend a
+  // zero anchor the day before the first close so the curve grows from $0
+  // rather than starting mid-air.
+  const equity = useMemo(() => {
+    const byDay = new Map<string, number>();
+    for (const p of stats.cumulativeSeries) byDay.set(p.at, p.cumulativeCents);
+    const days = [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    if (days.length === 0) return [];
+    const points = days.map(([time, cents]) => ({ time, value: cents / 100 }));
+    return [{ time: dayBefore(days[0]![0]), value: 0 }, ...points];
+  }, [stats.cumulativeSeries]);
 
   return (
     <div className="journalStats">
-      <div className="journalStats__chart">
-        <JournalSpark series={stats.cumulativeSeries} />
+      <div className="journalStats__chartWrap">
+        <div className="journalStats__chartHead">
+          <span className="journalStats__chartLabel">Cumulative P&amp;L</span>
+          <span className="journalStats__chartCount">
+            {closed} closed{stats.open > 0 ? ` · ${stats.open} open` : ""}
+          </span>
+        </div>
+        {equity.length < 2 ? (
+          <div className="journalSpark__empty">No closed trades in range</div>
+        ) : (
+          <PerformanceChart data={equity} height={200} format="currency" />
+        )}
       </div>
 
-      <div className="journalStats__grid">
-        <Cell
-          label="Wins"
-          tip={TIPS.wins}
-          value={stats.wins}
-          aux={<WinRateDonut ratio={stats.winRate} tone="gain" />}
+      <div className="journalStrip">
+        <Stat
+          label="Win rate"
+          tip={TIPS.winRate}
+          value={closed > 0 ? `${Math.round(stats.winRate * 100)}%` : "—"}
         />
-        <Cell
-          label="Losses"
-          tip={TIPS.losses}
-          value={stats.losses}
-          aux={<WinRateDonut ratio={lossRate} tone="loss" />}
-        />
-        <Cell
-          label="Open"
-          tip={TIPS.open}
-          value={stats.open}
-          aux={
-            <WinRateDonut
-              ratio={openShare}
-              tone="neutral"
-              label={`${stats.open}`}
-            />
-          }
-        />
-        <Cell
+        <Stat label="Wins" tip={TIPS.wins} value={String(stats.wins)} />
+        <Stat label="Losses" tip={TIPS.losses} value={String(stats.losses)} />
+        <Stat
           label="Avg W"
           tip={TIPS.avgWin}
           value={stats.avgWinCents > 0 ? formatCents(stats.avgWinCents, true) : "—"}
-          valueTone="gain"
-          subValue={
-            stats.avgWinPct !== 0 ? (
-              <span className="journalStats__cellSub journalStats__cellSub--gain">
-                {formatPct(stats.avgWinPct)}
-              </span>
-            ) : null
-          }
+          tone="gain"
         />
-        <Cell
+        <Stat
           label="Avg L"
           tip={TIPS.avgLoss}
           value={stats.avgLossCents < 0 ? formatCents(stats.avgLossCents, true) : "—"}
-          valueTone="loss"
-          subValue={
-            stats.avgLossPct !== 0 ? (
-              <span className="journalStats__cellSub journalStats__cellSub--loss">
-                {formatPct(stats.avgLossPct)}
-              </span>
-            ) : null
-          }
+          tone="loss"
         />
-        <Cell
+        <Stat
           label="PnL"
           tip={TIPS.pnl}
           value={stats.pnlCents !== 0 ? formatCents(stats.pnlCents, true) : "—"}
-          valueTone={pnlTone === "neutral" ? undefined : pnlTone}
-          subValue={
-            stats.returnPct !== 0 ? (
-              <span
-                className={`journalStats__cellSub journalStats__cellSub--${pnlTone === "neutral" ? "neutral" : pnlTone}`}
-              >
-                {formatPct(stats.returnPct)}
-              </span>
-            ) : null
-          }
+          sub={stats.returnPct !== 0 ? formatPct(stats.returnPct) : undefined}
+          tone={pnlTone === "neutral" ? undefined : pnlTone}
+          hero
         />
       </div>
     </div>
   );
 }
 
-type CellProps = {
+/** ISO date one day before the given YYYY-MM-DD key. */
+function dayBefore(key: string): string {
+  const d = new Date(`${key}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+type StatProps = {
   label: string;
   value: React.ReactNode;
-  valueTone?: "gain" | "loss";
-  aux?: React.ReactNode;
-  subValue?: React.ReactNode;
+  sub?: string;
+  tone?: "gain" | "loss";
   tip?: string;
+  hero?: boolean;
 };
 
-function Cell({ label, value, valueTone, aux, subValue, tip }: CellProps) {
+function Stat({ label, value, sub, tone, tip, hero }: StatProps) {
   const valueClass = [
-    "journalStats__cellValue",
-    valueTone && `journalStats__cellValue--${valueTone}`,
+    "journalStat__value",
+    hero && "journalStat__value--hero",
+    tone && `journalStat__value--${tone}`,
   ]
     .filter(Boolean)
     .join(" ");
-  const cellClass = aux
-    ? "journalStats__cell"
-    : "journalStats__cell journalStats__cell--noAux";
   return (
-    <div className={cellClass} title={tip}>
-      {aux}
-      <div className="journalStats__cellBody">
-        <div className="journalStats__cellLabel">{label}</div>
-        <div className={valueClass}>{value}</div>
-        {subValue}
-      </div>
+    <div className={hero ? "journalStat journalStat--hero" : "journalStat"} title={tip}>
+      <div className="journalStat__label">{label}</div>
+      <div className={valueClass}>{value}</div>
+      {sub && (
+        <div className={`journalStat__sub journalStat__sub--${tone ?? "neutral"}`}>
+          {sub}
+        </div>
+      )}
     </div>
   );
 }

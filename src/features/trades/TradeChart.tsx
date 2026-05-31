@@ -32,7 +32,6 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { formatCents } from "@/lib/money";
 import {
   useIntradayEntry,
   useLoadIntraday,
@@ -303,7 +302,11 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
         const position: "belowBar" | "aboveBar" = isBuy ? "belowBar" : "aboveBar";
         const shape: "arrowUp" | "arrowDown" = isBuy ? "arrowUp" : "arrowDown";
         const color = isBuy ? tokens.gain : tokens.loss;
-        const text = `${ex.action} ${ex.qty} @ ${formatCents(ex.priceCents)}`;
+        // Keep marker text short (action + qty). The fill price lives on
+        // the dotted price line + the execution list, so repeating it here
+        // only makes the label wide enough to clip the canvas edge when a
+        // fill sits near the start of the window.
+        const text = `${ex.action} ${ex.qty.toLocaleString("en-US")}`;
 
         if (isIntraday) {
           const tSec = Math.floor(new Date(ex.at).getTime() / 1000);
@@ -340,7 +343,10 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
         color: isBuy ? tokens.gain : tokens.loss,
         lineWidth: 1,
         lineStyle: LineStyle.Dotted,
-        axisLabelVisible: true,
+        // No axis tag — the fill price sits close to the live last-value
+        // tag, so showing both stacks two near-identical pills on the
+        // right axis. The dotted line + the marker label carry it instead.
+        axisLabelVisible: false,
         title: `${ex.action[0]} ${ex.qty}`,
       });
     }

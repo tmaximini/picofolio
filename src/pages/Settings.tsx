@@ -3,6 +3,8 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
+  Pencil,
+  Plus,
   RefreshCw,
   RotateCcw,
   Trash2,
@@ -10,73 +12,34 @@ import {
 import { useMemo, useState } from "react";
 import { Topbar } from "@/components/layout";
 import { Button } from "@/components/primitives";
+import type { IbkrConnection, IbkrStatus } from "@/store/index";
 import {
+  useAddIbkrConnection,
   useClearDemoPortfolio,
   useClearDemoTrades,
-  useClearIbkrCredentials,
   useDemoCounts,
-  useIbkrError,
-  useIbkrLastSummary,
-  useIbkrLastSyncAt,
-  useIbkrQueryId,
-  useIbkrStatus,
-  useIbkrToken,
+  useIbkrConnections,
   useImportIbkrXml,
   usePortfolioDemoCounts,
   usePushToast,
+  useRemoveIbkrConnection,
+  useResyncIbkrConnection,
   useRestoreDemoPortfolio,
   useRestoreDemoTrades,
-  useSetIbkrQueryId,
-  useSetIbkrToken,
-  useSyncIbkr,
+  useSyncIbkrConnection,
+  useUpdateIbkrConnection,
 } from "@/store/selectors";
 
 export function Settings() {
-  const token = useIbkrToken();
-  const queryId = useIbkrQueryId();
-  const status = useIbkrStatus();
-  const error = useIbkrError();
-  const lastSyncAt = useIbkrLastSyncAt();
-  const lastSummary = useIbkrLastSummary();
-
-  const setToken = useSetIbkrToken();
-  const setQueryId = useSetIbkrQueryId();
-  const clearCreds = useClearIbkrCredentials();
-  const syncIbkr = useSyncIbkr();
+  const connections = useIbkrConnections();
+  const addConnection = useAddIbkrConnection();
   const importXml = useImportIbkrXml();
   const pushToast = usePushToast();
 
-  const [showToken, setShowToken] = useState(false);
-  const [tokenDraft, setTokenDraft] = useState(token);
-  const [queryIdDraft, setQueryIdDraft] = useState(queryId);
   const [xmlDraft, setXmlDraft] = useState("");
   const [xmlError, setXmlError] = useState<string | null>(null);
   const [xmlOk, setXmlOk] = useState<{ added: number; skipped: number } | null>(null);
-  // First-time users see the guide expanded; collapse it once they've got
-  // creds saved, on the assumption they don't need to re-read it.
-  const [showGuide, setShowGuide] = useState(!token || !queryId);
-
-  const isSyncing =
-    status === "sending" || status === "polling" || status === "parsing";
-
-  const credsChanged = tokenDraft !== token || queryIdDraft !== queryId;
-
-  const saveCreds = () => {
-    setToken(tokenDraft);
-    setQueryId(queryIdDraft);
-    pushToast({
-      kind: "success",
-      title: "Credentials saved",
-      body: "Token and Query ID stored in this browser.",
-      duration: 3500,
-    });
-  };
-
-  const lastSyncLabel = useMemo(() => {
-    if (!lastSyncAt) return "Never";
-    const d = new Date(lastSyncAt);
-    return d.toLocaleString();
-  }, [lastSyncAt]);
+  const [showGuide, setShowGuide] = useState(connections.length === 0);
 
   const onImportXml = () => {
     setXmlError(null);
@@ -104,6 +67,23 @@ export function Settings() {
     }
   };
 
+  const onAddConnection = () => {
+    // Use a sensible default label based on how many already exist.
+    const defaultLabel =
+      connections.length === 0
+        ? "Paper"
+        : connections.length === 1
+          ? "Live"
+          : `Account ${connections.length + 1}`;
+    addConnection(defaultLabel);
+    pushToast({
+      kind: "info",
+      title: `${defaultLabel} connection added`,
+      body: "Paste the token + Query ID below.",
+      duration: 3500,
+    });
+  };
+
   return (
     <>
       <Topbar title="Settings" subtitle="IBKR sync · Imports" />
@@ -112,11 +92,12 @@ export function Settings() {
         <section className="settingsCard">
           <div className="settingsCard__head">
             <div>
-              <h2 className="settingsCard__title">IBKR Flex Query sync</h2>
+              <h2 className="settingsCard__title">IBKR Flex Query connections</h2>
               <div className="settingsCard__sub">
-                Paste a Flex Query token + Query ID from Client Portal. Works
-                for live <em>and</em> paper accounts. The token never leaves
-                this browser.
+                One connection per IBKR account — paper, live cash, multiple
+                live accounts. Each has its own Flex token + Query ID. Imported
+                trades segregate by connection label so you can see paper vs
+                live separately. Tokens never leave this browser.
                 <br />
                 <button
                   type="button"
@@ -132,116 +113,25 @@ export function Settings() {
                 </button>
               </div>
             </div>
-            <StatusBadge status={status} />
+            <Button onClick={onAddConnection}>
+              <Plus size={13} strokeWidth={1.75} />
+              <span>Add connection</span>
+            </Button>
           </div>
 
           {showGuide && <IbkrSetupGuide />}
 
-          <div className="ibkrGrid">
-            <div className="tradeForm__field">
-              <label className="tradeForm__label">Flex Token</label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 32px", gap: "var(--space-2)" }}>
-                <input
-                  className="tradeForm__input num"
-                  type={showToken ? "text" : "password"}
-                  value={tokenDraft}
-                  onChange={(e) => setTokenDraft(e.target.value)}
-                  placeholder="123456789012345678901"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <button
-                  type="button"
-                  className="btn btn--icon"
-                  onClick={() => setShowToken((v) => !v)}
-                  title={showToken ? "Hide" : "Show"}
-                >
-                  {showToken ? (
-                    <EyeOff size={13} strokeWidth={1.75} />
-                  ) : (
-                    <Eye size={13} strokeWidth={1.75} />
-                  )}
-                </button>
-              </div>
+          {connections.length === 0 ? (
+            <div className="ibkrEmpty">
+              No connections yet — click <strong>Add connection</strong> to
+              wire up your first IBKR account.
             </div>
-            <div className="tradeForm__field">
-              <label className="tradeForm__label">Query ID</label>
-              <input
-                className="tradeForm__input num"
-                value={queryIdDraft}
-                onChange={(e) => setQueryIdDraft(e.target.value)}
-                placeholder="123456"
-                autoComplete="off"
-                spellCheck={false}
-              />
+          ) : (
+            <div className="ibkrConnList">
+              {connections.map((c) => (
+                <IbkrConnectionCard key={c.id} connection={c} />
+              ))}
             </div>
-          </div>
-
-          <div className="ibkrActions">
-            <Button onClick={saveCreds} disabled={!credsChanged}>
-              Save credentials
-            </Button>
-            <Button
-              onClick={() => syncIbkr()}
-              disabled={isSyncing || !token || !queryId}
-              style={{
-                background: "var(--accent)",
-                borderColor: "var(--accent)",
-                color: "#fff",
-              }}
-            >
-              <RefreshCw
-                size={13}
-                strokeWidth={1.75}
-                className={isSyncing ? "spin" : undefined}
-              />
-              <span>{isSyncing ? "Syncing…" : "Sync now"}</span>
-            </Button>
-            <span style={{ color: "var(--text-tertiary)", fontSize: "var(--text-xs)" }}>
-              Last sync: <span className="num">{lastSyncLabel}</span>
-            </span>
-          </div>
-
-          {error && (
-            <div className="ibkrWarnings" style={{ marginTop: "var(--space-4)" }}>
-              <div className="ibkrWarnings__title">Sync failed</div>
-              <div>{error}</div>
-            </div>
-          )}
-
-          {lastSummary && (
-            <>
-              <div className="ibkrSummary">
-                <div className="ibkrSummary__cell">
-                  <span className="ibkrSummary__label">Added</span>
-                  <span className="ibkrSummary__value">{lastSummary.added}</span>
-                </div>
-                <div className="ibkrSummary__cell">
-                  <span className="ibkrSummary__label">Skipped (dupes)</span>
-                  <span className="ibkrSummary__value">{lastSummary.skipped}</span>
-                </div>
-                <div className="ibkrSummary__cell">
-                  <span className="ibkrSummary__label">Accounts</span>
-                  <span className="ibkrSummary__value">
-                    {lastSummary.accountIds.length > 0
-                      ? lastSummary.accountIds.join(", ")
-                      : "—"}
-                  </span>
-                </div>
-              </div>
-              {lastSummary.warnings.length > 0 && (
-                <div className="ibkrWarnings">
-                  <div className="ibkrWarnings__title">
-                    {lastSummary.warnings.length} warning(s)
-                  </div>
-                  <ul>
-                    {lastSummary.warnings.slice(0, 10).map((w, i) => (
-                      <li key={i}>{w}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
           )}
         </section>
 
@@ -250,8 +140,9 @@ export function Settings() {
             <div>
               <h2 className="settingsCard__title">Or paste Flex XML</h2>
               <div className="settingsCard__sub">
-                Generate the Flex statement manually in Client Portal and paste the
-                raw XML here. Useful when CORS/proxy isn't set up yet.
+                Generate the Flex statement manually in Client Portal and paste
+                the raw XML here. Bypasses the network entirely — handy for a
+                first test or when the dev proxy isn't reachable.
               </div>
             </div>
           </div>
@@ -280,38 +171,235 @@ export function Settings() {
         </section>
 
         <DemoDataCard />
-
-        <section className="settingsCard dangerZone">
-          <div className="settingsCard__head">
-            <div>
-              <h2 className="settingsCard__title">Danger zone</h2>
-              <div className="settingsCard__sub">
-                Clears the saved Flex token, query ID, and last-sync timestamp. Imported
-                trades stay where they are.
-              </div>
-            </div>
-          </div>
-          <Button
-            onClick={() => {
-              if (confirm("Clear stored IBKR credentials?")) {
-                clearCreds();
-                setTokenDraft("");
-                setQueryIdDraft("");
-                pushToast({
-                  kind: "info",
-                  title: "IBKR credentials cleared",
-                  duration: 3500,
-                });
-              }
-            }}
-            className="btn--danger"
-          >
-            <Trash2 size={13} strokeWidth={1.75} />
-            <span>Clear stored credentials</span>
-          </Button>
-        </section>
       </div>
     </>
+  );
+}
+
+function IbkrConnectionCard({ connection }: { connection: IbkrConnection }) {
+  const update = useUpdateIbkrConnection();
+  const remove = useRemoveIbkrConnection();
+  const sync = useSyncIbkrConnection();
+  const resync = useResyncIbkrConnection();
+  const pushToast = usePushToast();
+
+  const [showToken, setShowToken] = useState(false);
+  const [labelDraft, setLabelDraft] = useState(connection.label);
+  const [tokenDraft, setTokenDraft] = useState(connection.token);
+  const [queryIdDraft, setQueryIdDraft] = useState(connection.queryId);
+
+  const isSyncing =
+    connection.status === "sending" ||
+    connection.status === "polling" ||
+    connection.status === "parsing";
+
+  // Label auto-saves on blur so it doesn't need the explicit Save button —
+  // Save only commits the credentials (token + queryId).
+  const credsDirty =
+    tokenDraft !== connection.token || queryIdDraft !== connection.queryId;
+
+  const lastSyncLabel = useMemo(() => {
+    if (!connection.lastSyncAt) return "Never";
+    return new Date(connection.lastSyncAt).toLocaleString();
+  }, [connection.lastSyncAt]);
+
+  const onSaveCreds = () => {
+    update(connection.id, { token: tokenDraft, queryId: queryIdDraft });
+    pushToast({
+      kind: "success",
+      title: `${connection.label} credentials saved`,
+      duration: 3000,
+    });
+  };
+
+  const onLabelBlur = () => {
+    const trimmed = labelDraft.trim();
+    if (!trimmed) {
+      // Don't allow empty labels — revert to current.
+      setLabelDraft(connection.label);
+      return;
+    }
+    if (trimmed !== connection.label) {
+      update(connection.id, { label: trimmed });
+      pushToast({
+        kind: "info",
+        title: `Renamed to "${trimmed}"`,
+        duration: 2500,
+      });
+    }
+  };
+
+  const onResync = () => {
+    if (
+      !confirm(
+        `Delete all imported trades for "${connection.label}" and re-sync from IBKR? The token and Query ID stay.`,
+      )
+    ) {
+      return;
+    }
+    resync(connection.id);
+  };
+
+  const onRemove = () => {
+    if (
+      !confirm(
+        `Remove the "${connection.label}" connection? Imported trades stay where they are.`,
+      )
+    ) {
+      return;
+    }
+    remove(connection.id);
+    pushToast({
+      kind: "info",
+      title: `${connection.label} connection removed`,
+      duration: 3000,
+    });
+  };
+
+  return (
+    <div className="ibkrConn">
+      <div className="ibkrConn__head">
+        <label className="ibkrConn__labelWrap" title="Click to rename">
+          <Pencil size={11} strokeWidth={1.75} className="ibkrConn__labelIcon" />
+          <input
+            className="ibkrConn__label"
+            value={labelDraft}
+            onChange={(e) => setLabelDraft(e.target.value)}
+            onBlur={onLabelBlur}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                (e.target as HTMLInputElement).blur();
+              } else if (e.key === "Escape") {
+                setLabelDraft(connection.label);
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            placeholder="Connection label"
+            spellCheck={false}
+          />
+        </label>
+        <StatusBadge status={connection.status} />
+      </div>
+
+      <div className="ibkrGrid">
+        <div className="tradeForm__field">
+          <label className="tradeForm__label">Flex Token</label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 32px", gap: "var(--space-2)" }}>
+            <input
+              className="tradeForm__input num"
+              type={showToken ? "text" : "password"}
+              value={tokenDraft}
+              onChange={(e) => setTokenDraft(e.target.value)}
+              placeholder="123456789012345678901"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button
+              type="button"
+              className="btn btn--icon"
+              onClick={() => setShowToken((v) => !v)}
+              title={showToken ? "Hide" : "Show"}
+            >
+              {showToken ? (
+                <EyeOff size={13} strokeWidth={1.75} />
+              ) : (
+                <Eye size={13} strokeWidth={1.75} />
+              )}
+            </button>
+          </div>
+        </div>
+        <div className="tradeForm__field">
+          <label className="tradeForm__label">Query ID</label>
+          <input
+            className="tradeForm__input num"
+            value={queryIdDraft}
+            onChange={(e) => setQueryIdDraft(e.target.value)}
+            placeholder="123456"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+      </div>
+
+      <div className="ibkrActions">
+        <Button onClick={onSaveCreds} disabled={!credsDirty}>
+          Save
+        </Button>
+        <Button
+          onClick={() => sync(connection.id)}
+          disabled={isSyncing || !connection.token || !connection.queryId}
+          style={{
+            background: "var(--accent)",
+            borderColor: "var(--accent)",
+            color: "#fff",
+          }}
+        >
+          <RefreshCw
+            size={13}
+            strokeWidth={1.75}
+            className={isSyncing ? "spin" : undefined}
+          />
+          <span>{isSyncing ? "Syncing…" : "Sync now"}</span>
+        </Button>
+        <Button
+          onClick={onResync}
+          disabled={isSyncing || !connection.token || !connection.queryId}
+          title="Delete this connection's imported trades and pull fresh"
+        >
+          <RotateCcw size={13} strokeWidth={1.75} />
+          <span>Delete &amp; resync</span>
+        </Button>
+        <Button onClick={onRemove} className="btn--danger">
+          <Trash2 size={13} strokeWidth={1.75} />
+          <span>Remove</span>
+        </Button>
+        <span style={{ color: "var(--text-tertiary)", fontSize: "var(--text-xs)", marginLeft: "auto" }}>
+          Last sync: <span className="num">{lastSyncLabel}</span>
+        </span>
+      </div>
+
+      {connection.error && (
+        <div className="ibkrWarnings" style={{ marginTop: "var(--space-4)" }}>
+          <div className="ibkrWarnings__title">Sync failed</div>
+          <div>{connection.error}</div>
+        </div>
+      )}
+
+      {connection.lastSummary && (
+        <>
+          <div className="ibkrSummary">
+            <div className="ibkrSummary__cell">
+              <span className="ibkrSummary__label">Added</span>
+              <span className="ibkrSummary__value">{connection.lastSummary.added}</span>
+            </div>
+            <div className="ibkrSummary__cell">
+              <span className="ibkrSummary__label">Skipped (dupes)</span>
+              <span className="ibkrSummary__value">{connection.lastSummary.skipped}</span>
+            </div>
+            <div className="ibkrSummary__cell">
+              <span className="ibkrSummary__label">IBKR account</span>
+              <span className="ibkrSummary__value">
+                {connection.lastSummary.accountIds.length > 0
+                  ? connection.lastSummary.accountIds.join(", ")
+                  : "—"}
+              </span>
+            </div>
+          </div>
+          {connection.lastSummary.warnings.length > 0 && (
+            <div className="ibkrWarnings">
+              <div className="ibkrWarnings__title">
+                {connection.lastSummary.warnings.length} warning(s)
+              </div>
+              <ul>
+                {connection.lastSummary.warnings.slice(0, 10).map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -536,7 +624,7 @@ function Step({
   );
 }
 
-function StatusBadge({ status }: { status: ReturnType<typeof useIbkrStatus> }) {
+function StatusBadge({ status }: { status: IbkrStatus }) {
   const label =
     status === "sending"
       ? "Requesting"

@@ -40,16 +40,20 @@ import { tradingCashCents, tradingHoldingsSeed } from "./mockTrades";
 
 export const accountsSeed: Account[] = [
   { id: "U-trade",     name: "Trading",   kind: "trading",   cashCents: tradingCashCents, source: "demo" },
-  { id: "U-long-term", name: "Long-Term", kind: "long-term", cashCents:    2_840_00,      source: "demo" },
+  { id: "U-long-term", name: "Long-Term", kind: "long-term", cashCents:    4_000_00,      source: "demo" },
 ];
 
+// Long-Term sized to ~65% of the portfolio against a Trading account
+// that carries real weight (~35%). A believable barbell — the trading
+// book is small enough to be the active sleeve, big enough that the
+// Weekly P&L and Trading stat card aren't visualizing a rounding error.
 export const holdingsSeed: Holding[] = [
   ...tradingHoldingsSeed,
-  { symbol: "AAPL",  name: "Apple Inc",           account: "Long-Term", qty: 320, avgCostCents: 168_22, source: "demo" },
-  { symbol: "MSFT",  name: "Microsoft Corp",      account: "Long-Term", qty: 180, avgCostCents: 322_18, source: "demo" },
-  { symbol: "TSM",   name: "Taiwan Semi",         account: "Long-Term", qty: 240, avgCostCents: 142_88, source: "demo" },
-  { symbol: "ASML",  name: "ASML Holding",        account: "Long-Term", qty:  32, avgCostCents: 612_44, source: "demo" },
-  { symbol: "BRK.B", name: "Berkshire Hathaway",  account: "Long-Term", qty: 110, avgCostCents: 388_10, source: "demo" },
+  { symbol: "AAPL",  name: "Apple Inc",           account: "Long-Term", qty: 370, avgCostCents: 168_22, source: "demo" },
+  { symbol: "MSFT",  name: "Microsoft Corp",      account: "Long-Term", qty: 210, avgCostCents: 322_18, source: "demo" },
+  { symbol: "TSM",   name: "Taiwan Semi",         account: "Long-Term", qty: 220, avgCostCents: 142_88, source: "demo" },
+  { symbol: "ASML",  name: "ASML Holding",        account: "Long-Term", qty:  36, avgCostCents: 612_44, source: "demo" },
+  { symbol: "BRK.B", name: "Berkshire Hathaway",  account: "Long-Term", qty: 150, avgCostCents: 388_10, source: "demo" },
 ];
 
 export const weeklyPnlSeed: WeekBar[] = [

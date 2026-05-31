@@ -27,9 +27,12 @@ const PRIMARY = [
   { id: "/settings", label: "Settings" },
 ];
 
+// Account identity colors are deliberately NOT gain-green / loss-red — those
+// belong to the P&L language. Amber = active trading sleeve, violet = the
+// steady long-term sleeve.
 const ACCOUNTS = [
-  { id: "/accounts/U-trade", label: "Trading", dotColor: "#C44536" },
-  { id: "/accounts/U-long-term", label: "Long-Term", dotColor: "#6BCB97" },
+  { id: "/accounts/U-trade", label: "Trading", dotColor: "#D9A86C" },
+  { id: "/accounts/U-long-term", label: "Long-Term", dotColor: "#7D77C3" },
 ];
 
 /**
