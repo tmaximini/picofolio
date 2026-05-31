@@ -178,7 +178,7 @@ function TradeRow({ trade, onClick }: { trade: Trade; onClick?: (id: string) => 
 
   return (
     <tr className="tradeTable__row" onClick={() => onClick?.(trade.id)}>
-      <td>{dateDisplay}</td>
+      <td className="mono tradeTable__muted">{dateDisplay}</td>
       <td>
         <SymbolCell trade={trade} marketBadge={marketBadge} />
       </td>
@@ -192,24 +192,24 @@ function TradeRow({ trade, onClick }: { trade: Trade; onClick?: (id: string) => 
             : <ArrowDownRight size={14} strokeWidth={2} />}
         </span>
       </td>
-      <td className="num">{qty.toLocaleString("en-US")}</td>
-      <td className="num">{tot.avgEntryCents != null ? formatCents(tot.avgEntryCents) : <Dash />}</td>
-      <td className="num">
+      <td className="num tradeTable__muted">{qty.toLocaleString("en-US")}</td>
+      <td className="num tradeTable__muted">{tot.avgEntryCents != null ? formatCents(tot.avgEntryCents) : <Dash />}</td>
+      <td className="num tradeTable__muted">
         {tot.avgExitCents != null
           ? formatCents(tot.avgExitCents)
           : livePriceCents != null
             ? <LiveValue cents={livePriceCents} />
             : <Dash />}
       </td>
-      <td className="num">{formatCents(tot.entryTotalCents)}</td>
-      <td className="num">
+      <td className="num tradeTable__muted">{formatCents(tot.entryTotalCents)}</td>
+      <td className="num tradeTable__muted">
         {tot.exitTotalCents > 0
           ? formatCents(tot.exitTotalCents)
           : liveValueCents != null
             ? <LiveValue cents={liveValueCents} />
             : <Dash />}
       </td>
-      <td className="num">
+      <td className="num tradeTable__muted">
         <span className={tot.holdMs != null ? "" : "tradeTable__dash"}>
           {formatHold(tot.holdMs)}
         </span>

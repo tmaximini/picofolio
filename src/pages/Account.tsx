@@ -3,12 +3,13 @@ import { useEffect } from "react";
 import { Navigate, useParams } from "react-router-dom";
 import { Topbar } from "@/components/layout";
 import { Badge, Button, Card, Kbd, Stat } from "@/components/primitives";
-import { HoldingsTable } from "@/components/ui";
+import { HoldingsTable, PerformanceCard } from "@/components/ui";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
 import {
   useAccountById,
   useAccountDeltaCents,
   useAccountValueCents,
+  useAccountValueSeries,
   useHoldings,
   useRefreshAll,
   useSyncing,
@@ -21,6 +22,7 @@ export function Account() {
   const refreshAll = useRefreshAll();
   const syncing = useSyncing();
   const value = useAccountValueCents(account?.name ?? "");
+  const valueSeries = useAccountValueSeries(account?.name ?? "");
   const dayDelta = useAccountDeltaCents(account?.name ?? "", "1D");
   const weekDelta = useAccountDeltaCents(account?.name ?? "", "1W");
   const monthDelta = useAccountDeltaCents(account?.name ?? "", "1M");
@@ -62,13 +64,10 @@ export function Account() {
         }
       />
 
+      <PerformanceCard label="Total Value" valueCents={value} series={valueSeries} />
+
       <Card style={{ marginBottom: "var(--space-5)" }}>
-        <div className="accountStatsRow">
-          <Stat
-            label="Total value"
-            display
-            value={value != null ? formatCents(value) : <Dash />}
-          />
+        <div className="accountStatsRow accountStatsRow--deltas">
           <DeltaStat label="Day" cents={dayDelta} baseValue={value} />
           <DeltaStat label="Week" cents={weekDelta} baseValue={value} />
           <DeltaStat label="Month" cents={monthDelta} baseValue={value} />

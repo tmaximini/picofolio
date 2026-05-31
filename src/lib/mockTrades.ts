@@ -38,10 +38,10 @@ type OpenPositionSpec = {
 };
 
 const OPEN_POSITIONS: OpenPositionSpec[] = [
-  { sym: "NVDA", name: "NVIDIA Corp",            qty:  42, basePrice: 138_50 },
-  { sym: "TSLA", name: "Tesla Inc",              qty:  35, basePrice: 295_00 },
-  { sym: "AMD",  name: "Advanced Micro Devices", qty:  80, basePrice: 175_00 },
-  { sym: "PLTR", name: "Palantir Technologies",  qty: 350, basePrice:  42_50 },
+  { sym: "NVDA", name: "NVIDIA Corp",            qty: 180, basePrice: 138_50 },
+  { sym: "TSLA", name: "Tesla Inc",              qty:  75, basePrice: 295_00 },
+  { sym: "AMD",  name: "Advanced Micro Devices", qty: 130, basePrice: 175_00 },
+  { sym: "PLTR", name: "Palantir Technologies",  qty: 500, basePrice:  42_50 },
 ];
 
 /** Pool for closed-trade generation. Includes the held names (biased
@@ -66,7 +66,7 @@ function pickActiveIdx(rng: () => number): number {
   return Math.floor(rng() * ACTIVE_POOL.length);
 }
 
-const STARTING_CASH_CENTS = 60_000_00;
+const STARTING_CASH_CENTS = 130_000_00;
 
 function makeRng(seed: number) {
   let s = seed >>> 0;
@@ -121,10 +121,13 @@ function generateClosedTrade(
       : 60 + rng() * 60 * 24 * 3,
   );
 
+  // Positive-expectancy distribution: a believable ~56% win rate where
+  // winners run slightly larger than losers, so the cumulative equity
+  // curve trends up ("look what you've done") without looking too clean.
   let returnPct = (rng() + rng() - 1) * symbol.vol * 2.2;
   if (forceLoss) returnPct = -Math.abs(returnPct) - 0.005;
-  else if (rng() < 0.58) returnPct = Math.abs(returnPct) + 0.002;
-  else returnPct = -Math.abs(returnPct);
+  else if (rng() < 0.6) returnPct = Math.abs(returnPct) + 0.006;
+  else returnPct = -Math.abs(returnPct) * 0.8;
 
   const exitCents =
     side === "LONG"

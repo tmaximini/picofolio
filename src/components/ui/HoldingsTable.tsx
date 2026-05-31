@@ -141,8 +141,8 @@ function HoldingRow({
         {showAccount && (
           <td style={{ color: "var(--text-secondary)" }}>{holding.account}</td>
         )}
-        <td className="num">{holding.qty.toLocaleString("en-US")}</td>
-        <td className="num">{latest != null ? formatCents(Math.round(latest * 100)) : <Dash />}</td>
+        <td className="num" style={{ color: "var(--text-secondary)" }}>{holding.qty.toLocaleString("en-US")}</td>
+        <td className="num" style={{ color: "var(--text-secondary)" }}>{latest != null ? formatCents(Math.round(latest * 100)) : <Dash />}</td>
         <td className="num">{value != null ? formatCents(value) : <Dash />}</td>
         {showWeight && (
           <td className="num" style={{ color: "var(--text-secondary)" }}>

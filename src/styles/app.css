@@ -134,10 +134,19 @@
 /* ---------- GRIDS ---------- */
 
 .heroRow {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr;
+  display: flex;
   gap: var(--space-4);
   margin-bottom: var(--space-6);
+}
+/* Hero value dominates (flex 2); each account card shares the rest equally.
+   Flex (not a fixed grid) so the row adapts to N accounts without leaving an
+   empty column. */
+.heroRow > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.heroRow > .heroCard {
+  flex: 2 1 0;
 }
 
 .accountStatsRow {
@@ -145,6 +154,11 @@
   grid-template-columns: 1.5fr repeat(4, 1fr);
   gap: var(--space-6);
   align-items: end;
+}
+/* Delta-only variant (Day/Week/Month/YTD) used when the value lives in the
+   performance card above the row. */
+.accountStatsRow--deltas {
+  grid-template-columns: repeat(4, 1fr);
 }
 .grid2 {
   display: grid;
@@ -191,14 +205,19 @@
   font-variant-numeric: tabular-nums;
   font-size: 56px;
   font-weight: 400;
-  letter-spacing: -0.03em;
+  /* Slightly looser than before so the thousands commas don't crowd the
+     digits at display size. */
+  letter-spacing: -0.015em;
   line-height: 1;
   color: var(--text-primary);
   margin-top: var(--space-3);
 }
 .heroValue__cents {
   color: var(--text-tertiary);
-  font-size: 0.6em;
+  font-size: 0.62em;
+  /* Sit the cents on the baseline of the big figure, not raised like a
+     superscript. */
+  vertical-align: baseline;
 }
 
 .heroMeta {
@@ -210,6 +229,161 @@
 .heroMeta__caption {
   color: var(--text-tertiary);
   font-size: var(--text-sm);
+}
+
+/* ---------- PORTFOLIO PERFORMANCE CARD (Overview hero) ----------
+   Total value + rate of return + the green-above / red-below curve. */
+
+.perfCard {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--surface-raised) 0%, var(--surface-base) 100%);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--highlight-top), var(--shadow-md);
+  padding: var(--space-6);
+  margin-bottom: var(--space-6);
+}
+.perfCard::before {
+  content: "";
+  position: absolute;
+  top: -60%;
+  right: -10%;
+  width: 50%;
+  height: 220%;
+  background: radial-gradient(ellipse, var(--accent-glow), transparent 70%);
+  opacity: 0.28;
+  pointer-events: none;
+}
+.perfCard > * {
+  position: relative;
+  z-index: 1;
+}
+.perfCard__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-6);
+  margin-bottom: var(--space-5);
+}
+.perfCard__ror {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  text-align: right;
+}
+.perfCard__rorLabel {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+.perfCard__rorValue {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-2xl);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1;
+}
+.perfCard__rorValue--gain { color: var(--gain); }
+.perfCard__rorValue--loss { color: var(--loss); }
+.perfCard__rorValue--neutral { color: var(--text-tertiary); }
+.perfCard__chartEmpty {
+  height: 300px;
+  display: grid;
+  place-items: center;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.perfRanges {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-1);
+  margin-top: var(--space-4);
+}
+.perfRanges__pill {
+  height: 28px;
+  padding: 0 var(--space-4);
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-full);
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.perfRanges__pill:hover {
+  color: var(--text-secondary);
+}
+.perfRanges__pill--active {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  box-shadow: var(--highlight-top);
+}
+
+/* Hover popover — absolute value that day + the return. Subtle, pinned near
+   the top of the plot, following the crosshair horizontally. */
+.perfChartWrap {
+  position: relative;
+  width: 100%;
+}
+.perfTip {
+  position: absolute;
+  top: var(--space-2);
+  transform: translateX(-50%);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--highlight-top), var(--shadow-md);
+  pointer-events: none;
+  z-index: var(--z-overlay);
+  white-space: nowrap;
+}
+.perfTip__date {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-tertiary);
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+.perfTip__headline {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.1;
+}
+.perfTip__headline--gain { color: var(--gain); }
+.perfTip__headline--loss { color: var(--loss); }
+.perfTip__headline--neutral { color: var(--text-primary); }
+.perfTip__sub {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* Account cards row beneath the performance hero */
+.accountRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
 }
 
 /* ---------- WEEKLY P&L SPARKS ----------
@@ -339,41 +513,25 @@
   background: var(--text-tertiary);
 }
 
-/* ---------- ALLOCATION LIST ---------- */
+/* ---------- ACCOUNT STAT CARD ----------
+   Allocation share sits top-right as a subtle neutral pill — it's a weight,
+   not a gain/loss, so it never borrows the P&L colors. */
 
-.allocList {
-  list-style: none;
-  padding: 0;
-  margin: var(--space-4) 0 0;
+.accountStat__head {
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
-.allocRow {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) 0;
-  font-size: var(--text-sm);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.allocRow:last-child {
-  border-bottom: 0;
-}
-.allocItem__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-.allocRow__name {
-  color: var(--text-secondary);
-}
-.allocRow__pct {
+.accountStat__share {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  padding: 2px var(--space-2);
+  background: var(--glass-thin);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
 }
 
 /* ---------- SECTION HEAD ---------- */

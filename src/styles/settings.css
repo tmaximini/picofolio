@@ -7,8 +7,6 @@
   flex-direction: column;
   gap: var(--space-5);
   width: 100%;
-  max-width: 960px;
-  margin: 0 auto;
 }
 
 .settingsCard {

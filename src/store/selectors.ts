@@ -165,6 +165,77 @@ export const usePortfolioDeltaCents = (period: DeltaPeriod): number | null =>
     return total;
   });
 
+export type ValuePoint = { time: string; valueCents: number };
+
+/**
+ * Daily market-value series for a set of holdings + a constant cash balance.
+ * Current positions are valued back through the available price history
+ * (assumes today's holdings were held over the window — the right model for
+ * a "how is this book performing" curve). Only dates where *every* holding
+ * has a close are kept, so the total never jumps when one symbol's history
+ * starts. Returns [] until all holdings have prices (caller shows loading).
+ */
+function buildValueSeries(
+  rows: Holding[],
+  cashCents: number,
+  prices: Record<string, { points?: PricePoint[] }>,
+): ValuePoint[] {
+  if (rows.length === 0) return [];
+  const legs: { qty: number; byDate: Map<string, number> }[] = [];
+  for (const h of rows) {
+    const pts = prices[h.symbol]?.points;
+    if (!pts || pts.length === 0) return []; // wait for full coverage
+    const byDate = new Map<string, number>();
+    for (const p of pts) byDate.set(p.time, p.value);
+    legs.push({ qty: h.qty, byDate });
+  }
+  // Anchor the date axis on the holding with the fewest points (shortest
+  // history) — every kept date is then guaranteed present in the others.
+  let anchor = legs[0]!;
+  for (const leg of legs) if (leg.byDate.size < anchor.byDate.size) anchor = leg;
+
+  const out: ValuePoint[] = [];
+  for (const date of anchor.byDate.keys()) {
+    let dollars = 0;
+    let ok = true;
+    for (const leg of legs) {
+      const v = leg.byDate.get(date);
+      if (v == null) {
+        ok = false;
+        break;
+      }
+      dollars += leg.qty * v;
+    }
+    if (ok) out.push({ time: date, valueCents: Math.round(dollars * 100) + cashCents });
+  }
+  out.sort((a, b) => a.time.localeCompare(b.time));
+  return out;
+}
+
+/** Portfolio-wide daily value series (all holdings + all cash). */
+export const usePortfolioValueSeries = (): ValuePoint[] => {
+  const holdings = useStore((s) => s.holdings);
+  const accounts = useStore((s) => s.accounts);
+  const prices = useStore((s) => s.prices);
+  return useMemo(() => {
+    const cashCents = accounts.reduce((a, acc) => a + acc.cashCents, 0);
+    return buildValueSeries(holdings, cashCents, prices);
+  }, [holdings, accounts, prices]);
+};
+
+/** Daily value series for a single account (its holdings + its cash). */
+export const useAccountValueSeries = (accountName: string): ValuePoint[] => {
+  const holdings = useStore((s) => s.holdings);
+  const accounts = useStore((s) => s.accounts);
+  const prices = useStore((s) => s.prices);
+  return useMemo(() => {
+    const account = accounts.find((a) => a.name === accountName);
+    if (!account) return [];
+    const rows = holdings.filter((h) => h.account === accountName);
+    return buildValueSeries(rows, account.cashCents, prices);
+  }, [holdings, accounts, prices, accountName]);
+};
+
 // ---------- actions (re-exported for ergonomic access) ----------
 
 export const useLoadPrice = () => useStore((s) => s.loadPrice);

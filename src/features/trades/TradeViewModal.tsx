@@ -189,19 +189,34 @@ function ChartToolbar({
   const tvSymbol = tradingViewSymbolFor(trade);
   return (
     <div className="chartToolbar">
-      <button
-        type="button"
-        className={
-          tvEmbedded
-            ? "chartToolbar__btn chartToolbar__btn--active"
-            : "chartToolbar__btn"
-        }
-        onClick={onToggleEmbed}
-        title={tvEmbedded ? "Use Picofolio chart" : "Embed TradingView chart"}
-      >
-        <span className="chartToolbar__tv">TV</span>
-        <span>{tvEmbedded ? "Picofolio chart" : "Embed"}</span>
-      </button>
+      <div className="chartSource" role="tablist" aria-label="Chart source">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!tvEmbedded}
+          className={
+            tvEmbedded ? "chartSource__seg" : "chartSource__seg chartSource__seg--active"
+          }
+          onClick={() => {
+            if (tvEmbedded) onToggleEmbed();
+          }}
+        >
+          Picofolio
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tvEmbedded}
+          className={
+            tvEmbedded ? "chartSource__seg chartSource__seg--active" : "chartSource__seg"
+          }
+          onClick={() => {
+            if (!tvEmbedded) onToggleEmbed();
+          }}
+        >
+          TradingView
+        </button>
+      </div>
       <a
         className="chartToolbar__btn"
         href={tradingViewChartUrl(tvSymbol)}

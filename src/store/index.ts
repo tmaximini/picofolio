@@ -492,7 +492,7 @@ export const useStore = create<StoreState>()(
         lastSyncAt: s.lastSyncAt,
         ibkrConnections: s.ibkrConnections,
       }),
-      version: 2,
+      version: 3,
       migrate: (persistedState, version) => {
         // v1 → v2: collapse the single ibkrToken/ibkrQueryId/ibkrLastSyncAt
         // into a one-element ibkrConnections array (labelled "Default") so
@@ -523,6 +523,26 @@ export const useStore = create<StoreState>()(
           delete old.ibkrError;
           delete old.ibkrLastSummary;
           old.ibkrConnections = ibkrConnections;
+        }
+        // v2 → v3: reseed the demo data (rebalanced barbell allocation +
+        // positive-expectancy journal). Drop demo-sourced rows and graft
+        // the fresh seed back on; real / manual / imported entries are
+        // preserved untouched.
+        if (version < 3 && persistedState && typeof persistedState === "object") {
+          const old = persistedState as Record<string, unknown>;
+          const realTrades = ((old.trades as Trade[] | undefined) ?? []).filter(
+            (t) => t.source && t.source !== "demo",
+          );
+          old.trades = [...tradesSeed, ...realTrades];
+          const realHoldings = ((old.holdings as Holding[] | undefined) ?? []).filter(
+            (h) => h.source !== "demo",
+          );
+          old.holdings = [...holdingsSeed, ...realHoldings];
+          const realAccounts = ((old.accounts as Account[] | undefined) ?? []).filter(
+            (a) => a.source !== "demo",
+          );
+          old.accounts = [...accountsSeed, ...realAccounts];
+          old.weeklyPnl = weeklyPnlSeed;
         }
         return persistedState as StoreState;
       },
