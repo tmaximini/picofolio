@@ -492,7 +492,7 @@ export const useStore = create<StoreState>()(
         lastSyncAt: s.lastSyncAt,
         ibkrConnections: s.ibkrConnections,
       }),
-      version: 3,
+      version: 4,
       migrate: (persistedState, version) => {
         // v1 → v2: collapse the single ibkrToken/ibkrQueryId/ibkrLastSyncAt
         // into a one-element ibkrConnections array (labelled "Default") so
@@ -524,11 +524,11 @@ export const useStore = create<StoreState>()(
           delete old.ibkrLastSummary;
           old.ibkrConnections = ibkrConnections;
         }
-        // v2 → v3: reseed the demo data (rebalanced barbell allocation +
-        // positive-expectancy journal). Drop demo-sourced rows and graft
-        // the fresh seed back on; real / manual / imported entries are
-        // preserved untouched.
-        if (version < 3 && persistedState && typeof persistedState === "object") {
+        // → v4: reseed the demo data (coherent barbell — trade notionals
+        // now fit inside the trading account; positive-expectancy journal).
+        // Drop demo-sourced rows and graft the fresh seed back on; real /
+        // manual / imported entries are preserved untouched.
+        if (version < 4 && persistedState && typeof persistedState === "object") {
           const old = persistedState as Record<string, unknown>;
           const realTrades = ((old.trades as Trade[] | undefined) ?? []).filter(
             (t) => t.source && t.source !== "demo",

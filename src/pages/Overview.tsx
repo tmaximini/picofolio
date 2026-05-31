@@ -6,21 +6,17 @@ import {
   AccountStatCard,
   HoldingsTable,
   PortfolioPerformanceCard,
-  WeeklyPLSparks,
 } from "@/components/ui";
-import { formatCents } from "@/lib/money";
 import {
   useAccounts,
   useHoldings,
   useRefreshAll,
   useSyncing,
-  useWeeklyPnl,
 } from "@/store/selectors";
 
 export function Overview() {
   const accounts = useAccounts();
   const holdings = useHoldings();
-  const weeklyPnl = useWeeklyPnl();
   const refreshAll = useRefreshAll();
   const syncing = useSyncing();
 
@@ -28,8 +24,6 @@ export function Overview() {
   useEffect(() => {
     refreshAll();
   }, [refreshAll]);
-
-  const tradingPnlYtd = weeklyPnl.reduce((a, w) => a + w.pnlCents, 0);
 
   return (
     <>
@@ -56,19 +50,6 @@ export function Overview() {
           <AccountStatCard key={a.id} accountName={a.name} />
         ))}
       </div>
-
-      <Card style={{ marginBottom: "var(--space-6)" }}>
-        <div className="cardHead">
-          <div>
-            <div className="cardHead__name">Trading — Weekly P&amp;L</div>
-            <div className="cardHead__sub">
-              Absolute $ generated per week · last 14 weeks
-            </div>
-          </div>
-          <Badge variant="gain">{formatCents(tradingPnlYtd, true)} YTD</Badge>
-        </div>
-        <WeeklyPLSparks />
-      </Card>
 
       <div className="sectionHead">
         <h2 className="sectionTitle">Holdings</h2>

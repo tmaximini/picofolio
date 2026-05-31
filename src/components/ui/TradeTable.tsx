@@ -215,10 +215,18 @@ function TradeRow({ trade, onClick }: { trade: Trade; onClick?: (id: string) => 
         </span>
       </td>
       <td className={returnColorClass}>
-        {returnCents != null ? formatCents(returnCents) : <Dash />}
+        {returnCents != null
+          ? formatCents(returnCents)
+          : tot.status === "OPEN"
+            ? <OpenTag />
+            : <Dash />}
       </td>
       <td className={returnColorClass}>
-        {returnPct != null ? formatPct(returnPct) : <Dash />}
+        {returnPct != null
+          ? formatPct(returnPct)
+          : tot.status === "OPEN"
+            ? <OpenTag />
+            : <Dash />}
       </td>
       <td>
         <span className="tradeTable__rowActions">
@@ -308,4 +316,9 @@ function LiveValue({ cents }: { cents: number }) {
 
 function Dash() {
   return <span className="tradeTable__dash">—</span>;
+}
+
+/** Open position with no live price yet — reads as "in progress", not broken. */
+function OpenTag() {
+  return <span className="tradeTable__live">live</span>;
 }

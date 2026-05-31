@@ -214,9 +214,9 @@
 }
 .heroValue__cents {
   color: var(--text-tertiary);
-  font-size: 0.62em;
-  /* Sit the cents on the baseline of the big figure, not raised like a
-     superscript. */
+  /* Larger than before (0.62 → 0.72) so it reads as a decimal continuation
+     of the figure rather than a subscript, and explicitly baseline-aligned. */
+  font-size: 0.72em;
   vertical-align: baseline;
 }
 

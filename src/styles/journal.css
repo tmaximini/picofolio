@@ -395,7 +395,10 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  color: var(--accent);
+  /* The symbol is an identifier, not a value — neutral bright + medium
+     weight anchors the row (like the Long-Term table), and color stays
+     reserved for P&L-bearing columns. Red must only ever mean loss. */
+  color: var(--text-primary);
   font-weight: 500;
 }
 .tradeTable__symCell svg {
@@ -506,6 +509,13 @@
 .tradeTable__return--loss { color: var(--loss); }
 
 .tradeTable__dash { color: var(--text-tertiary); }
+/* Open position, price pending — italic + tertiary so it reads as live,
+   not as missing/broken data. */
+.tradeTable__live {
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-size: var(--text-xs);
+}
 
 /* ---------- CALENDAR ---------- */
 

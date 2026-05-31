@@ -108,11 +108,16 @@ function generateClosedTrade(
   const side: Side = rng() < 0.18 ? "SHORT" : "LONG";
   const openedAt = randomWeekday(rng, windowStart, windowEnd);
 
-  // Log-uniform quantity: smaller positions more common.
-  const qty = Math.max(5, Math.round(10 + rng() * rng() * 390));
-
   const drift = (rng() - 0.5) * 0.08;
   const entryCents = Math.max(50, Math.round(symbol.basePrice * (1 + drift)));
+
+  // Size each trade in DOLLARS, then derive share qty — so a single trade's
+  // notional always fits inside the trading account. A ~$130k book takes
+  // $1.5k–$26k positions (log-skewed toward small), never a $100k position
+  // that the account couldn't hold. This is the coherence fix: trade
+  // notionals, account value, and allocation % all tie out.
+  const targetNotionalCents = 1_500_00 + Math.round(rng() * rng() * 24_500_00);
+  const qty = Math.max(1, Math.round(targetNotionalCents / entryCents));
 
   // Hold time: half intraday, half multi-day.
   const holdMin = Math.round(
@@ -126,8 +131,8 @@ function generateClosedTrade(
   // curve trends up ("look what you've done") without looking too clean.
   let returnPct = (rng() + rng() - 1) * symbol.vol * 2.2;
   if (forceLoss) returnPct = -Math.abs(returnPct) - 0.005;
-  else if (rng() < 0.6) returnPct = Math.abs(returnPct) + 0.006;
-  else returnPct = -Math.abs(returnPct) * 0.8;
+  else if (rng() < 0.6) returnPct = Math.abs(returnPct) + 0.011;
+  else returnPct = -Math.abs(returnPct) * 0.7;
 
   const exitCents =
     side === "LONG"
