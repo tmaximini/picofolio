@@ -14,6 +14,7 @@ import type { PricePoint } from "@/lib/priceHistory";
 import type { Account, Holding } from "@/lib/mock";
 import type { Trade, TradeSetup, TradeStatus } from "@/lib/trades";
 import { deriveTotals, tradeDateKey } from "@/lib/tradeMath";
+import { contractMultiplier } from "@/lib/optionSymbol";
 import { inRange, rangeFor, type DateRangeKey } from "@/lib/dateRange";
 
 export type DeltaPeriod = "1D" | "1W" | "1M" | "YTD" | "1Y";
@@ -37,6 +38,7 @@ export const useSetSelectedAccount = () => useStore((s) => s.setSelectedAccount)
 export const useAddAccount = () => useStore((s) => s.addAccount);
 export const useUpdateAccount = () => useStore((s) => s.updateAccount);
 export const useRemoveAccount = () => useStore((s) => s.removeAccount);
+export const useResetAccount = () => useStore((s) => s.resetAccount);
 
 export const usePriceStatus = (symbol: string) =>
   useStore((s) => s.prices[symbol]?.status ?? "idle");
@@ -65,6 +67,22 @@ function unitPriceCentsFor(
   const live = pts && pts.length > 0 ? pts[pts.length - 1]!.value : null;
   if (live != null) return Math.round(live * 100);
   return h.lastPriceCents ?? null;
+}
+
+/** Market value of a holding in cents: qty × price × contract multiplier
+ *  (options settle ×100). null when the holding has no price yet. */
+function holdingValueCents(
+  h: Holding,
+  prices: Record<string, { points?: PricePoint[] }>,
+): number | null {
+  const unit = unitPriceCentsFor(h, prices);
+  if (unit == null) return null;
+  return Math.round(h.qty * unit * contractMultiplier(h.symbol));
+}
+
+/** Cost basis of a holding in cents: qty × avg cost × contract multiplier. */
+function holdingBasisCents(h: Holding): number {
+  return Math.round(h.qty * h.avgCostCents * contractMultiplier(h.symbol));
 }
 
 /** Returns dollars (not cents) for math; convert at the render boundary. */
@@ -104,20 +122,16 @@ export const useHoldingValueCents = (symbol: string): number | null =>
   useStore((s) => {
     const h = s.holdings.find((x) => x.symbol === symbol);
     if (!h) return null;
-    const unit = unitPriceCentsFor(h, s.prices);
-    if (unit == null) return null;
-    return Math.round(h.qty * unit);
+    return holdingValueCents(h, s.prices);
   });
 
 export const useUnrealizedCents = (symbol: string): number | null =>
   useStore((s) => {
     const h = s.holdings.find((x) => x.symbol === symbol);
     if (!h) return null;
-    const unit = unitPriceCentsFor(h, s.prices);
-    if (unit == null) return null;
-    const value = Math.round(h.qty * unit);
-    const basis = h.qty * h.avgCostCents;
-    return value - basis;
+    const value = holdingValueCents(h, s.prices);
+    if (value == null) return null;
+    return value - holdingBasisCents(h);
   });
 
 // ---------- account aggregates ----------
@@ -134,9 +148,9 @@ export const useAccountValueCents = (accountId: string): number | null =>
     const rows = s.holdings.filter((h) => h.accountId === accountId);
     let total = account.cashCents;
     for (const h of rows) {
-      const unit = unitPriceCentsFor(h, s.prices);
-      if (unit == null) return null;
-      total += Math.round(h.qty * unit);
+      const v = holdingValueCents(h, s.prices);
+      if (v == null) return null;
+      total += v;
     }
     return total;
   });
@@ -190,9 +204,9 @@ export const usePortfolioValueCents = (): number | null =>
     let total = 0;
     for (const a of s.accounts) total += a.cashCents;
     for (const h of s.holdings) {
-      const unit = unitPriceCentsFor(h, s.prices);
-      if (unit == null) return null;
-      total += Math.round(h.qty * unit);
+      const v = holdingValueCents(h, s.prices);
+      if (v == null) return null;
+      total += v;
     }
     return total;
   });
@@ -256,7 +270,7 @@ function buildValueSeries(
       for (const p of pts) byDate.set(p.time, p.value);
       legs.push({ qty: h.qty, byDate });
     } else if (h.lastPriceCents != null) {
-      flatCents += Math.round(h.qty * h.lastPriceCents);
+      flatCents += Math.round(h.qty * h.lastPriceCents * contractMultiplier(h.symbol));
     } else {
       return []; // a holding still loading its price — wait for coverage
     }
@@ -344,6 +358,7 @@ export const useDeleteSetup = () => useStore((s) => s.deleteSetup);
 export const useSetJournalRange = () => useStore((s) => s.setJournalRange);
 export const useSetCalendarMonth = () => useStore((s) => s.setCalendarMonth);
 export const useClearDemoTrades = () => useStore((s) => s.clearDemoTrades);
+export const useClearDemoForAccount = () => useStore((s) => s.clearDemoForAccount);
 export const useRestoreDemoTrades = () => useStore((s) => s.restoreDemoTrades);
 export const useClearDemoPortfolio = () => useStore((s) => s.clearDemoPortfolio);
 export const useRestoreDemoPortfolio = () => useStore((s) => s.restoreDemoPortfolio);

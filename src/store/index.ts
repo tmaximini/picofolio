@@ -18,6 +18,7 @@ import type { DateRangeKey } from "@/lib/dateRange";
 import { fetchYahooDaily, fetchYahooIntraday, type IntradayPoint } from "@/lib/yahoo";
 import { fetchFlexStatement, parseFlexXml } from "@/lib/ibkr";
 import type { ParsedPosition } from "@/lib/ibkr/flexParser";
+import { parseOccSymbol } from "@/lib/optionSymbol";
 
 export type PriceStatus = "idle" | "loading" | "ready" | "error";
 
@@ -130,6 +131,9 @@ type StoreState = {
     >,
   ) => void;
   removeAccount: (id: string) => void;
+  /** Wipe an account's trades + positions + setups + cash, keeping the
+   *  account record, its name/color, IBKR link, and contributions. */
+  resetAccount: (id: string) => void;
 
   // Journal actions
   addTrade: (t: Trade) => void;
@@ -141,6 +145,8 @@ type StoreState = {
   setCalendarMonth: (iso: string) => void;
   clearDemoTrades: () => void;
   restoreDemoTrades: () => void;
+  /** Drop demo-sourced trades + holdings for a single account. */
+  clearDemoForAccount: (accountId: string) => void;
   clearDemoPortfolio: () => void;
   restoreDemoPortfolio: () => void;
 
@@ -151,8 +157,9 @@ type StoreState = {
     patch: Partial<Pick<IbkrConnection, "label" | "token" | "queryId">>,
   ) => void;
   removeIbkrConnection: (id: string) => void;
-  syncIbkrConnection: (id: string) => Promise<void>;
-  /** Wipe IBKR trades for this connection's label, then sync. */
+  syncIbkrConnection: (id: string, opts?: { replace?: boolean }) => Promise<void>;
+  /** Re-pull and atomically replace this account's IBKR trades + positions —
+   *  old data is only dropped once the fresh statement parses successfully. */
   resyncIbkrConnection: (id: string) => Promise<void>;
   importIbkrXml: (
     xml: string,
@@ -226,6 +233,9 @@ export const useStore = create<StoreState>()(
       syncing: false,
 
       loadPrice: async (symbol) => {
+        // Option (OCC) symbols have no Yahoo daily history — they'd just 404.
+        // Their value comes from the broker mark on the holding instead.
+        if (parseOccSymbol(symbol)) return;
         const cur = get().prices[symbol];
         if (isFresh(cur) || cur?.status === "loading") return;
 
@@ -300,7 +310,15 @@ export const useStore = create<StoreState>()(
       refreshAll: async () => {
         if (get().syncing) return;
         set({ syncing: true });
-        const symbols = get().holdings.map((h) => h.symbol);
+        // Unique, Yahoo-priceable symbols only — skip OCC option contracts
+        // (no daily history) and dedupe symbols held in multiple accounts.
+        const symbols = [
+          ...new Set(
+            get()
+              .holdings.map((h) => h.symbol)
+              .filter((s) => parseOccSymbol(s) == null),
+          ),
+        ];
         await Promise.allSettled(symbols.map((s) => get().loadPrice(s)));
         set({ syncing: false, lastSyncAt: Date.now() });
       },
@@ -357,6 +375,18 @@ export const useStore = create<StoreState>()(
           ),
         })),
 
+      resetAccount: (id) =>
+        set((s) => ({
+          trades: s.trades.filter((t) => t.accountId !== id),
+          holdings: s.holdings.filter((h) => h.accountId !== id),
+          setups: s.setups.filter((sp) => sp.accountId !== id),
+          accounts: s.accounts.map((a) =>
+            a.id === id
+              ? { ...a, cashCents: 0, updatedAt: new Date().toISOString() }
+              : a,
+          ),
+        })),
+
       removeAccount: (id) =>
         set((s) => ({
           // Cascade: drop the account and everything scoped to it.
@@ -399,6 +429,15 @@ export const useStore = create<StoreState>()(
 
       clearDemoTrades: () =>
         set((s) => ({ trades: s.trades.filter((t) => t.source !== "demo") })),
+      clearDemoForAccount: (accountId) =>
+        set((s) => ({
+          trades: s.trades.filter(
+            (t) => !(t.source === "demo" && t.accountId === accountId),
+          ),
+          holdings: s.holdings.filter(
+            (h) => !(h.source === "demo" && h.accountId === accountId),
+          ),
+        })),
       restoreDemoTrades: () =>
         set((s) => {
           const existing = new Set(s.trades.map((t) => t.id));
@@ -483,44 +522,58 @@ export const useStore = create<StoreState>()(
           if (existing) return existing.id;
           return get().addAccount({ name, source: "ibkr" });
         };
+        const resolve = (rawId: string) =>
+          targetAccountId ?? ensureImportAccountId(rawId);
+
         const stamped = result.trades.map((t) => ({
           ...t,
-          accountId: targetAccountId ?? ensureImportAccountId(t.accountId),
+          accountId: resolve(t.accountId),
         }));
-        const existing = new Set(get().trades.map((t) => t.id));
-        const fresh = stamped.filter((t) => !existing.has(t.id));
-        if (fresh.length > 0) {
+        const parsedById = new Map(stamped.map((t) => [t.id, t]));
+        const existingIds = new Set(get().trades.map((t) => t.id));
+        const fresh = stamped.filter((t) => !existingIds.has(t.id));
+        if (stamped.length > 0) {
           set((s) => {
             const hadReal = s.trades.some((t) => t.source !== "demo");
-            if (!hadReal) {
-              return {
-                trades: [...fresh, ...s.trades.filter((t) => t.source !== "demo")],
-              };
-            }
-            return { trades: [...fresh, ...s.trades] };
+            // Upsert: re-stamp already-imported trades onto their resolved
+            // account (so re-importing into the right account *moves* them
+            // rather than no-op'ing on the dedupe), then prepend new ones.
+            let base = s.trades.map((t) => {
+              const p = parsedById.get(t.id);
+              return p ? { ...t, accountId: p.accountId } : t;
+            });
+            if (!hadReal) base = base.filter((t) => t.source !== "demo");
+            return { trades: [...fresh, ...base] };
           });
         }
 
-        // Open positions → holdings, grouped by their resolved account.
+        // Open positions → holdings.
         if (result.positions.length > 0) {
           const byAccount = new Map<string, ParsedPosition[]>();
           for (const p of result.positions) {
-            const accId = targetAccountId ?? ensureImportAccountId(p.accountId);
+            const accId = resolve(p.accountId);
             const arr = byAccount.get(accId) ?? [];
             arr.push(p);
             byAccount.set(accId, arr);
           }
-          for (const [accId, ps] of byAccount) {
-            const ibkrHoldings = buildIbkrHoldings(accId, ps);
-            set((s) => ({
-              holdings: [
-                ...s.holdings.filter(
-                  (h) => !(h.source === "ibkr" && h.accountId === accId),
-                ),
-                ...ibkrHoldings,
-              ],
-            }));
-            if (result.cashCents !== 0) {
+          const importedSymbols = new Set(result.positions.map((p) => p.symbol));
+          set((s) => {
+            // When importing into one explicit account, consolidate: drop any
+            // stale IBKR holding for these symbols from *every* account so a
+            // mis-placed earlier import doesn't linger elsewhere.
+            const stale = (h: Holding) =>
+              h.source === "ibkr" &&
+              (targetAccountId
+                ? importedSymbols.has(h.symbol)
+                : byAccount.has(h.accountId));
+            let holdings = s.holdings.filter((h) => !stale(h));
+            for (const [accId, ps] of byAccount) {
+              holdings = [...holdings, ...buildIbkrHoldings(accId, ps)];
+            }
+            return { holdings };
+          });
+          if (result.cashCents !== 0) {
+            for (const accId of byAccount.keys()) {
               get().updateAccount(accId, { cashCents: result.cashCents });
             }
           }
@@ -532,7 +585,8 @@ export const useStore = create<StoreState>()(
         };
       },
 
-      syncIbkrConnection: async (id) => {
+      syncIbkrConnection: async (id, opts) => {
+        const replace = opts?.replace ?? false;
         const conn = get().ibkrConnections.find((c) => c.id === id);
         const { pushToast } = get();
         if (!conn) return;
@@ -573,15 +627,22 @@ export const useStore = create<StoreState>()(
           const stamped = result.trades.map((t) => ({ ...t, accountId }));
           const existing = new Set(get().trades.map((t) => t.id));
           const fresh = stamped.filter((t) => !existing.has(t.id));
-          if (fresh.length > 0) {
+          if (stamped.length > 0) {
             set((s) => {
               const hadReal = s.trades.some((t) => t.source !== "demo");
-              if (!hadReal) {
-                return {
-                  trades: [...fresh, ...s.trades.filter((t) => t.source !== "demo")],
-                };
-              }
-              return { trades: [...fresh, ...s.trades] };
+              // `replace` (resync): the fresh pull is authoritative — drop this
+              // account's existing IBKR trades, then add everything from the
+              // pull. This only runs AFTER a successful fetch+parse, so a failed
+              // resync never loses data. Plain sync just adds new trades.
+              let base = replace
+                ? s.trades.filter(
+                    (t) => !(t.source === "ibkr" && t.accountId === accountId),
+                  )
+                : s.trades;
+              if (!hadReal) base = base.filter((t) => t.source !== "demo");
+              const baseIds = new Set(base.map((t) => t.id));
+              const toAdd = stamped.filter((t) => !baseIds.has(t.id));
+              return { trades: [...toAdd, ...base] };
             });
           }
           // Replace this account's IBKR positions + cash from the snapshot
@@ -653,22 +714,10 @@ export const useStore = create<StoreState>()(
       },
 
       resyncIbkrConnection: async (id) => {
-        const conn = get().ibkrConnections.find((c) => c.id === id);
-        if (!conn) return;
-        // Wipe IBKR-sourced trades that belong to this connection's linked
-        // account, then run a fresh sync. Token + Query ID stay intact.
-        const linked = get().accounts.find((a) => a.flexConnectionId === conn.id);
-        if (linked) {
-          set((s) => ({
-            trades: s.trades.filter(
-              (t) => !(t.source === "ibkr" && t.accountId === linked.id),
-            ),
-            holdings: s.holdings.filter(
-              (h) => !(h.source === "ibkr" && h.accountId === linked.id),
-            ),
-          }));
-        }
-        await get().syncIbkrConnection(id);
+        // Atomic replace: fetch + parse first; only when that succeeds does the
+        // account's old IBKR trades/positions get swapped for the fresh pull.
+        // A failed pull (e.g. IBKR 1001) leaves existing data untouched.
+        await get().syncIbkrConnection(id, { replace: true });
       },
 
       pushToast: (t) => {

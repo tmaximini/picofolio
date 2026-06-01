@@ -1,6 +1,11 @@
 import { Fragment, useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { Holding } from "@/lib/mock";
+import {
+  contractMultiplier,
+  formatOptionLabel,
+  parseOccSymbol,
+} from "@/lib/optionSymbol";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
 import {
   useAccountValueCents,
@@ -118,8 +123,10 @@ function HoldingRow({
       ? value / totalValueCents
       : null;
 
-  // Unrealized return relative to cost basis (qty × avg cost).
-  const basisCents = holding.qty * holding.avgCostCents;
+  // Unrealized return relative to cost basis. Both value and basis carry the
+  // option contract multiplier, so it cancels in the ratio — but compute basis
+  // with it too so the percentage is correct.
+  const basisCents = holding.qty * holding.avgCostCents * contractMultiplier(holding.symbol);
   const unrealizedPct =
     unrealizedCents != null && basisCents > 0 ? unrealizedCents / basisCents : null;
 
@@ -134,17 +141,7 @@ function HoldingRow({
           <ChevronRight size={14} strokeWidth={1.75} />
         </td>
         <td>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <span style={{ fontWeight: 500 }}>{holding.symbol}</span>
-            <span
-              style={{
-                color: "var(--text-tertiary)",
-                fontSize: "var(--text-xs)",
-              }}
-            >
-              {holding.name}
-            </span>
-          </div>
+          <HoldingSymbolCell holding={holding} />
         </td>
         {showAccount && (
           <td style={{ color: "var(--text-secondary)" }}>{accountName}</td>
@@ -172,6 +169,46 @@ function HoldingRow({
       </tr>
       <ExpandRow holding={holding} open={isOpen} colSpan={colSpan} />
     </Fragment>
+  );
+}
+
+/** Symbol cell — options render as underlying + CALL/PUT badge + a
+ *  "expiry · $strike" label (matching the Activity table); stocks stay plain. */
+function HoldingSymbolCell({ holding }: { holding: Holding }) {
+  const opt = parseOccSymbol(holding.symbol);
+  if (opt) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
+          <span style={{ fontWeight: 500 }}>{opt.underlying}</span>
+          <span
+            className={`tradeTable__marketBadge tradeTable__marketBadge--${
+              opt.type === "CALL" ? "call" : "put"
+            }`}
+          >
+            {opt.type}
+          </span>
+        </span>
+        <span
+          style={{
+            color: "var(--text-tertiary)",
+            fontSize: "var(--text-xs)",
+            fontFamily: "var(--font-mono)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {formatOptionLabel(opt, { includeType: false })}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      <span style={{ fontWeight: 500 }}>{holding.symbol}</span>
+      <span style={{ color: "var(--text-tertiary)", fontSize: "var(--text-xs)" }}>
+        {holding.name}
+      </span>
+    </div>
   );
 }
 

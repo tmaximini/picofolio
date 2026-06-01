@@ -9,8 +9,9 @@ import {
   RefreshCw,
   RotateCcw,
   Trash2,
+  Upload,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Topbar } from "@/components/layout";
 import { Button } from "@/components/primitives";
 import { AccountFormModal } from "@/components/ui";
@@ -19,79 +20,123 @@ import type { IbkrConnection, IbkrStatus } from "@/store/index";
 import {
   useAccounts,
   useAddIbkrConnection,
-  useClearDemoPortfolio,
-  useClearDemoTrades,
-  useDemoCounts,
+  useClearDemoForAccount,
+  useHoldings,
   useIbkrConnections,
   useImportIbkrXml,
-  usePortfolioDemoCounts,
   usePushToast,
+  useRemoveAccount,
   useRemoveIbkrConnection,
+  useResetAccount,
   useResyncIbkrConnection,
   useRestoreDemoPortfolio,
   useRestoreDemoTrades,
+  useSelectedAccountId,
+  useSetSelectedAccount,
   useSyncIbkrConnection,
+  useTrades,
   useUpdateAccount,
   useUpdateIbkrConnection,
 } from "@/store/selectors";
 
 export function Settings() {
   const accounts = useAccounts();
+  const selectedId = useSelectedAccountId();
+  const setSelected = useSetSelectedAccount();
   const [showGuide, setShowGuide] = useState(false);
   const [editAccountId, setEditAccountId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
+  // The pills drive the GLOBAL account selection so they stay in lock-step
+  // with the top switcher. "All Accounts" has no per-account settings, so we
+  // fall back to the first account for display until a pill is clicked.
+  const selected =
+    accounts.find((a) => a.id === selectedId) ?? accounts[0] ?? null;
+
   return (
     <>
-      <Topbar title="Settings" subtitle="Accounts · IBKR sync · Imports" />
+      <Topbar title="Settings" subtitle="Per-account · IBKR sync · Imports" />
+
+      <div className="settingsTabs">
+        <div className="settingsTabs__list">
+          {accounts.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              className={`settingsTab${a.id === selected?.id ? " settingsTab--active" : ""}`}
+              onClick={() => setSelected(a.id)}
+            >
+              <span className="settingsTab__dot" style={{ background: a.color }} />
+              <span>{a.name}</span>
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="settingsTab settingsTab--add"
+          onClick={() => setCreateOpen(true)}
+        >
+          <Plus size={13} strokeWidth={1.75} />
+          <span>Add account</span>
+        </button>
+      </div>
 
       <div className="settingsStack">
-        <section className="settingsCard">
-          <div className="settingsCard__head">
-            <div>
-              <h2 className="settingsCard__title">Accounts &amp; IBKR sync</h2>
-              <div className="settingsCard__sub">
-                Each account has its own IBKR Flex Query connection — one
-                connection feeds one account. Rename an account inline; synced
-                trades are stamped to it. Tokens never leave this browser.
-                <br />
-                <button
-                  type="button"
-                  className="ibkrHelp__toggle"
-                  onClick={() => setShowGuide((v) => !v)}
-                >
-                  {showGuide ? (
-                    <ChevronDown size={12} strokeWidth={2} />
-                  ) : (
-                    <ChevronRight size={12} strokeWidth={2} />
-                  )}
-                  {showGuide ? "Hide setup guide" : "How do I get a Flex token?"}
-                </button>
+        {selected ? (
+          <>
+            <section className="settingsCard">
+              <div className="settingsCard__head">
+                <div>
+                  <h2 className="settingsCard__title">IBKR sync</h2>
+                  <div className="settingsCard__sub">
+                    One IBKR Flex Query connection feeds this account; synced
+                    trades are stamped to it. Tokens never leave this browser.
+                    <br />
+                    <button
+                      type="button"
+                      className="ibkrHelp__toggle"
+                      onClick={() => setShowGuide((v) => !v)}
+                    >
+                      {showGuide ? (
+                        <ChevronDown size={12} strokeWidth={2} />
+                      ) : (
+                        <ChevronRight size={12} strokeWidth={2} />
+                      )}
+                      {showGuide ? "Hide setup guide" : "How do I get a Flex token?"}
+                    </button>
+                  </div>
+                </div>
               </div>
+
+              {showGuide && <IbkrSetupGuide />}
+
+              <AccountSyncCard
+                key={selected.id}
+                account={selected}
+                onEdit={setEditAccountId}
+              />
+            </section>
+
+            <AccountDemoCard account={selected} />
+
+            <DangerZone account={selected} />
+          </>
+        ) : (
+          <section className="settingsCard">
+            <div className="ibkrEmpty">
+              No accounts yet — click <strong>Add account</strong> to create one.
             </div>
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus size={13} strokeWidth={1.75} />
-              <span>Add account</span>
-            </Button>
-          </div>
-
-          {showGuide && <IbkrSetupGuide />}
-
-          <div className="ibkrConnList">
-            {accounts.map((a) => (
-              <AccountSyncCard key={a.id} account={a} onEdit={setEditAccountId} />
-            ))}
-          </div>
-        </section>
+          </section>
+        )}
 
         <OrphanConnections />
 
-        <PasteXmlCard />
-
-        <DemoDataCard />
+        <GlobalDemoFooter />
       </div>
 
-      {createOpen && <AccountFormModal onClose={() => setCreateOpen(false)} />}
+      {createOpen && (
+        <AccountFormModal onClose={() => setCreateOpen(false)} />
+      )}
       {editAccountId && (
         <AccountFormModal
           accountId={editAccountId}
@@ -151,11 +196,6 @@ function AccountSyncCard({
     }
   };
 
-  const onUnlink = () => {
-    updateAccount(account.id, { flexConnectionId: undefined });
-    pushToast({ kind: "info", title: `${account.name} unlinked from IBKR`, duration: 2500 });
-  };
-
   return (
     <div className="ibkrConn">
       <div className="ibkrConn__head">
@@ -196,7 +236,7 @@ function AccountSyncCard({
       </div>
 
       {conn ? (
-        <ConnectionControls connection={conn} onUnlink={onUnlink} />
+        <ConnectionControls connection={conn} />
       ) : (
         <div className="ibkrConnectRow">
           <div className="tradeForm__field" style={{ flex: 1 }}>
@@ -217,19 +257,171 @@ function AccountSyncCard({
           </div>
         </div>
       )}
+
+      <AccountXmlImport accountId={account.id} accountName={account.name} />
+    </div>
+  );
+}
+
+/**
+ * Per-account Flex XML import (drag-drop / file-picker / paste). Imports
+ * straight into this account so there's no ambiguity about where it lands —
+ * the fallback path when the Flex Web Service keeps failing to generate.
+ */
+function AccountXmlImport({
+  accountId,
+  accountName,
+}: {
+  accountId: string;
+  accountName: string;
+}) {
+  const importXml = useImportIbkrXml();
+  const pushToast = usePushToast();
+  const [open, setOpen] = useState(false);
+  const [xmlDraft, setXmlDraft] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const runImport = (xml: string, sourceLabel?: string) => {
+    setMsg(null);
+    if (!xml.trim()) {
+      setMsg({ ok: false, text: "Nothing to import." });
+      return;
+    }
+    if (
+      !confirm(
+        `Import into "${accountName}"?\n\n` +
+          `• This account's IBKR positions and cash will be REPLACED by the statement's snapshot.\n` +
+          `• Trades are merged — new ones added, already-imported ones skipped.\n\n` +
+          `Manual entries you added by hand aren't touched. This can't be undone.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      const summary = importXml(xml, accountId);
+      setMsg({ ok: true, text: `Imported ${summary.added} · skipped ${summary.skipped}` });
+      setXmlDraft("");
+      pushToast({
+        kind: summary.added > 0 ? "success" : "info",
+        title:
+          summary.added > 0
+            ? `${accountName}: imported ${summary.added} trade${summary.added === 1 ? "" : "s"}`
+            : `${accountName}: nothing new`,
+        body:
+          (sourceLabel ? `From ${sourceLabel}. ` : "") +
+          (summary.skipped > 0 ? `Skipped ${summary.skipped} already-imported.` : ""),
+        duration: 5000,
+      });
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      setMsg({ ok: false, text: m });
+      pushToast({ kind: "error", title: "XML parse failed", body: m });
+    }
+  };
+
+  const handleFile = async (file: File) => {
+    if (!/\.(xml|txt)$/i.test(file.name) && !file.type.includes("xml")) {
+      setMsg({ ok: false, text: `"${file.name}" isn't an XML file.` });
+      return;
+    }
+    try {
+      runImport(await file.text(), file.name);
+    } catch {
+      setMsg({ ok: false, text: "Couldn't read that file." });
+    }
+  };
+
+  return (
+    <div className="acctImport">
+      <button
+        type="button"
+        className="ibkrHelp__toggle"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? (
+          <ChevronDown size={12} strokeWidth={2} />
+        ) : (
+          <ChevronRight size={12} strokeWidth={2} />
+        )}
+        Import a Flex XML file into {accountName}
+      </button>
+
+      {open && (
+        <div className="acctImport__body">
+          <div className="acctImport__warn">
+            Replaces <strong>{accountName}</strong>'s IBKR positions &amp; cash with
+            the file's snapshot; trades are merged (duplicates skipped). Manual
+            entries are untouched.
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xml,text/xml,application/xml"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handleFile(f);
+              e.target.value = "";
+            }}
+          />
+          <div
+            className={`xmlDrop${dragging ? " xmlDrop--active" : ""}`}
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              const f = e.dataTransfer.files?.[0];
+              if (f) void handleFile(f);
+            }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click();
+            }}
+          >
+            <Upload size={18} strokeWidth={1.75} className="xmlDrop__icon" />
+            <div className="xmlDrop__label">
+              {dragging ? "Drop to import" : "Drag your Flex .xml here, or click to browse"}
+            </div>
+          </div>
+
+          <div className="xmlDrop__or">or paste</div>
+
+          <textarea
+            className="ibkrFallback__textarea"
+            value={xmlDraft}
+            onChange={(e) => setXmlDraft(e.target.value)}
+            placeholder="<FlexQueryResponse ...>"
+            spellCheck={false}
+          />
+          <div className="ibkrActions" style={{ marginTop: "var(--space-3)" }}>
+            <Button onClick={() => runImport(xmlDraft)} disabled={!xmlDraft.trim()}>
+              Import into {accountName}
+            </Button>
+            {msg && (
+              <span
+                className={`ibkrStatusBadge ibkrStatusBadge--${msg.ok ? "ok" : "error"}`}
+              >
+                {msg.text}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ---------- the token/queryId/sync controls for a linked connection ----------
 
-function ConnectionControls({
-  connection,
-  onUnlink,
-}: {
-  connection: IbkrConnection;
-  onUnlink: () => void;
-}) {
+function ConnectionControls({ connection }: { connection: IbkrConnection }) {
   const update = useUpdateIbkrConnection();
   const remove = useRemoveIbkrConnection();
   const sync = useSyncIbkrConnection();
@@ -339,13 +531,9 @@ function ConnectionControls({
           <RotateCcw size={13} strokeWidth={1.75} />
           <span>Delete &amp; resync</span>
         </Button>
-        <Button onClick={onUnlink} title="Detach this connection from the account">
-          <Link2Off size={13} strokeWidth={1.75} />
-          <span>Unlink</span>
-        </Button>
         <Button onClick={onRemove} className="btn--danger">
           <Trash2 size={13} strokeWidth={1.75} />
-          <span>Remove</span>
+          <span>Remove connection</span>
         </Button>
         <span style={{ color: "var(--text-tertiary)", fontSize: "var(--text-xs)", marginLeft: "auto" }}>
           Last sync: <span className="num">{lastSyncLabel}</span>
@@ -442,100 +630,31 @@ function OrphanConnections() {
   );
 }
 
-// ---------- paste raw Flex XML ----------
+// ---------- per-account demo data ----------
 
-function PasteXmlCard() {
-  const importXml = useImportIbkrXml();
-  const pushToast = usePushToast();
-  const [xmlDraft, setXmlDraft] = useState("");
-  const [xmlError, setXmlError] = useState<string | null>(null);
-  const [xmlOk, setXmlOk] = useState<{ added: number; skipped: number } | null>(null);
-
-  const onImportXml = () => {
-    setXmlError(null);
-    setXmlOk(null);
-    try {
-      const summary = importXml(xmlDraft);
-      setXmlOk({ added: summary.added, skipped: summary.skipped });
-      setXmlDraft("");
-      pushToast({
-        kind: summary.added > 0 ? "success" : "info",
-        title:
-          summary.added > 0
-            ? `Imported ${summary.added} trade${summary.added === 1 ? "" : "s"}`
-            : "Nothing new to import",
-        body: summary.skipped > 0 ? `Skipped ${summary.skipped} already-imported.` : undefined,
-        duration: 5000,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setXmlError(msg);
-      pushToast({ kind: "error", title: "XML parse failed", body: msg });
-    }
-  };
-
-  return (
-    <section className="settingsCard">
-      <div className="settingsCard__head">
-        <div>
-          <h2 className="settingsCard__title">Or paste Flex XML</h2>
-          <div className="settingsCard__sub">
-            Generate the Flex statement manually in Client Portal and paste the
-            raw XML here. Bypasses the network entirely. Trades bucket into an
-            account named after their IBKR account id.
-          </div>
-        </div>
-      </div>
-      <textarea
-        className="ibkrFallback__textarea"
-        value={xmlDraft}
-        onChange={(e) => setXmlDraft(e.target.value)}
-        placeholder="<FlexQueryResponse ...>"
-        spellCheck={false}
-      />
-      <div className="ibkrActions" style={{ marginTop: "var(--space-3)" }}>
-        <Button onClick={onImportXml} disabled={!xmlDraft.trim()}>
-          Import XML
-        </Button>
-        {xmlOk && (
-          <span className="ibkrStatusBadge ibkrStatusBadge--ok">
-            Imported {xmlOk.added} · skipped {xmlOk.skipped}
-          </span>
-        )}
-        {xmlError && (
-          <span className="ibkrStatusBadge ibkrStatusBadge--error">{xmlError}</span>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function DemoDataCard() {
-  const { demo: demoTrades, real: realTrades } = useDemoCounts();
-  const { demoAccounts, realAccounts, demoHoldings, realHoldings } =
-    usePortfolioDemoCounts();
-  const clearDemoTrades = useClearDemoTrades();
-  const restoreDemoTrades = useRestoreDemoTrades();
-  const clearDemoPortfolio = useClearDemoPortfolio();
-  const restoreDemoPortfolio = useRestoreDemoPortfolio();
+function AccountDemoCard({ account }: { account: Account }) {
+  const trades = useTrades();
+  const holdings = useHoldings();
+  const clearDemoForAccount = useClearDemoForAccount();
   const pushToast = usePushToast();
 
-  const handleClearTrades = () => {
-    const n = demoTrades;
-    clearDemoTrades();
-    pushToast({ kind: "info", title: `Cleared ${n} demo trade${n === 1 ? "" : "s"}`, duration: 3000 });
-  };
-  const handleRestoreTrades = () => {
-    restoreDemoTrades();
-    pushToast({ kind: "success", title: "Demo trades restored", duration: 3000 });
-  };
-  const handleClearPortfolio = () => {
-    clearDemoPortfolio();
-    pushToast({ kind: "info", title: "Demo portfolio cleared", duration: 3000 });
-  };
-  const handleRestorePortfolio = () => {
-    restoreDemoPortfolio();
-    pushToast({ kind: "success", title: "Demo portfolio restored", duration: 3000 });
+  const demoTrades = trades.filter(
+    (t) => t.source === "demo" && t.accountId === account.id,
+  ).length;
+  const demoHoldings = holdings.filter(
+    (h) => h.source === "demo" && h.accountId === account.id,
+  ).length;
+
+  // Nothing seeded for this account — don't clutter the panel.
+  if (demoTrades === 0 && demoHoldings === 0) return null;
+
+  const onClear = () => {
+    clearDemoForAccount(account.id);
+    pushToast({
+      kind: "info",
+      title: `Cleared demo data from ${account.name}`,
+      duration: 3000,
+    });
   };
 
   return (
@@ -544,68 +663,170 @@ function DemoDataCard() {
         <div>
           <h2 className="settingsCard__title">Demo data</h2>
           <div className="settingsCard__sub">
-            Picofolio ships with seeded trades and a sample portfolio so the UI
-            has something to render before you connect anything. Each section is
-            cleared automatically the first time real data lands — you can also
-            clear or restore them by hand here.
+            <strong>{account.name}</strong> still holds sample data —{" "}
+            <em>{demoTrades}</em> demo trade{demoTrades === 1 ? "" : "s"} ·{" "}
+            <em>{demoHoldings}</em> demo holding{demoHoldings === 1 ? "" : "s"}.
+            Clear it once your real data is in.
           </div>
         </div>
+        <Button onClick={onClear} className="btn--danger">
+          <Trash2 size={13} strokeWidth={1.75} />
+          <span>Clear demo data</span>
+        </Button>
       </div>
+    </section>
+  );
+}
 
-      <div className="demoDataGroup">
-        <div className="demoDataGroup__head">
-          <span className="demoDataGroup__title">Trades</span>
-          <span className="demoDataGroup__counts">
-            <span className="demoDataGroup__count">
-              <em>{demoTrades}</em> demo
-            </span>
-            <span className="demoDataGroup__sep">·</span>
-            <span className="demoDataGroup__count">
-              <em>{realTrades}</em> real
-            </span>
-          </span>
-        </div>
-        <div className="ibkrActions">
-          <Button onClick={handleClearTrades} disabled={demoTrades === 0}>
-            <Trash2 size={13} strokeWidth={1.75} />
-            <span>Clear demo trades</span>
-          </Button>
-          <Button onClick={handleRestoreTrades}>
-            <RotateCcw size={13} strokeWidth={1.75} />
-            <span>Restore demo trades</span>
-          </Button>
-        </div>
-      </div>
+// ---------- global demo restore (recreates the sample accounts) ----------
 
-      <div className="demoDataGroup">
-        <div className="demoDataGroup__head">
-          <span className="demoDataGroup__title">Portfolio</span>
-          <span className="demoDataGroup__counts">
-            <span className="demoDataGroup__count">
-              <em>{demoAccounts}</em>/<em>{demoHoldings}</em> demo
-              <span className="demoDataGroup__hint"> (accounts / holdings)</span>
-            </span>
-            <span className="demoDataGroup__sep">·</span>
-            <span className="demoDataGroup__count">
-              <em>{realAccounts}</em>/<em>{realHoldings}</em> real
-            </span>
-          </span>
+function GlobalDemoFooter() {
+  const restorePortfolio = useRestoreDemoPortfolio();
+  const restoreTrades = useRestoreDemoTrades();
+  const pushToast = usePushToast();
+
+  return (
+    <section className="settingsCard">
+      <div className="settingsCard__head">
+        <div>
+          <h2 className="settingsCard__title">Demo seed</h2>
+          <div className="settingsCard__sub">
+            Restore the bundled sample accounts (Trading + Long-Term) and journal
+            — handy for exploring the UI. Won't touch your real or imported data.
+          </div>
         </div>
         <div className="ibkrActions">
           <Button
-            onClick={handleClearPortfolio}
-            disabled={demoAccounts === 0 && demoHoldings === 0}
+            onClick={() => {
+              restorePortfolio();
+              pushToast({ kind: "success", title: "Demo portfolio restored", duration: 3000 });
+            }}
           >
-            <Trash2 size={13} strokeWidth={1.75} />
-            <span>Clear demo portfolio</span>
-          </Button>
-          <Button onClick={handleRestorePortfolio}>
             <RotateCcw size={13} strokeWidth={1.75} />
-            <span>Restore demo portfolio</span>
+            <span>Restore portfolio</span>
+          </Button>
+          <Button
+            onClick={() => {
+              restoreTrades();
+              pushToast({ kind: "success", title: "Demo trades restored", duration: 3000 });
+            }}
+          >
+            <RotateCcw size={13} strokeWidth={1.75} />
+            <span>Restore trades</span>
           </Button>
         </div>
       </div>
     </section>
+  );
+}
+
+// ---------- per-account danger zone ----------
+
+function DangerZone({ account }: { account: Account }) {
+  const reset = useResetAccount();
+  const updateAccount = useUpdateAccount();
+  const removeAccount = useRemoveAccount();
+  const pushToast = usePushToast();
+  const isLinked = Boolean(account.flexConnectionId);
+
+  const onReset = () => {
+    if (
+      !confirm(
+        `Reset "${account.name}"? This removes all its trades, positions, and cash — the account, its name, and IBKR link stay.`,
+      )
+    ) {
+      return;
+    }
+    reset(account.id);
+    pushToast({ kind: "info", title: `${account.name} reset`, duration: 3000 });
+  };
+
+  const onUnlink = () => {
+    updateAccount(account.id, { flexConnectionId: undefined });
+    pushToast({
+      kind: "info",
+      title: `${account.name} unlinked from IBKR`,
+      duration: 3000,
+    });
+  };
+
+  const onDelete = () => {
+    if (
+      !confirm(
+        `Delete "${account.name}" entirely? Its trades, positions, and setups are permanently removed.`,
+      )
+    ) {
+      return;
+    }
+    removeAccount(account.id);
+    pushToast({ kind: "info", title: `${account.name} deleted`, duration: 3000 });
+  };
+
+  return (
+    <section className="settingsCard dangerZone">
+      <div className="settingsCard__head">
+        <div>
+          <h2 className="settingsCard__title">Danger zone</h2>
+          <div className="settingsCard__sub">Destructive actions for this account.</div>
+        </div>
+      </div>
+
+      <div className="dangerZone__rows">
+        <DangerRow
+          title="Reset account"
+          desc="Wipe all trades, positions, and cash. Keeps the account, its name, and IBKR link."
+        >
+          <Button onClick={onReset}>
+            <RotateCcw size={13} strokeWidth={1.75} />
+            <span>Reset</span>
+          </Button>
+        </DangerRow>
+
+        <DangerRow
+          title="Unlink from IBKR"
+          desc={
+            isLinked
+              ? "Detach the Flex connection. The connection stays available to relink elsewhere."
+              : "This account isn't linked to an IBKR connection."
+          }
+        >
+          <Button onClick={onUnlink} disabled={!isLinked}>
+            <Link2Off size={13} strokeWidth={1.75} />
+            <span>Unlink</span>
+          </Button>
+        </DangerRow>
+
+        <DangerRow
+          title="Delete account"
+          desc="Permanently remove this account and everything in it."
+        >
+          <Button onClick={onDelete} className="btn--danger">
+            <Trash2 size={13} strokeWidth={1.75} />
+            <span>Delete</span>
+          </Button>
+        </DangerRow>
+      </div>
+    </section>
+  );
+}
+
+function DangerRow({
+  title,
+  desc,
+  children,
+}: {
+  title: string;
+  desc: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="dangerRow">
+      <div className="dangerRow__text">
+        <div className="dangerRow__title">{title}</div>
+        <div className="dangerRow__desc">{desc}</div>
+      </div>
+      <div className="dangerRow__action">{children}</div>
+    </div>
   );
 }
 

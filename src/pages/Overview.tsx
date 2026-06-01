@@ -1,5 +1,5 @@
 import { RefreshCw } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Topbar } from "@/components/layout";
 import { Badge, Button, Card, Kbd, Stat } from "@/components/primitives";
 import {
@@ -18,20 +18,69 @@ import {
   useAccountValueSeries,
   useAccounts,
   useHoldings,
+  usePushToast,
   useRefreshAll,
   useSelectedAccountId,
   useSetSelectedAccount,
+  useSyncIbkrConnection,
   useTrades,
   useSyncing,
 } from "@/store/selectors";
 
-function SyncButton() {
+/**
+ * One Sync button: pulls fresh trades/positions/cash from every linked IBKR
+ * connection in scope (one account, or all of them at "All Accounts"), then
+ * refreshes Yahoo prices. Toasts narrate progress; the per-connection sync
+ * pushes its own success/up-to-date/failure toast.
+ */
+function SyncButton({ accountId }: { accountId?: string }) {
+  const accounts = useAccounts();
   const refreshAll = useRefreshAll();
-  const syncing = useSyncing();
+  const pricesSyncing = useSyncing();
+  const syncConn = useSyncIbkrConnection();
+  const pushToast = usePushToast();
+  const [running, setRunning] = useState(false);
+
+  // Connections to pull: the scoped account's, or all linked accounts at ALL.
+  const connIds = useMemo(() => {
+    const scoped = accountId ? accounts.filter((a) => a.id === accountId) : accounts;
+    return scoped
+      .map((a) => a.flexConnectionId)
+      .filter((id): id is string => Boolean(id));
+  }, [accounts, accountId]);
+
+  const onSync = async () => {
+    if (running) return;
+    setRunning(true);
+    try {
+      if (connIds.length > 0) {
+        pushToast({
+          kind: "info",
+          title:
+            connIds.length === 1
+              ? "Syncing from IBKR…"
+              : `Syncing ${connIds.length} accounts from IBKR…`,
+          body: "Pulling trades, positions & cash — can take up to a minute.",
+          duration: 4000,
+        });
+      }
+      for (const id of connIds) {
+        await syncConn(id); // pushes its own result toast
+      }
+      await refreshAll();
+      if (connIds.length === 0) {
+        pushToast({ kind: "info", title: "Prices updated", duration: 2500 });
+      }
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const busy = running || pricesSyncing;
   return (
-    <Button onClick={() => refreshAll()} disabled={syncing}>
-      <RefreshCw size={13} strokeWidth={1.75} className={syncing ? "spin" : undefined} />
-      <span>{syncing ? "Syncing…" : "Sync prices"}</span>
+    <Button onClick={onSync} disabled={busy}>
+      <RefreshCw size={13} strokeWidth={1.75} className={busy ? "spin" : undefined} />
+      <span>{busy ? "Syncing…" : "Sync"}</span>
       <Kbd>⌘R</Kbd>
     </Button>
   );
@@ -111,7 +160,7 @@ function AccountOverview({ accountId }: { accountId: string }) {
       <Topbar
         title={account.name}
         subtitle={`${formatCents(account.cashCents)} cash · ${positions} ${positions === 1 ? "position" : "positions"}`}
-        actions={<SyncButton />}
+        actions={<SyncButton accountId={accountId} />}
       />
 
       {isEmpty ? (
