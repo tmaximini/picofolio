@@ -9,36 +9,32 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { Shell, Sidebar } from "@/components/layout";
-import { CommandPalette, Toaster } from "@/components/ui";
+import { AccountFormModal, AccountSwitcher, CommandPalette, Toaster } from "@/components/ui";
 import { Overview } from "@/pages/Overview";
 import { Trading } from "@/pages/Trading";
-import { Account } from "@/pages/Account";
+import { Holdings } from "@/pages/Holdings";
 import { Calendar } from "@/pages/Calendar";
 import { Settings } from "@/pages/Settings";
 import { NewTradeModal } from "@/features/trades";
 import { useHotkeys } from "@/lib/hotkeys";
 
+// Account-scoped views — the switcher narrows what these show.
 const PRIMARY = [
   { id: "/", label: "Overview" },
-  { id: "/trading", label: "Trading Journal" },
-  { id: "/calendar", label: "Calendar" },
+  { id: "/activity", label: "Activity" },
   { id: "/holdings", label: "Holdings" },
+  { id: "/calendar", label: "Calendar" },
+];
+
+// Global, account-independent views.
+const SECONDARY = [
   { id: "/performance", label: "Performance" },
   { id: "/settings", label: "Settings" },
 ];
 
-// Account identity colors are deliberately NOT gain-green / loss-red — those
-// belong to the P&L language. Amber = active trading sleeve, violet = the
-// steady long-term sleeve.
-const ACCOUNTS = [
-  { id: "/accounts/U-trade", label: "Trading", dotColor: "#D9A86C" },
-  { id: "/accounts/U-long-term", label: "Long-Term", dotColor: "#7D77C3" },
-];
-
 /**
  * Pick which sidebar item is "active" based on the current pathname.
- * Longest-id-first match supports nested routes (e.g. /accounts/U-trade
- * wins over a hypothetical /accounts root). The "/" item only matches
+ * Longest-id-first match supports nested routes. The "/" item only matches
  * the literal root path.
  */
 function activeIdFor(pathname: string, ids: string[]): string | null {
@@ -67,9 +63,11 @@ function AppInner() {
   const [newTradeOpen, setNewTradeOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [newTradeSymbol, setNewTradeSymbol] = useState<string | undefined>(undefined);
+  // undefined = closed; { editId?: string } = open (create when editId absent).
+  const [accountModal, setAccountModal] = useState<{ editId?: string } | null>(null);
 
   const allNavIds = useMemo(
-    () => [...PRIMARY.map((p) => p.id), ...ACCOUNTS.map((a) => a.id)],
+    () => [...PRIMARY.map((p) => p.id), ...SECONDARY.map((p) => p.id)],
     [],
   );
   const normalizedActive = activeIdFor(location.pathname, allNavIds) ?? "/";
@@ -89,7 +87,7 @@ function AppInner() {
       { combo: "cmd+k", handler: () => setPaletteOpen((v) => !v) },
       { combo: "ctrl+k", handler: () => setPaletteOpen((v) => !v) },
       { combo: "g o", handler: () => navigate("/") },
-      { combo: "g j", handler: () => navigate("/trading") },
+      { combo: "g a", handler: () => navigate("/activity") },
       { combo: "g c", handler: () => navigate("/calendar") },
       { combo: "g h", handler: () => navigate("/holdings") },
       { combo: "g s", handler: () => navigate("/settings") },
@@ -100,6 +98,12 @@ function AppInner() {
 
   return (
     <Shell
+      header={
+        <AccountSwitcher
+          onNewAccount={() => setAccountModal({})}
+          onEditAccount={(id) => setAccountModal({ editId: id })}
+        />
+      }
       sidebar={
         <Sidebar
           active={normalizedActive}
@@ -107,7 +111,7 @@ function AppInner() {
             if (id.startsWith("/")) navigate(id);
           }}
           primary={PRIMARY}
-          accounts={ACCOUNTS}
+          secondary={SECONDARY}
           footer={
             <div className="sidebarCtas">
               <button
@@ -133,17 +137,25 @@ function AppInner() {
     >
       <Routes>
         <Route path="/" element={<Overview />} />
-        <Route path="/trading" element={<Trading />} />
+        <Route path="/activity" element={<Trading />} />
         <Route path="/calendar" element={<Calendar />} />
-        <Route path="/holdings" element={<Placeholder name="Holdings" />} />
+        <Route path="/holdings" element={<Holdings />} />
         <Route path="/performance" element={<Placeholder name="Performance" />} />
         <Route path="/settings" element={<Settings />} />
-        <Route path="/accounts/:accountId" element={<Account />} />
+        {/* Legacy paths → new IA */}
+        <Route path="/trading" element={<Navigate to="/activity" replace />} />
+        <Route path="/accounts/*" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 
       {newTradeOpen && (
         <NewTradeModal onClose={closeNewTrade} initialSymbol={newTradeSymbol} />
+      )}
+      {accountModal && (
+        <AccountFormModal
+          accountId={accountModal.editId}
+          onClose={() => setAccountModal(null)}
+        />
       )}
       {paletteOpen && (
         <CommandPalette

@@ -1,0 +1,229 @@
+/* ============================================================
+   ACCOUNT SWITCHER — IBKR-style scope selector, top of main area
+   ============================================================ */
+
+.acctSwitcher {
+  position: relative;
+  width: 100%;
+}
+
+.acctSwitcher__trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--highlight-top), var(--shadow-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.acctSwitcher__trigger:hover {
+  border-color: var(--border-default);
+  background: var(--surface-hover);
+}
+.acctSwitcher__trigger:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+.acctSwitcher__identity {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+.acctSwitcher__name {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.acctSwitcher__value {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+.acctSwitcher__caret {
+  color: var(--text-tertiary);
+  flex: none;
+}
+.acctSwitcher__allIcon {
+  color: var(--text-secondary);
+  flex: none;
+}
+.acctSwitcher__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-full);
+  flex: none;
+  box-shadow: var(--highlight-top);
+}
+
+/* ---------- menu ---------- */
+
+.acctSwitcher__menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  right: 0;
+  z-index: 40;
+  padding: var(--space-2);
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--highlight-top), var(--shadow-lg);
+  animation: acctSwitcherIn var(--duration-fast) var(--ease-out);
+}
+@keyframes acctSwitcherIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.acctSwitcher__divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-2) var(--space-1);
+}
+
+.acctSwitcher__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--duration-instant) var(--ease-out);
+}
+.acctSwitcher__row:hover {
+  background: var(--surface-hover);
+}
+.acctSwitcher__row--active {
+  background: var(--glass-thin);
+}
+.acctSwitcher__row--new {
+  color: var(--text-secondary);
+}
+.acctSwitcher__row--new:hover {
+  color: var(--text-primary);
+}
+
+.acctSwitcher__rowMain {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+.acctSwitcher__rowMain--btn {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+.acctSwitcher__rowName {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.acctSwitcher__rowValue {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-left: auto;
+}
+.acctSwitcher__check {
+  color: var(--accent);
+  flex: none;
+}
+
+.acctSwitcher__edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  flex: none;
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.acctSwitcher__row:hover .acctSwitcher__edit {
+  opacity: 1;
+}
+.acctSwitcher__edit:hover {
+  color: var(--text-primary);
+  background: var(--glass-medium);
+}
+
+/* ---------- account form modal ---------- */
+
+.accountForm__swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.accountForm__swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-full);
+  border: 2px solid transparent;
+  box-shadow: var(--highlight-top), var(--shadow-sm);
+  cursor: pointer;
+  padding: 0;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.accountForm__swatch:hover {
+  transform: scale(1.1);
+}
+.accountForm__swatch--active {
+  border-color: var(--text-primary);
+}
+.accountForm__hint {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+.accountForm__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+}
+.accountForm__footRight {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}

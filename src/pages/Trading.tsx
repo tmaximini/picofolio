@@ -13,9 +13,13 @@ import { deriveTotals } from "@/lib/tradeMath";
 import type { TradeStatus } from "@/lib/trades";
 import { TradeViewModal } from "@/features/trades/TradeViewModal";
 import { NewTradeModal } from "@/features/trades/NewTradeModal";
+import { ALL_ACCOUNTS } from "@/store";
 import {
+  useAccountById,
+  useAccounts,
   useFilteredTrades,
   useJournalRange,
+  useSelectedAccountId,
   useSetJournalRange,
   useSetups,
 } from "@/store/selectors";
@@ -31,10 +35,20 @@ const STATUS_FILTERS: {
 ];
 
 export function Trading() {
+  const scope = useSelectedAccountId();
+  const isAll = scope === ALL_ACCOUNTS;
+  const account = useAccountById(isAll ? undefined : scope);
+  const accounts = useAccounts();
   const range = useJournalRange();
   const setRange = useSetJournalRange();
-  const trades = useFilteredTrades();
-  const setups = useSetups();
+  const trades = useFilteredTrades(scope);
+  const allSetups = useSetups();
+  const setups = isAll ? allSetups : allSetups.filter((s) => s.accountId === scope);
+
+  const accountNameById = useMemo(
+    () => new Map(accounts.map((a) => [a.id, a.name])),
+    [accounts],
+  );
 
   // Empty set = show all; otherwise show trades whose status is selected.
   const [statuses, setStatuses] = useState<Set<TradeStatus>>(new Set());
@@ -57,8 +71,8 @@ export function Trading() {
   return (
     <>
       <Topbar
-        title="Trading Journal"
-        subtitle={labelForRange(range)}
+        title="Activity"
+        subtitle={`${isAll ? "All accounts" : account?.name ?? "Account"} · ${labelForRange(range)}`}
         actions={
           <Button
             onClick={() => setNewTradeOpen(true)}
@@ -73,7 +87,7 @@ export function Trading() {
 
       <DateRangePills value={range} onChange={setRange} />
 
-      <JournalStats />
+      <JournalStats scope={scope} />
 
       {setups.length > 0 && (
         <div className="journalSetups">
@@ -107,7 +121,11 @@ export function Trading() {
       </div>
 
       <div className="card card--flush" style={{ overflow: "hidden" }}>
-        <TradeTable trades={visibleTrades} onRowClick={setViewTradeId} />
+        <TradeTable
+          trades={visibleTrades}
+          onRowClick={setViewTradeId}
+          accountNameById={isAll ? accountNameById : undefined}
+        />
       </div>
 
       {viewTradeId && (

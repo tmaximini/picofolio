@@ -8,6 +8,7 @@ import "./styles/journal.css";
 import "./styles/settings.css";
 import "./styles/cmdk.css";
 import "./styles/toast.css";
+import "./styles/switcher.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

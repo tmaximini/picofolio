@@ -17,6 +17,9 @@ type SortDir = "asc" | "desc";
 type TradeTableProps = {
   trades: Trade[];
   onRowClick?: (id: string) => void;
+  /** When provided, render an Account column (id → name). For the
+   *  consolidated "All Accounts" view. */
+  accountNameById?: Map<string, string>;
 };
 
 // OPTION gets a per-trade badge (CALL / PUT) computed in the row from the
@@ -27,7 +30,8 @@ const MARKET_BADGE: Partial<Record<Market, string>> = {
   FOREX: "FX",
 };
 
-export function TradeTable({ trades, onRowClick }: TradeTableProps) {
+export function TradeTable({ trades, onRowClick, accountNameById }: TradeTableProps) {
+  const showAccount = accountNameById != null;
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -87,6 +91,7 @@ export function TradeTable({ trades, onRowClick }: TradeTableProps) {
           >
             Symbol{sortKey === "symbol" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
           </th>
+          {showAccount && <th>Account</th>}
           <th>Status</th>
           <th>Side</th>
           <th
@@ -114,14 +119,27 @@ export function TradeTable({ trades, onRowClick }: TradeTableProps) {
       </thead>
       <tbody>
         {sorted.map((t) => (
-          <TradeRow key={t.id} trade={t} onClick={onRowClick} />
+          <TradeRow
+            key={t.id}
+            trade={t}
+            onClick={onRowClick}
+            accountName={showAccount ? accountNameById!.get(t.accountId) ?? "—" : undefined}
+          />
         ))}
       </tbody>
     </table>
   );
 }
 
-function TradeRow({ trade, onClick }: { trade: Trade; onClick?: (id: string) => void }) {
+function TradeRow({
+  trade,
+  onClick,
+  accountName,
+}: {
+  trade: Trade;
+  onClick?: (id: string) => void;
+  accountName?: string;
+}) {
   const tot = deriveTotals(trade);
   const date = tradeOpenedKey(trade) || tradeDateKey(trade);
   const dateDisplay = date
@@ -182,6 +200,9 @@ function TradeRow({ trade, onClick }: { trade: Trade; onClick?: (id: string) => 
       <td>
         <SymbolCell trade={trade} marketBadge={marketBadge} />
       </td>
+      {accountName !== undefined && (
+        <td className="tradeTable__muted">{accountName}</td>
+      )}
       <td>
         <span className={statusClass}>{tot.status}</span>
       </td>
@@ -210,9 +231,18 @@ function TradeRow({ trade, onClick }: { trade: Trade; onClick?: (id: string) => 
             : <Dash />}
       </td>
       <td className="num tradeTable__muted">
-        <span className={tot.holdMs != null ? "" : "tradeTable__dash"}>
-          {formatHold(tot.holdMs)}
-        </span>
+        {(() => {
+          // Open positions show a live hold (now − open); closed use holdMs.
+          const holdMs =
+            tot.status === "OPEN" && tot.openedAt != null
+              ? Date.now() - new Date(tot.openedAt).getTime()
+              : tot.holdMs;
+          return (
+            <span className={holdMs != null ? "" : "tradeTable__dash"}>
+              {formatHold(holdMs)}
+            </span>
+          );
+        })()}
       </td>
       <td className={returnColorClass}>
         {returnCents != null

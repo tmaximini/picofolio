@@ -18,11 +18,9 @@ const FLEX_BASE = "/api/ibkr/flex";
 const SEND_PATH = `${FLEX_BASE}/FlexStatementService.SendRequest`;
 const GET_PATH = `${FLEX_BASE}/FlexStatementService.GetStatement`;
 
-/** IBKR's "statement not ready yet" warning code — we treat it as retry-able. */
-const NOT_READY_CODE = "1019";
-
 /**
- * Transient IBKR-side errors worth retrying on SendRequest:
+ * Transient IBKR-side errors worth retrying (on both SendRequest and the
+ * GetStatement poll — the statement is still being generated):
  *   1001 — Statement could not be generated at this time
  *   1006 — FlexQueryResponse is not ready
  *   1009 — Statement generation is in progress
@@ -32,7 +30,7 @@ const NOT_READY_CODE = "1019";
  *   1021 — Statement could not be retrieved
  * Token / permission errors (1012, 1013, 1015, 1016, 1017, 1020) fail fast.
  */
-const TRANSIENT_SEND_CODES = new Set([
+const TRANSIENT_CODES = new Set([
   "1001",
   "1006",
   "1009",
@@ -90,7 +88,7 @@ export async function sendFlexRequest(
     lastError = new Error(errMsg);
 
     // Retry on transient codes; bail fast on token/permission errors.
-    const isTransient = TRANSIENT_SEND_CODES.has(code);
+    const isTransient = TRANSIENT_CODES.has(code);
     const isLastAttempt = attempt === SEND_MAX_ATTEMPTS - 1;
     if (!isTransient || isLastAttempt) {
       throw lastError;
@@ -107,7 +105,9 @@ export async function pollFlexStatement(
   referenceCode: string,
   opts: FlexClientOptions = {},
 ): Promise<string> {
-  const pollTimeoutMs = opts.pollTimeoutMs ?? 60_000;
+  // Larger queries (Trades + Open Positions + Cash over 365 days) can take
+  // IBKR a while to build; give it up to 2 minutes before giving up.
+  const pollTimeoutMs = opts.pollTimeoutMs ?? 120_000;
   const pollIntervalMs = opts.pollIntervalMs ?? 4_000;
   const deadline = Date.now() + pollTimeoutMs;
 
@@ -119,13 +119,19 @@ export async function pollFlexStatement(
     }
     const xml = await res.text();
 
-    // Is this an error envelope?
+    // Is this an error envelope? The real report (<FlexQueryResponse>) has no
+    // top-level <Status>, so a Status here means "still generating" or "failed".
     const status = extractTag(xml, "Status")?.toLowerCase();
     const errorCode = extractTag(xml, "ErrorCode");
-    if (status === "warn" && errorCode === NOT_READY_CODE) {
-      // Not ready; sleep and retry within budget.
+
+    // While IBKR is still building the statement it returns Warn/1019 — but
+    // also sometimes Fail/1001 ("could not be generated yet, try again
+    // shortly"). Both are transient: keep polling within the time budget.
+    if ((status === "warn" || status === "fail") && errorCode && TRANSIENT_CODES.has(errorCode)) {
       if (Date.now() + pollIntervalMs > deadline) {
-        throw new Error("IBKR GetStatement timed out waiting for statement");
+        throw new Error(
+          `IBKR is still generating the statement (code ${errorCode}). Give it a minute and Sync again.`,
+        );
       }
       await delay(pollIntervalMs, opts.signal);
       continue;

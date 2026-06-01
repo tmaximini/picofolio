@@ -21,6 +21,18 @@ export type ParsedOption = {
 
 const OCC_RE = /^([A-Z0-9.\-]+)\s+(\d{6})([CP])(\d{8})$/;
 
+/** Standard US equity/index option contract multiplier. */
+export const OPTION_MULTIPLIER = 100;
+
+/**
+ * Price→value multiplier for a symbol. Options trade per share but settle
+ * per 100-share contract, so qty × price × 100. Everything else is ×1.
+ * (Futures multipliers vary by product; not modelled yet — they stay ×1.)
+ */
+export function contractMultiplier(symbol: string): number {
+  return parseOccSymbol(symbol) ? OPTION_MULTIPLIER : 1;
+}
+
 export function parseOccSymbol(sym: string): ParsedOption | null {
   const m = sym.trim().match(OCC_RE);
   if (!m) return null;

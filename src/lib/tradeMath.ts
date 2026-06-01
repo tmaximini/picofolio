@@ -5,6 +5,7 @@
  */
 
 import type { Trade, TradeExecution, TradeStatus } from "./trades";
+import { contractMultiplier } from "./optionSymbol";
 
 export type TradeTotals = {
   /** Sum of opening-side executions (BUY for LONG, SELL for SHORT), priceCents × qty. */
@@ -25,6 +26,9 @@ export type TradeTotals = {
   avgExitCents: number | null;
   /** ms between first opening and last closing exec; null if open. */
   holdMs: number | null;
+  /** ISO timestamp of the first opening execution; null if none. Lets the
+   *  UI show a live hold duration (now − openedAt) for OPEN positions. */
+  openedAt: string | null;
   /** R = return / risk-per-share-from-stop × initial size. null if no stop. */
   rMultiple: number | null;
   /** Derived: OPEN | WIN | LOSS. */
@@ -59,13 +63,17 @@ export function deriveTotals(trade: Trade): TradeTotals {
   const positionQty = openingQty - closingQty;
   const matchedQty = Math.min(openingQty, closingQty);
 
+  // Options settle per 100-share contract: monetary totals scale by the
+  // contract multiplier while the per-share price (avgEntry/avgExit) does not.
+  const mult = contractMultiplier(trade.symbol);
+
   const avgEntryCents = openingQty > 0 ? Math.round(openingNotionalCents / openingQty) : null;
   const avgExitCents = closingQty > 0 ? Math.round(closingNotionalCents / closingQty) : null;
 
   // Cost basis of the matched (closed) portion only — open shares don't count
   // toward realized P/L.
-  const matchedEntryCents = avgEntryCents != null ? matchedQty * avgEntryCents : 0;
-  const matchedExitCents = avgExitCents != null ? matchedQty * avgExitCents : 0;
+  const matchedEntryCents = avgEntryCents != null ? matchedQty * avgEntryCents * mult : 0;
+  const matchedExitCents = avgExitCents != null ? matchedQty * avgExitCents * mult : 0;
 
   let returnCents = 0;
   if (matchedQty > 0) {
@@ -93,7 +101,7 @@ export function deriveTotals(trade: Trade): TradeTotals {
       trade.side === "LONG"
         ? avgEntryCents - trade.stopCents
         : trade.stopCents - avgEntryCents;
-    const initialRisk = riskPerShare * matchedQty;
+    const initialRisk = riskPerShare * matchedQty * mult;
     if (initialRisk > 0) {
       rMultiple = returnCents / initialRisk;
     }
@@ -105,8 +113,8 @@ export function deriveTotals(trade: Trade): TradeTotals {
   else status = "LOSS";
 
   return {
-    entryTotalCents: openingNotionalCents,
-    exitTotalCents: closingNotionalCents,
+    entryTotalCents: openingNotionalCents * mult,
+    exitTotalCents: closingNotionalCents * mult,
     feeCents,
     returnCents,
     returnPct,
@@ -114,6 +122,7 @@ export function deriveTotals(trade: Trade): TradeTotals {
     avgEntryCents,
     avgExitCents,
     holdMs,
+    openedAt: firstOpeningAt,
     rMultiple,
     status,
   };

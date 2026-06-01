@@ -28,8 +28,8 @@ export type TradeExecution = {
 
 export type Trade = {
   id: string;
-  /** Matches Account.name (same convention as Holding.account). */
-  account: string;
+  /** Stable Account.id this trade belongs to. */
+  accountId: string;
   symbol: string;
   market: Market;
   side: Side;
@@ -46,7 +46,7 @@ export type Trade = {
 
 export type TradeSetup = {
   id: string;
-  account: string;
+  accountId: string;
   symbol: string;
   market: Market;
   side: Side;
