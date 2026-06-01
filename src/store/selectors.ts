@@ -9,7 +9,7 @@
  */
 
 import { useMemo } from "react";
-import { useStore } from "./index";
+import { ALL_ACCOUNTS, useStore } from "./index";
 import type { PricePoint } from "@/lib/priceHistory";
 import type { Account, Holding } from "@/lib/mock";
 import type { Trade, TradeSetup, TradeStatus } from "@/lib/trades";
@@ -29,6 +29,15 @@ export const useAccountById = (id: string | undefined): Account | undefined =>
   useStore((s) => (id ? s.accounts.find((a) => a.id === id) : undefined));
 export const useWeeklyPnl = () => useStore((s) => s.weeklyPnl);
 
+// ---------- account scope + CRUD ----------
+
+export const useSelectedAccountId = (): string =>
+  useStore((s) => s.selectedAccountId);
+export const useSetSelectedAccount = () => useStore((s) => s.setSelectedAccount);
+export const useAddAccount = () => useStore((s) => s.addAccount);
+export const useUpdateAccount = () => useStore((s) => s.updateAccount);
+export const useRemoveAccount = () => useStore((s) => s.removeAccount);
+
 export const usePriceStatus = (symbol: string) =>
   useStore((s) => s.prices[symbol]?.status ?? "idle");
 
@@ -42,6 +51,21 @@ export const useLatestPrice = (symbol: string): number | null =>
     const pts = s.prices[symbol]?.points;
     return pts && pts.length > 0 ? pts[pts.length - 1]!.value : null;
   });
+
+/**
+ * Per-unit price for a holding, in cents. Prefers the live Yahoo close;
+ * falls back to the broker's last mark (`lastPriceCents`) for instruments
+ * with no Yahoo source (options, futures). null when neither is available.
+ */
+function unitPriceCentsFor(
+  h: Holding,
+  prices: Record<string, { points?: PricePoint[] }>,
+): number | null {
+  const pts = prices[h.symbol]?.points;
+  const live = pts && pts.length > 0 ? pts[pts.length - 1]!.value : null;
+  if (live != null) return Math.round(live * 100);
+  return h.lastPriceCents ?? null;
+}
 
 /** Returns dollars (not cents) for math; convert at the render boundary. */
 function refPriceFor(points: PricePoint[], period: DeltaPeriod): number | null {
@@ -79,19 +103,19 @@ export const useHoldingDelta = (
 export const useHoldingValueCents = (symbol: string): number | null =>
   useStore((s) => {
     const h = s.holdings.find((x) => x.symbol === symbol);
-    const pts = s.prices[symbol]?.points;
-    const last = pts && pts.length > 0 ? pts[pts.length - 1]!.value : null;
-    if (!h || last == null) return null;
-    return Math.round(h.qty * last * 100);
+    if (!h) return null;
+    const unit = unitPriceCentsFor(h, s.prices);
+    if (unit == null) return null;
+    return Math.round(h.qty * unit);
   });
 
 export const useUnrealizedCents = (symbol: string): number | null =>
   useStore((s) => {
     const h = s.holdings.find((x) => x.symbol === symbol);
-    const pts = s.prices[symbol]?.points;
-    const last = pts && pts.length > 0 ? pts[pts.length - 1]!.value : null;
-    if (!h || last == null) return null;
-    const value = Math.round(h.qty * last * 100);
+    if (!h) return null;
+    const unit = unitPriceCentsFor(h, s.prices);
+    if (unit == null) return null;
+    const value = Math.round(h.qty * unit);
     const basis = h.qty * h.avgCostCents;
     return value - basis;
   });
@@ -99,31 +123,30 @@ export const useUnrealizedCents = (symbol: string): number | null =>
 // ---------- account aggregates ----------
 
 /**
- * Account market value (sum of holding values for that account name + cash).
+ * Account market value (sum of holding values for that account + cash).
  * Returns null if any holding in the account is missing a price — we'd
  * rather show "—" than a misleading partial total.
  */
-export const useAccountValueCents = (accountName: string): number | null =>
+export const useAccountValueCents = (accountId: string): number | null =>
   useStore((s) => {
-    const account = s.accounts.find((a) => a.name === accountName);
+    const account = s.accounts.find((a) => a.id === accountId);
     if (!account) return null;
-    const rows = s.holdings.filter((h) => h.account === accountName);
+    const rows = s.holdings.filter((h) => h.accountId === accountId);
     let total = account.cashCents;
     for (const h of rows) {
-      const pts = s.prices[h.symbol]?.points;
-      const last = pts && pts.length > 0 ? pts[pts.length - 1]!.value : null;
-      if (last == null) return null;
-      total += Math.round(h.qty * last * 100);
+      const unit = unitPriceCentsFor(h, s.prices);
+      if (unit == null) return null;
+      total += Math.round(h.qty * unit);
     }
     return total;
   });
 
 export const useAccountDeltaCents = (
-  accountName: string,
+  accountId: string,
   period: DeltaPeriod,
 ): number | null =>
   useStore((s) => {
-    const rows = s.holdings.filter((h) => h.account === accountName);
+    const rows = s.holdings.filter((h) => h.accountId === accountId);
     let total = 0;
     for (const h of rows) {
       const pts = s.prices[h.symbol]?.points;
@@ -136,6 +159,30 @@ export const useAccountDeltaCents = (
     return total;
   });
 
+/**
+ * Rate-of-return headline: derived value vs. net contributions.
+ * `gainCents = value − contributions`; `returnPct = gain / contributions`.
+ * Returns null until the account's value is fully priced. This — NOT the
+ * sum of realized closed trades — is the account's headline number.
+ */
+export type ReturnStat = { gainCents: number; returnPct: number | null };
+
+// NOTE: build the return object via useMemo over primitive selectors — never
+// inside a useStore selector. Returning a fresh object from the store selector
+// breaks useSyncExternalStore's identity check and infinite-loops.
+export const useAccountReturn = (accountId: string): ReturnStat | null => {
+  const value = useAccountValueCents(accountId);
+  const account = useAccountById(accountId);
+  return useMemo(() => {
+    if (account == null || value == null) return null;
+    const contrib = account.netContributionsCents;
+    return {
+      gainCents: value - contrib,
+      returnPct: contrib > 0 ? (value - contrib) / contrib : null,
+    };
+  }, [value, account]);
+};
+
 // ---------- portfolio totals ----------
 
 export const usePortfolioValueCents = (): number | null =>
@@ -143,10 +190,9 @@ export const usePortfolioValueCents = (): number | null =>
     let total = 0;
     for (const a of s.accounts) total += a.cashCents;
     for (const h of s.holdings) {
-      const pts = s.prices[h.symbol]?.points;
-      const last = pts && pts.length > 0 ? pts[pts.length - 1]!.value : null;
-      if (last == null) return null;
-      total += Math.round(h.qty * last * 100);
+      const unit = unitPriceCentsFor(h, s.prices);
+      if (unit == null) return null;
+      total += Math.round(h.qty * unit);
     }
     return total;
   });
@@ -165,6 +211,24 @@ export const usePortfolioDeltaCents = (period: DeltaPeriod): number | null =>
     return total;
   });
 
+/** Sum of every account's net contributions — the portfolio cost basis. */
+export const usePortfolioContributionsCents = (): number =>
+  useStore((s) => s.accounts.reduce((a, acc) => a + acc.netContributionsCents, 0));
+
+/** Portfolio rate-of-return: total derived value vs. total contributions.
+ *  Reconciles by construction — value is Σ per-account derived values. */
+export const usePortfolioReturn = (): ReturnStat | null => {
+  const value = usePortfolioValueCents();
+  const contrib = usePortfolioContributionsCents();
+  return useMemo(() => {
+    if (value == null) return null;
+    return {
+      gainCents: value - contrib,
+      returnPct: contrib > 0 ? (value - contrib) / contrib : null,
+    };
+  }, [value, contrib]);
+};
+
 export type ValuePoint = { time: string; valueCents: number };
 
 /**
@@ -182,13 +246,23 @@ function buildValueSeries(
 ): ValuePoint[] {
   if (rows.length === 0) return [];
   const legs: { qty: number; byDate: Map<string, number> }[] = [];
+  // Holdings with no price history but a broker mark (options/futures) get a
+  // constant contribution across the whole curve — we lack their history.
+  let flatCents = 0;
   for (const h of rows) {
     const pts = prices[h.symbol]?.points;
-    if (!pts || pts.length === 0) return []; // wait for full coverage
-    const byDate = new Map<string, number>();
-    for (const p of pts) byDate.set(p.time, p.value);
-    legs.push({ qty: h.qty, byDate });
+    if (pts && pts.length > 0) {
+      const byDate = new Map<string, number>();
+      for (const p of pts) byDate.set(p.time, p.value);
+      legs.push({ qty: h.qty, byDate });
+    } else if (h.lastPriceCents != null) {
+      flatCents += Math.round(h.qty * h.lastPriceCents);
+    } else {
+      return []; // a holding still loading its price — wait for coverage
+    }
   }
+  // No history at all (e.g. an options-only account) — no date axis to draw on.
+  if (legs.length === 0) return [];
   // Anchor the date axis on the holding with the fewest points (shortest
   // history) — every kept date is then guaranteed present in the others.
   let anchor = legs[0]!;
@@ -206,7 +280,12 @@ function buildValueSeries(
       }
       dollars += leg.qty * v;
     }
-    if (ok) out.push({ time: date, valueCents: Math.round(dollars * 100) + cashCents });
+    if (ok) {
+      out.push({
+        time: date,
+        valueCents: Math.round(dollars * 100) + cashCents + flatCents,
+      });
+    }
   }
   out.sort((a, b) => a.time.localeCompare(b.time));
   return out;
@@ -224,16 +303,16 @@ export const usePortfolioValueSeries = (): ValuePoint[] => {
 };
 
 /** Daily value series for a single account (its holdings + its cash). */
-export const useAccountValueSeries = (accountName: string): ValuePoint[] => {
+export const useAccountValueSeries = (accountId: string): ValuePoint[] => {
   const holdings = useStore((s) => s.holdings);
   const accounts = useStore((s) => s.accounts);
   const prices = useStore((s) => s.prices);
   return useMemo(() => {
-    const account = accounts.find((a) => a.name === accountName);
+    const account = accounts.find((a) => a.id === accountId);
     if (!account) return [];
-    const rows = holdings.filter((h) => h.account === accountName);
+    const rows = holdings.filter((h) => h.accountId === accountId);
     return buildValueSeries(rows, account.cashCents, prices);
-  }, [holdings, accounts, prices, accountName]);
+  }, [holdings, accounts, prices, accountId]);
 };
 
 // ---------- actions (re-exported for ergonomic access) ----------
@@ -337,17 +416,25 @@ export const useTrade = (id: string | null): Trade | null =>
 
 // ---------- journal: derived ----------
 
-/** Trades whose closing (or only) execution date falls in the active range. */
-export const useFilteredTrades = (): Trade[] => {
+/** Filter trades to an account scope. ALL (or omitted) = every account. */
+function scopeTrades(trades: Trade[], scope: string): Trade[] {
+  return scope === ALL_ACCOUNTS
+    ? trades
+    : trades.filter((t) => t.accountId === scope);
+}
+
+/** Trades whose closing (or only) execution date falls in the active range,
+ *  optionally scoped to a single account. */
+export const useFilteredTrades = (scope: string = ALL_ACCOUNTS): Trade[] => {
   const trades = useStore((s) => s.trades);
   const journalRange = useStore((s) => s.journalRange);
   return useMemo(() => {
     const range = rangeFor(journalRange);
-    return trades.filter((t) => {
+    return scopeTrades(trades, scope).filter((t) => {
       const key = tradeDateKey(t);
       return key === "" ? false : inRange(key, range);
     });
-  }, [trades, journalRange]);
+  }, [trades, journalRange, scope]);
 };
 
 export type JournalStats = {
@@ -369,8 +456,8 @@ export type JournalStats = {
   cumulativeSeries: { at: string; cumulativeCents: number }[];
 };
 
-export const useTradeStats = (): JournalStats => {
-  const trades = useFilteredTrades();
+export const useTradeStats = (scope: string = ALL_ACCOUNTS): JournalStats => {
+  const trades = useFilteredTrades(scope);
   return useMemo(() => computeStats(trades), [trades]);
 };
 
@@ -431,12 +518,17 @@ function computeStats(trades: Trade[]): JournalStats {
   };
 }
 
-/** All trades whose closing date matches the given ISO date (YYYY-MM-DD). */
-export const useDayTrades = (dateKey: string): Trade[] => {
+/** All trades whose closing date matches the given ISO date (YYYY-MM-DD),
+ *  optionally scoped to a single account. */
+export const useDayTrades = (
+  dateKey: string,
+  scope: string = ALL_ACCOUNTS,
+): Trade[] => {
   const trades = useStore((s) => s.trades);
   return useMemo(
-    () => trades.filter((t) => tradeDateKey(t) === dateKey),
-    [trades, dateKey],
+    () =>
+      scopeTrades(trades, scope).filter((t) => tradeDateKey(t) === dateKey),
+    [trades, dateKey, scope],
   );
 };
 
@@ -463,7 +555,10 @@ export type MonthStats = {
  * their close-date (or only execution date if still open). Return % is
  * capital-weighted: sum of realized P/L divided by sum of entry capital.
  */
-export const useMonthStats = (monthIso: string): MonthStats => {
+export const useMonthStats = (
+  monthIso: string,
+  scope: string = ALL_ACCOUNTS,
+): MonthStats => {
   const trades = useStore((s) => s.trades);
   return useMemo(() => {
     const yyyymm = monthIso.slice(0, 7);
@@ -473,7 +568,7 @@ export const useMonthStats = (monthIso: string): MonthStats => {
     let losses = 0;
     let open = 0;
     let count = 0;
-    for (const t of trades) {
+    for (const t of scopeTrades(trades, scope)) {
       const key = tradeDateKey(t);
       if (key === "" || !key.startsWith(yyyymm)) continue;
       count++;
@@ -495,15 +590,18 @@ export const useMonthStats = (monthIso: string): MonthStats => {
       open,
       trades: count,
     };
-  }, [trades, monthIso]);
+  }, [trades, monthIso, scope]);
 };
 
-/** Per-day P/L summary keyed by ISO date — for the calendar grid. */
-export const useTradesByDay = (): Map<string, DaySummary> => {
+/** Per-day P/L summary keyed by ISO date — for the calendar grid,
+ *  optionally scoped to a single account. */
+export const useTradesByDay = (
+  scope: string = ALL_ACCOUNTS,
+): Map<string, DaySummary> => {
   const trades = useStore((s) => s.trades);
   return useMemo(() => {
     const out = new Map<string, DaySummary>();
-    for (const t of trades) {
+    for (const t of scopeTrades(trades, scope)) {
       const key = tradeDateKey(t);
       if (key === "") continue;
       const tot = deriveTotals(t);
@@ -526,5 +624,5 @@ export const useTradesByDay = (): Map<string, DaySummary> => {
       out.set(key, cur);
     }
     return out;
-  }, [trades]);
+  }, [trades, scope]);
 };

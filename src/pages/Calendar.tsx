@@ -6,6 +6,7 @@ import {
   useCalendarMonth,
   useDayTrades,
   useMonthStats,
+  useSelectedAccountId,
   useSetCalendarMonth,
   useTradesByDay,
 } from "@/store/selectors";
@@ -69,10 +70,11 @@ function buildWeeks(monthIso: string): WeekRow[] {
 }
 
 export function Calendar() {
+  const scope = useSelectedAccountId();
   const monthIso = useCalendarMonth();
   const setMonthIso = useSetCalendarMonth();
-  const tradesByDay = useTradesByDay();
-  const monthStats = useMonthStats(monthIso);
+  const tradesByDay = useTradesByDay(scope);
+  const monthStats = useMonthStats(monthIso, scope);
   const [openDayKey, setOpenDayKey] = useState<string | null>(null);
 
   const weeks = useMemo(() => buildWeeks(monthIso), [monthIso]);
@@ -338,7 +340,8 @@ function DayCell({
 }
 
 function DayPanel({ dateKey, onClose }: { dateKey: string; onClose: () => void }) {
-  const trades = useDayTrades(dateKey);
+  const scope = useSelectedAccountId();
+  const trades = useDayTrades(dateKey, scope);
   const [viewTradeId, setViewTradeId] = useState<string | null>(null);
 
   const date = new Date(`${dateKey}T00:00:00`);

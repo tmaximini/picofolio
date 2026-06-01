@@ -12,8 +12,8 @@ const TIPS = {
   pnl: "Sum of realized P/L across all closed trades in the selected range.",
 } as const;
 
-export function JournalStats() {
-  const stats = useTradeStats();
+export function JournalStats({ scope }: { scope?: string }) {
+  const stats = useTradeStats(scope);
   const pnlTone = toneOf(stats.pnlCents);
   const closed = stats.wins + stats.losses;
 

@@ -26,9 +26,10 @@ const COMMON_SYMBOLS: ReadonlyArray<{ symbol: string; name: string }> = [
 
 const NAV_TARGETS: ReadonlyArray<{ path: string; label: string; shortcut?: string }> = [
   { path: "/", label: "Go to Overview", shortcut: "g o" },
-  { path: "/trading", label: "Go to Trading Journal", shortcut: "g j" },
+  { path: "/activity", label: "Go to Activity", shortcut: "g a" },
   { path: "/calendar", label: "Go to Calendar", shortcut: "g c" },
   { path: "/holdings", label: "Go to Holdings", shortcut: "g h" },
+  { path: "/performance", label: "Go to Performance" },
   { path: "/settings", label: "Go to Settings", shortcut: "g s" },
 ];
 

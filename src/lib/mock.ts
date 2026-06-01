@@ -5,14 +5,28 @@
  *
  * Note: pre-derived fields (value, day %, week %) were removed —
  * those now compute from holdings + prices via store selectors.
+ *
+ * Accounts are first-class abstractions: user-created, renameable,
+ * colorable, with an optional 1:1 IBKR connection. There are no fixed
+ * "trading"/"long-term" kinds — every account can hold and trade.
+ * Account VALUE is always derived (positions × price + cash); the
+ * headline performance number is a rate-of-return vs. net contributions.
  */
 
 export type Account = {
   id: string;
   name: string;
-  kind: "trading" | "long-term";
+  /** Identity accent shown as the switcher/stat dot. Not gain/loss language. */
+  color: string;
   /** Static seed for now; derived from holdings + cash once prices land. */
   cashCents: number;
+  /** Net deposits − withdrawals. Manual for now; basis for rate-of-return. */
+  netContributionsCents: number;
+  /** Optional 1:1 link to an IbkrConnection (manual-only accounts omit it). */
+  flexConnectionId?: string;
+  /** ISO 8601 UTC. */
+  createdAt: string;
+  updatedAt: string;
   /** Provenance — lets us distinguish seeded demo data from real entries. */
   source?: "demo" | "manual" | "ibkr";
 };
@@ -20,10 +34,13 @@ export type Account = {
 export type Holding = {
   symbol: string;
   name: string;
-  /** Account NAME (matches Account.name). Real model will use account id. */
-  account: string;
+  /** Stable Account.id this position belongs to. */
+  accountId: string;
   qty: number;
   avgCostCents: number;
+  /** Broker's last mark price per unit, in cents. Fallback for instruments
+   *  with no live Yahoo source (options, futures). Optional. */
+  lastPriceCents?: number;
   source?: "demo" | "manual" | "ibkr";
 };
 
@@ -36,24 +53,72 @@ export type WeekBar = {
 
 // Trading positions + cash are *derived* from mockTrades so the journal,
 // holdings, and cash all tie out to the same set of executions.
-import { tradingCashCents, tradingHoldingsSeed } from "./mockTrades";
+import { STARTING_CASH_CENTS, tradingCashCents, tradingHoldingsSeed } from "./mockTrades";
 
-export const accountsSeed: Account[] = [
-  { id: "U-trade",     name: "Trading",   kind: "trading",   cashCents: tradingCashCents, source: "demo" },
-  { id: "U-long-term", name: "Long-Term", kind: "long-term", cashCents:    4_000_00,      source: "demo" },
-];
+/** Seeded account identity colors. Deliberately NOT gain-green / loss-red —
+ *  those belong to the P&L language. Amber = the active trading sleeve,
+ *  violet = the steady long-term sleeve. */
+export const ACCOUNT_TRADING_COLOR = "#D9A86C";
+export const ACCOUNT_LONG_TERM_COLOR = "#7D77C3";
+
+/** Palette offered in the account create/edit form. */
+export const ACCOUNT_COLORS = [
+  "#D9A86C", // amber
+  "#7D77C3", // violet
+  "#6BCB97", // sage
+  "#5FA8D3", // sky
+  "#E5746B", // terracotta
+  "#C9A227", // gold
+  "#9C8FB0", // mauve
+  "#5FB8A8", // teal
+] as const;
+
+const SEED_TS = "2026-01-01T00:00:00Z";
 
 // Long-Term sized to ~65% of the portfolio against a Trading account
 // that carries real weight (~35%). A believable barbell — the trading
 // book is small enough to be the active sleeve, big enough that the
 // Weekly P&L and Trading stat card aren't visualizing a rounding error.
+const LONG_TERM_CASH_CENTS = 4_000_00;
+
 export const holdingsSeed: Holding[] = [
   ...tradingHoldingsSeed,
-  { symbol: "AAPL",  name: "Apple Inc",           account: "Long-Term", qty: 370, avgCostCents: 168_22, source: "demo" },
-  { symbol: "MSFT",  name: "Microsoft Corp",      account: "Long-Term", qty: 210, avgCostCents: 322_18, source: "demo" },
-  { symbol: "TSM",   name: "Taiwan Semi",         account: "Long-Term", qty: 220, avgCostCents: 142_88, source: "demo" },
-  { symbol: "ASML",  name: "ASML Holding",        account: "Long-Term", qty:  36, avgCostCents: 612_44, source: "demo" },
-  { symbol: "BRK.B", name: "Berkshire Hathaway",  account: "Long-Term", qty: 150, avgCostCents: 388_10, source: "demo" },
+  { symbol: "AAPL",  name: "Apple Inc",           accountId: "U-long-term", qty: 370, avgCostCents: 168_22, source: "demo" },
+  { symbol: "MSFT",  name: "Microsoft Corp",      accountId: "U-long-term", qty: 210, avgCostCents: 322_18, source: "demo" },
+  { symbol: "TSM",   name: "Taiwan Semi",         accountId: "U-long-term", qty: 220, avgCostCents: 142_88, source: "demo" },
+  { symbol: "ASML",  name: "ASML Holding",        accountId: "U-long-term", qty:  36, avgCostCents: 612_44, source: "demo" },
+  { symbol: "BRK.B", name: "Berkshire Hathaway",  accountId: "U-long-term", qty: 150, avgCostCents: 388_10, source: "demo" },
+];
+
+// Net contributions = what was put in. Trading ≈ starting cash; long-term ≈
+// cost basis of its positions + remaining cash. Derived value drifts above
+// these (positive expectancy / unrealized gains) so the demo shows a
+// believable positive rate-of-return that reconciles with the holdings.
+const longTermBasisCents = holdingsSeed
+  .filter((h) => h.accountId === "U-long-term")
+  .reduce((a, h) => a + h.qty * h.avgCostCents, 0);
+
+export const accountsSeed: Account[] = [
+  {
+    id: "U-trade",
+    name: "Trading",
+    color: ACCOUNT_TRADING_COLOR,
+    cashCents: tradingCashCents,
+    netContributionsCents: STARTING_CASH_CENTS,
+    createdAt: SEED_TS,
+    updatedAt: SEED_TS,
+    source: "demo",
+  },
+  {
+    id: "U-long-term",
+    name: "Long-Term",
+    color: ACCOUNT_LONG_TERM_COLOR,
+    cashCents: LONG_TERM_CASH_CENTS,
+    netContributionsCents: longTermBasisCents + LONG_TERM_CASH_CENTS,
+    createdAt: SEED_TS,
+    updatedAt: SEED_TS,
+    source: "demo",
+  },
 ];
 
 export const weeklyPnlSeed: WeekBar[] = [

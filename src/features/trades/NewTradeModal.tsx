@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import { useAddTrade } from "@/store/selectors";
+import { useAccounts, useAddTrade, useSelectedAccountId } from "@/store/selectors";
+import { ALL_ACCOUNTS } from "@/store";
 import type { Trade } from "@/lib/trades";
 import { TradeForm } from "./TradeForm";
 
@@ -13,6 +14,14 @@ type NewTradeModalProps = {
 export function NewTradeModal({ onClose, initialSymbol }: NewTradeModalProps) {
   const [tab, setTab] = useState<"general" | "journal">("general");
   const addTrade = useAddTrade();
+  const accounts = useAccounts();
+  const selectedAccountId = useSelectedAccountId();
+  // New trades land in the active account; in the "All Accounts" roll-up
+  // fall back to the first account so the trade always has a home.
+  const targetAccountId =
+    selectedAccountId !== ALL_ACCOUNTS
+      ? selectedAccountId
+      : accounts[0]?.id ?? "";
 
   return createPortal(
     <div className="modalBackdrop" onClick={onClose}>
@@ -37,7 +46,7 @@ export function NewTradeModal({ onClose, initialSymbol }: NewTradeModalProps) {
           onSubmit={(data) => {
             const trade: Trade = {
               id: `t-${Math.random().toString(36).slice(2, 10)}`,
-              account: "Trading",
+              accountId: targetAccountId,
               symbol: data.symbol,
               market: data.market,
               side: data.side,

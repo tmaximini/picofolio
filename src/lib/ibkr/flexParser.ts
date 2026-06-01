@@ -42,10 +42,28 @@ export type ParsedExecution = {
   openClose: "O" | "C" | "";
 };
 
+/** A current open position from the Flex <OpenPositions> section. */
+export type ParsedPosition = {
+  symbol: string;
+  market: Market;
+  accountId: string;
+  /** Signed share/contract count (negative = short). */
+  qty: number;
+  /** Average cost per share/contract, in cents. */
+  avgCostCents: number;
+  /** IBKR's last mark price per unit, in cents. Used to value instruments
+   *  with no Yahoo source (options, futures). 0 if not reported. */
+  markPriceCents: number;
+};
+
 export type FlexParseResult = {
   trades: Trade[];
   /** Underlying executions in document order — useful for debugging or future re-grouping. */
   executions: ParsedExecution[];
+  /** Current open positions (from <OpenPositions>), if the query includes them. */
+  positions: ParsedPosition[];
+  /** Base-currency cash (from <CashReport> BASE_SUMMARY), in cents. 0 if absent. */
+  cashCents: number;
   warnings: string[];
   accountIds: string[];
 };
@@ -159,6 +177,60 @@ function parseTradeElement(el: Element, warnings: string[]): ParsedExecution | n
     feeCents,
     openClose,
   };
+}
+
+/** Parse the <OpenPositions> section into current positions. */
+function parseOpenPositions(doc: Document, warnings: string[]): ParsedPosition[] {
+  const els = Array.from(doc.getElementsByTagName("OpenPosition"));
+  const out: ParsedPosition[] = [];
+  for (const el of els) {
+    const symbol = el.getAttribute("symbol") ?? "";
+    if (!symbol) continue;
+    const qty = parseFloat(el.getAttribute("position") ?? "0");
+    if (!Number.isFinite(qty) || qty === 0) continue;
+
+    // Per-share figures only — the journal model (qty × price) ignores the
+    // option contract multiplier, and so does IBKR's costBasisPrice/markPrice.
+    // The *Money / positionValue fields fold the multiplier in, so we avoid
+    // them here to keep cost basis and mark on the same scale.
+    let avgCostCents = dollarsStringToCents(el.getAttribute("costBasisPrice"));
+    if (avgCostCents <= 0) {
+      avgCostCents = dollarsStringToCents(el.getAttribute("openPrice"));
+    }
+
+    const assetCategoryRaw = (el.getAttribute("assetCategory") ?? "STK").toUpperCase();
+    const market = ASSET_CATEGORY_MAP[assetCategoryRaw] ?? "STOCK";
+    const accountId = el.getAttribute("accountId") ?? "";
+
+    // Last mark price per share/contract (per-share, multiplier excluded).
+    const markPriceCents = dollarsStringToCents(el.getAttribute("markPrice"));
+
+    out.push({ symbol, market, accountId, qty, avgCostCents, markPriceCents });
+  }
+  if (els.length > 0 && out.length === 0) {
+    warnings.push("Open positions section had no usable rows.");
+  }
+  return out;
+}
+
+/**
+ * Parse base-currency cash from the <CashReport> section. Prefers the
+ * BASE_SUMMARY row (aggregated across currencies); falls back to a single
+ * currency row. Returns 0 if the section isn't in the query.
+ */
+function parseCashCents(doc: Document): number {
+  const rows = Array.from(doc.getElementsByTagName("CashReportCurrency"));
+  if (rows.length === 0) return 0;
+  const pick = (el: Element) =>
+    dollarsStringToCents(
+      el.getAttribute("endingCash") ?? el.getAttribute("endingSettledCash"),
+    );
+  const base = rows.find(
+    (r) => (r.getAttribute("currency") ?? "").toUpperCase() === "BASE_SUMMARY",
+  );
+  if (base) return pick(base);
+  // Single-currency account: use the sole row.
+  return rows.length === 1 ? pick(rows[0]!) : 0;
 }
 
 /**
@@ -276,6 +348,42 @@ function coalesceByOrderId(bucket: ParsedExecution[]): TradeExecution[] {
   for (const ex of standalone) out.push(toTradeExecution(ex));
 
   out.sort((a, b) => a.at.localeCompare(b.at));
+  return mergeSamePriceTime(out);
+}
+
+/**
+ * Second coalescing pass: collapse executions that share the same action,
+ * price, and minute into one line — partial fills that IBKR reports as
+ * separate rows with different (or empty) order ids. Qty and fees sum; the
+ * earliest timestamp and price are kept.
+ */
+function mergeSamePriceTime(execs: TradeExecution[]): TradeExecution[] {
+  const groups = new Map<string, TradeExecution[]>();
+  for (const ex of execs) {
+    // YYYY-MM-DDTHH:MM — minute granularity (what the UI shows).
+    const minute = ex.at.slice(0, 16);
+    const key = `${ex.action}|${ex.priceCents}|${minute}`;
+    const arr = groups.get(key) ?? [];
+    arr.push(ex);
+    groups.set(key, arr);
+  }
+  const out: TradeExecution[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      out.push(group[0]!);
+      continue;
+    }
+    const sorted = [...group].sort((a, b) => a.at.localeCompare(b.at));
+    out.push({
+      id: sorted[0]!.id,
+      action: sorted[0]!.action,
+      at: sorted[0]!.at,
+      qty: group.reduce((s, e) => s + e.qty, 0),
+      priceCents: sorted[0]!.priceCents,
+      feeCents: group.reduce((s, e) => s + e.feeCents, 0),
+    });
+  }
+  out.sort((a, b) => a.at.localeCompare(b.at));
   return out;
 }
 
@@ -306,7 +414,9 @@ function buildTradeFromBucket(
 
   const trade: Trade = {
     id,
-    account: accountId || "Trading",
+    // Raw IBKR account id as a fallback; the store re-stamps this with the
+    // linked Picofolio Account.id when importing via a connection.
+    accountId: accountId || "",
     symbol,
     market,
     side,
@@ -342,12 +452,10 @@ export function parseFlexXml(xml: string): FlexParseResult {
     throw new Error(`IBKR Flex error ${errCode}: ${errMsg}`);
   }
 
-  const tradeEls = Array.from(doc.getElementsByTagName("Trade"));
-  if (tradeEls.length === 0) {
-    warnings.push("No <Trade> rows found in XML — nothing to import.");
-    return { trades: [], executions: [], warnings, accountIds: [] };
-  }
+  const positions = parseOpenPositions(doc, warnings);
+  const cashCents = parseCashCents(doc);
 
+  const tradeEls = Array.from(doc.getElementsByTagName("Trade"));
   const executions: ParsedExecution[] = [];
   const accountIds = new Set<string>();
   for (const el of tradeEls) {
@@ -357,12 +465,19 @@ export function parseFlexXml(xml: string): FlexParseResult {
       if (parsed.accountId) accountIds.add(parsed.accountId);
     }
   }
+  for (const p of positions) if (p.accountId) accountIds.add(p.accountId);
+
+  if (tradeEls.length === 0 && positions.length === 0) {
+    warnings.push("No <Trade> or <OpenPosition> rows found in XML — nothing to import.");
+  }
 
   const trades = groupIntoTrades(executions);
 
   return {
     trades,
     executions,
+    positions,
+    cashCents,
     warnings,
     accountIds: Array.from(accountIds),
   };

@@ -25,6 +25,9 @@ export type TradeTotals = {
   avgExitCents: number | null;
   /** ms between first opening and last closing exec; null if open. */
   holdMs: number | null;
+  /** ISO timestamp of the first opening execution; null if none. Lets the
+   *  UI show a live hold duration (now − openedAt) for OPEN positions. */
+  openedAt: string | null;
   /** R = return / risk-per-share-from-stop × initial size. null if no stop. */
   rMultiple: number | null;
   /** Derived: OPEN | WIN | LOSS. */
@@ -114,6 +117,7 @@ export function deriveTotals(trade: Trade): TradeTotals {
     avgEntryCents,
     avgExitCents,
     holdMs,
+    openedAt: firstOpeningAt,
     rMultiple,
     status,
   };

@@ -66,7 +66,10 @@ function pickActiveIdx(rng: () => number): number {
   return Math.floor(rng() * ACTIVE_POOL.length);
 }
 
-const STARTING_CASH_CENTS = 130_000_00;
+export const STARTING_CASH_CENTS = 130_000_00;
+
+/** Account.id the demo trading data belongs to. */
+const TRADING_ACCOUNT_ID = "U-trade";
 
 function makeRng(seed: number) {
   let s = seed >>> 0;
@@ -201,7 +204,7 @@ function generateClosedTrade(
 
   return {
     id: uid(rng, "t"),
-    account: "Trading",
+    accountId: TRADING_ACCOUNT_ID,
     symbol: symbol.sym,
     market: "STOCK",
     side,
@@ -234,7 +237,7 @@ function generateOpeningTrade(
 
   const trade: Trade = {
     id: uid(rng, "t"),
-    account: "Trading",
+    accountId: TRADING_ACCOUNT_ID,
     symbol: spec.sym,
     market: "STOCK",
     side: "LONG",
@@ -259,7 +262,7 @@ function generateOpeningTrade(
   const holding: DerivedHolding = {
     symbol: spec.sym,
     name: spec.name,
-    account: "Trading",
+    accountId: TRADING_ACCOUNT_ID,
     qty: spec.qty,
     avgCostCents: priceCents,
     source: "demo",
@@ -271,7 +274,7 @@ function generateOpeningTrade(
 type DerivedHolding = {
   symbol: string;
   name: string;
-  account: string;
+  accountId: string;
   qty: number;
   avgCostCents: number;
   source: "demo";
@@ -335,7 +338,7 @@ export const tradingCashCents = generated.cashCents;
 export const setupsSeed: TradeSetup[] = [
   {
     id: "setup-001",
-    account: "Trading",
+    accountId: "U-trade",
     symbol: "AAP",
     market: "STOCK",
     side: "SHORT",

@@ -4,6 +4,7 @@ import type { Holding } from "@/lib/mock";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
 import {
   useAccountValueCents,
+  useAccounts,
   useHoldingDelta,
   useHoldingValueCents,
   useHoldings,
@@ -13,29 +14,33 @@ import {
 import { HoldingDetail } from "./HoldingDetail";
 
 type HoldingsTableProps = {
-  /** Account NAME (matches Holding.account) to filter rows by. Omit = all accounts. */
-  account?: string;
-  /** When set together with `account`, renders a Cash row + Weight column
+  /** Account.id to filter rows by. Omit = all accounts (shows Account column). */
+  accountId?: string;
+  /** When set together with `accountId`, renders a Cash row + Weight column
    *  so each position's share of total account value is visible. */
   cashCents?: number;
 };
 
-export function HoldingsTable({ account, cashCents }: HoldingsTableProps = {}) {
+export function HoldingsTable({ accountId, cashCents }: HoldingsTableProps = {}) {
   const all = useHoldings();
-  const rows = account ? all.filter((h) => h.account === account) : all;
+  const accounts = useAccounts();
+  const rows = accountId ? all.filter((h) => h.accountId === accountId) : all;
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  // Map account id → name for the (unfiltered) Account column.
+  const accountNameById = new Map(accounts.map((a) => [a.id, a.name]));
 
   // Total value of the filtered account (holdings + cash). Used as the
   // denominator for weight %. Computed here so each row gets a stable
   // shared value rather than recomputing per render.
-  const totalValueCents = useAccountValueCents(account ?? "");
+  const totalValueCents = useAccountValueCents(accountId ?? "");
 
   const toggle = (symbol: string) =>
     setExpanded((cur) => (cur === symbol ? null : symbol));
 
-  const showAccount = !account;
-  const showWeight = Boolean(account);
-  const showCashRow = Boolean(account) && cashCents != null;
+  const showAccount = !accountId;
+  const showWeight = Boolean(accountId);
+  const showCashRow = Boolean(accountId) && cashCents != null;
 
   // Header column count for expand-row colSpan. Both filtered and
   // unfiltered shapes land at 8.
@@ -61,6 +66,7 @@ export function HoldingsTable({ account, cashCents }: HoldingsTableProps = {}) {
           <HoldingRow
             key={r.symbol}
             holding={r}
+            accountName={accountNameById.get(r.accountId) ?? "—"}
             isOpen={expanded === r.symbol}
             onToggle={toggle}
             showAccount={showAccount}
@@ -83,6 +89,7 @@ export function HoldingsTable({ account, cashCents }: HoldingsTableProps = {}) {
 
 type HoldingRowProps = {
   holding: Holding;
+  accountName: string;
   isOpen: boolean;
   onToggle: (symbol: string) => void;
   showAccount: boolean;
@@ -93,6 +100,7 @@ type HoldingRowProps = {
 
 function HoldingRow({
   holding,
+  accountName,
   isOpen,
   onToggle,
   showAccount,
@@ -139,10 +147,16 @@ function HoldingRow({
           </div>
         </td>
         {showAccount && (
-          <td style={{ color: "var(--text-secondary)" }}>{holding.account}</td>
+          <td style={{ color: "var(--text-secondary)" }}>{accountName}</td>
         )}
         <td className="num" style={{ color: "var(--text-secondary)" }}>{holding.qty.toLocaleString("en-US")}</td>
-        <td className="num" style={{ color: "var(--text-secondary)" }}>{latest != null ? formatCents(Math.round(latest * 100)) : <Dash />}</td>
+        <td className="num" style={{ color: "var(--text-secondary)" }}>
+          {(() => {
+            const priceCents =
+              latest != null ? Math.round(latest * 100) : holding.lastPriceCents ?? null;
+            return priceCents != null ? formatCents(priceCents) : <Dash />;
+          })()}
+        </td>
         <td className="num">{value != null ? formatCents(value) : <Dash />}</td>
         {showWeight && (
           <td className="num" style={{ color: "var(--text-secondary)" }}>
