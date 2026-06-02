@@ -620,6 +620,51 @@
 .monthSummary__wl--sep { color: var(--text-tertiary); font-size: var(--text-sm); }
 .monthSummary__wl--l { color: var(--loss); }
 
+/* ---------- MONTH BEST / WORST ---------- */
+
+.monthExtremes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+.monthExtreme {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--highlight-top), var(--shadow-sm);
+}
+.monthExtreme__label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-tertiary);
+}
+.monthExtreme__sym {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.monthExtreme__value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-lg);
+}
+.monthExtreme__value--gain { color: var(--gain); }
+.monthExtreme__value--loss { color: var(--loss); }
+.monthExtreme__value--neutral { color: var(--text-secondary); }
+.monthExtreme__pct {
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
+}
+@media (max-width: 640px) {
+  .monthExtremes { grid-template-columns: 1fr; }
+}
+
 .calendarWeekday {
   font-size: 11px;
   text-transform: uppercase;
@@ -751,6 +796,12 @@
 /* ---------- DAY DETAIL PANEL ----------
    Slide-in panel showing trades for a clicked day. */
 
+.dayPanel__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 8, 10, 0.5);
+  z-index: calc(var(--z-overlay) - 1);
+}
 .dayPanel {
   position: fixed;
   top: 0;
@@ -1129,9 +1180,42 @@
 }
 .tradeView__return--gain { color: var(--gain); }
 .tradeView__return--loss { color: var(--loss); }
+.tradeView__return--neutral { color: var(--text-secondary); }
 .tradeView__pills {
   display: flex;
   gap: var(--space-2);
+  align-items: center;
+}
+.tradeView__pill--open {
+  gap: var(--space-2);
+  letter-spacing: var(--tracking-caps);
+}
+
+/* Subtle "live" pulse — a dot with an expanding, fading ring. Color is set
+   per-instance via --pulse-color (matches the live P/L tone). */
+.livePulse {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: var(--pulse-color, var(--text-secondary));
+}
+.livePulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  background: var(--pulse-color, var(--text-secondary));
+  animation: livePulse 1.8s var(--ease-out) infinite;
+}
+@keyframes livePulse {
+  0% { transform: scale(1); opacity: 0.5; }
+  70% { transform: scale(2.8); opacity: 0; }
+  100% { transform: scale(2.8); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .livePulse::after { animation: none; }
 }
 .tradeView__pill {
   display: inline-flex;
@@ -1253,6 +1337,26 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+}
+.execHold {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+}
+.execHold__line {
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+.execHold__label {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  white-space: nowrap;
 }
 .execList__row {
   display: grid;

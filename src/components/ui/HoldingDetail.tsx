@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Tabs } from "@/components/primitives";
+import { Pencil, Trash2 } from "lucide-react";
+import { Button, Tabs } from "@/components/primitives";
 import type { Holding } from "@/lib/mock";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
 import { sliceRange, type Range } from "@/lib/priceHistory";
@@ -9,8 +10,11 @@ import {
   useLoadPrice,
   usePricePoints,
   usePriceStatus,
+  usePushToast,
+  useRemoveHolding,
   useUnrealizedCents,
 } from "@/store/selectors";
+import { HoldingFormModal } from "./HoldingFormModal";
 import { PriceChart } from "./PriceChart";
 
 type HoldingDetailProps = {
@@ -27,6 +31,9 @@ const RANGES = [
 
 export function HoldingDetail({ holding }: HoldingDetailProps) {
   const [range, setRange] = useState<Range>("3M");
+  const [editing, setEditing] = useState(false);
+  const removeHolding = useRemoveHolding();
+  const pushToast = usePushToast();
 
   const loadPrice = useLoadPrice();
   const status = usePriceStatus(holding.symbol);
@@ -87,7 +94,40 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
         <StatLine label="1M" value={fmtPct(r1m)} tone={pctTone(r1m)} />
         <StatLine label="YTD" value={fmtPct(ytd)} tone={pctTone(ytd)} />
         <StatLine label="1Y" value={fmtPct(r1y)} tone={pctTone(r1y)} />
+
+        <div className="holdingDetail__divider" />
+        <div className="holdingDetail__actions">
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditing(true);
+            }}
+          >
+            <Pencil size={13} strokeWidth={1.75} />
+            <span>Edit</span>
+          </Button>
+          <Button
+            className="btn--danger"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!confirm(`Remove ${holding.symbol} from this account?`)) return;
+              removeHolding(holding.accountId, holding.symbol);
+              pushToast({ kind: "info", title: `${holding.symbol} removed`, duration: 2500 });
+            }}
+          >
+            <Trash2 size={13} strokeWidth={1.75} />
+            <span>Remove</span>
+          </Button>
+        </div>
       </div>
+
+      {editing && (
+        <HoldingFormModal
+          accountId={holding.accountId}
+          holding={holding}
+          onClose={() => setEditing(false)}
+        />
+      )}
     </div>
   );
 }

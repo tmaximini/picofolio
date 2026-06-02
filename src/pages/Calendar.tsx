@@ -1,7 +1,8 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Topbar } from "@/components/layout";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
+import { formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import {
   useCalendarMonth,
   useDayTrades,
@@ -166,10 +167,66 @@ export function Calendar() {
         ))}
       </div>
 
+      <MonthExtremes best={monthStats.best} worst={monthStats.worst} />
+
       {openDayKey && (
         <DayPanel dateKey={openDayKey} onClose={() => setOpenDayKey(null)} />
       )}
     </>
+  );
+}
+
+/** Friendly symbol: options as "MSFT $480 Call", stocks plain. */
+function symLabel(symbol: string): string {
+  const opt = parseOccSymbol(symbol);
+  if (!opt) return symbol;
+  const strike = (opt.strikeCents / 100).toLocaleString("en-US");
+  return `${opt.underlying} $${strike} ${opt.type === "CALL" ? "Call" : "Put"}`;
+}
+
+function MonthExtremes({
+  best,
+  worst,
+}: {
+  best: import("@/store/selectors").MonthExtreme;
+  worst: import("@/store/selectors").MonthExtreme;
+}) {
+  if (!best && !worst) return null;
+  return (
+    <div className="monthExtremes">
+      <ExtremeCard label="Best Trade" extreme={best} />
+      <ExtremeCard label="Worst Trade" extreme={worst} />
+    </div>
+  );
+}
+
+function ExtremeCard({
+  label,
+  extreme,
+}: {
+  label: string;
+  extreme: import("@/store/selectors").MonthExtreme;
+}) {
+  if (!extreme) {
+    return (
+      <div className="monthExtreme">
+        <span className="monthExtreme__label">{label}</span>
+        <span className="monthExtreme__value monthExtreme__value--neutral">—</span>
+      </div>
+    );
+  }
+  const tone = toneOf(extreme.returnCents);
+  return (
+    <div className="monthExtreme">
+      <span className="monthExtreme__label">{label}</span>
+      <span className="monthExtreme__sym">{symLabel(extreme.symbol)}</span>
+      <span className={`monthExtreme__value monthExtreme__value--${tone}`}>
+        {formatCents(extreme.returnCents)}
+        {extreme.returnPct != null && (
+          <span className="monthExtreme__pct">{formatPct(extreme.returnPct)}</span>
+        )}
+      </span>
+    </div>
   );
 }
 
@@ -344,6 +401,16 @@ function DayPanel({ dateKey, onClose }: { dateKey: string; onClose: () => void }
   const trades = useDayTrades(dateKey, scope);
   const [viewTradeId, setViewTradeId] = useState<string | null>(null);
 
+  // Close on Escape (unless a trade modal is open over the drawer).
+  // Outside-click is handled by the backdrop below.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !viewTradeId) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose, viewTradeId]);
+
   const date = new Date(`${dateKey}T00:00:00`);
   const dateLabel = date.toLocaleDateString("en-US", {
     weekday: "long",
@@ -365,7 +432,8 @@ function DayPanel({ dateKey, onClose }: { dateKey: string; onClose: () => void }
 
   return (
     <>
-      <div className="dayPanel dayPanel--open">
+      <div className="dayPanel__backdrop" onClick={onClose} aria-hidden />
+      <div className="dayPanel dayPanel--open" role="dialog" aria-modal="true">
         <div className="dayPanel__head">
           <div>
             <div className="dayPanel__title">{dateLabel}</div>
@@ -407,6 +475,7 @@ function DayPanel({ dateKey, onClose }: { dateKey: string; onClose: () => void }
 function DayTradeCard({ trade, onClick }: { trade: Trade; onClick: () => void }) {
   const tot = deriveTotals(trade);
   const tone = tot.returnCents > 0 ? "gain" : tot.returnCents < 0 ? "loss" : null;
+  const opt = parseOccSymbol(trade.symbol);
   return (
     <button
       type="button"
@@ -428,8 +497,22 @@ function DayTradeCard({ trade, onClick }: { trade: Trade; onClick: () => void })
         color: "var(--text-primary)",
       }}
     >
-      <span style={{ color: "var(--accent)", fontWeight: 500 }}>{trade.symbol}</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
+        <span style={{ color: "var(--accent)", fontWeight: 500 }}>
+          {opt ? opt.underlying : trade.symbol}
+        </span>
+        {opt && (
+          <span
+            className={`tradeTable__marketBadge tradeTable__marketBadge--${
+              opt.type === "CALL" ? "call" : "put"
+            }`}
+          >
+            {opt.type}
+          </span>
+        )}
+      </span>
       <span style={{ color: "var(--text-tertiary)", fontSize: "var(--text-xs)" }}>
+        {opt ? `${formatOptionLabel(opt, { includeType: false })} · ` : ""}
         {trade.side} · {tot.status}
       </span>
       <span

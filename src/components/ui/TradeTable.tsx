@@ -1,5 +1,6 @@
 import { ArrowDownRight, ArrowUpRight, MoreHorizontal, Tag } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import type { Market, Trade } from "@/lib/trades";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
 import {
@@ -10,9 +11,7 @@ import {
 } from "@/lib/tradeMath";
 import { formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import { useLatestPrice, useLoadPrice } from "@/store/selectors";
-
-type SortKey = "date" | "symbol" | "return" | "qty";
-type SortDir = "asc" | "desc";
+import { SortableTable } from "./SortableTable";
 
 type TradeTableProps = {
   trades: Trade[];
@@ -32,40 +31,38 @@ const MARKET_BADGE: Partial<Record<Market, string>> = {
 
 export function TradeTable({ trades, onRowClick, accountNameById }: TradeTableProps) {
   const showAccount = accountNameById != null;
-  const [sortKey, setSortKey] = useState<SortKey>("date");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  const sorted = useMemo(() => {
-    const out = [...trades];
-    const dir = sortDir === "asc" ? 1 : -1;
-    out.sort((a, b) => {
-      const ta = deriveTotals(a);
-      const tb = deriveTotals(b);
-      switch (sortKey) {
-        case "date":
-          return tradeOpenedKey(a).localeCompare(tradeOpenedKey(b)) * dir;
-        case "symbol":
-          return a.symbol.localeCompare(b.symbol) * dir;
-        case "return":
-          return (ta.returnCents - tb.returnCents) * dir;
-        case "qty": {
-          const aq = a.executions.reduce((s, e) => s + e.qty, 0);
-          const bq = b.executions.reduce((s, e) => s + e.qty, 0);
-          return (aq - bq) * dir;
-        }
-      }
-    });
-    return out;
-  }, [trades, sortKey, sortDir]);
-
-  const toggleSort = (k: SortKey) => {
-    if (k === sortKey) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(k);
-      setSortDir(k === "symbol" ? "asc" : "desc");
+  // Headless columns — header row + sorting only; rows render via TradeRow so
+  // every bespoke cell (option badge, status pill, live return) is preserved.
+  const columns = useMemo<ColumnDef<Trade>[]>(() => {
+    const rNum = { meta: { align: "right" as const }, sortUndefined: "last" as const };
+    const num = { meta: { align: "right" as const }, enableSorting: false };
+    const cols: ColumnDef<Trade>[] = [
+      { id: "date", header: "Date", accessorFn: (t) => tradeOpenedKey(t) || tradeDateKey(t) },
+      { id: "symbol", header: "Symbol", accessorFn: (t) => t.symbol },
+    ];
+    if (showAccount) {
+      cols.push({
+        id: "account",
+        header: "Account",
+        accessorFn: (t) => accountNameById!.get(t.accountId) ?? "",
+      });
     }
-  };
+    cols.push(
+      { id: "status", header: "Status", enableSorting: false },
+      { id: "side", header: "Side", enableSorting: false },
+      { id: "qty", header: "Qty", accessorFn: (t) => t.executions.reduce((s, e) => s + e.qty, 0), ...rNum },
+      { id: "entry", header: "Entry", ...num },
+      { id: "exit", header: "Exit", ...num },
+      { id: "entryTotal", header: "Entry $", ...num },
+      { id: "exitTotal", header: "Exit $", ...num },
+      { id: "hold", header: "Hold", ...num },
+      { id: "return", header: "Return", accessorFn: (t) => deriveTotals(t).returnCents, ...rNum },
+      { id: "returnPct", header: "Return %", ...num },
+      { id: "actions", header: "", enableSorting: false },
+    );
+    return cols;
+  }, [showAccount, accountNameById]);
 
   if (trades.length === 0) {
     return (
@@ -76,58 +73,21 @@ export function TradeTable({ trades, onRowClick, accountNameById }: TradeTablePr
   }
 
   return (
-    <table className="table tradeTable">
-      <thead>
-        <tr>
-          <th
-            style={{ cursor: "pointer", userSelect: "none" }}
-            onClick={() => toggleSort("date")}
-          >
-            Date{sortKey === "date" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
-          </th>
-          <th
-            style={{ cursor: "pointer", userSelect: "none" }}
-            onClick={() => toggleSort("symbol")}
-          >
-            Symbol{sortKey === "symbol" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
-          </th>
-          {showAccount && <th>Account</th>}
-          <th>Status</th>
-          <th>Side</th>
-          <th
-            className="num"
-            style={{ cursor: "pointer", userSelect: "none" }}
-            onClick={() => toggleSort("qty")}
-          >
-            Qty{sortKey === "qty" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
-          </th>
-          <th className="num">Entry</th>
-          <th className="num">Exit</th>
-          <th className="num" title="Entry total — qty × avg entry price">Entry $</th>
-          <th className="num" title="Exit total — qty × avg exit price (or current price for open positions)">Exit $</th>
-          <th className="num">Hold</th>
-          <th
-            className="num"
-            style={{ cursor: "pointer", userSelect: "none" }}
-            onClick={() => toggleSort("return")}
-          >
-            Return{sortKey === "return" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
-          </th>
-          <th className="num">Return %</th>
-          <th style={{ width: 44 }} />
-        </tr>
-      </thead>
-      <tbody>
-        {sorted.map((t) => (
-          <TradeRow
-            key={t.id}
-            trade={t}
-            onClick={onRowClick}
-            accountName={showAccount ? accountNameById!.get(t.accountId) ?? "—" : undefined}
-          />
-        ))}
-      </tbody>
-    </table>
+    <SortableTable
+      className="tradeTable"
+      minWidth={1040}
+      data={trades}
+      columns={columns}
+      getRowId={(t) => t.id}
+      initialSorting={[{ id: "date", desc: true }]}
+      renderRow={(t) => (
+        <TradeRow
+          trade={t}
+          onClick={onRowClick}
+          accountName={showAccount ? accountNameById!.get(t.accountId) ?? "—" : undefined}
+        />
+      )}
+    />
   );
 }
 
@@ -151,10 +111,9 @@ function TradeRow({
     .reduce((s, e) => s + e.qty, 0);
 
   // ---- Unrealized P/L for OPEN stock trades ----
-  // Options/futures/forex don't have a Yahoo price source, so we leave
-  // those rows dashed. Stock open positions: fetch latest price and
-  // surface current price + unrealized return in the otherwise-empty
-  // Exit / Ext Tot / Return columns.
+  // Options/futures/forex don't have a Yahoo price source, so we leave those
+  // rows' Return dashed. Open positions never show an Exit (they haven't
+  // exited) — the live price feeds the unrealized Return column only.
   const isOpenStock = tot.status === "OPEN" && trade.market === "STOCK";
   const loadPrice = useLoadPrice();
   const latest = useLatestPrice(trade.symbol);
@@ -164,10 +123,6 @@ function TradeRow({
   }, [isOpenStock, trade.symbol, loadPrice]);
 
   const livePriceCents = latest != null ? Math.round(latest * 100) : null;
-  const liveValueCents =
-    isOpenStock && livePriceCents != null && tot.avgEntryCents != null
-      ? livePriceCents * tot.positionQty
-      : null;
   const sideSign = trade.side === "LONG" ? 1 : -1;
   const unrealCents =
     isOpenStock && livePriceCents != null && tot.avgEntryCents != null
@@ -216,19 +171,11 @@ function TradeRow({
       <td className="num tradeTable__muted">{qty.toLocaleString("en-US")}</td>
       <td className="num tradeTable__muted">{tot.avgEntryCents != null ? formatCents(tot.avgEntryCents) : <Dash />}</td>
       <td className="num tradeTable__muted">
-        {tot.avgExitCents != null
-          ? formatCents(tot.avgExitCents)
-          : livePriceCents != null
-            ? <LiveValue cents={livePriceCents} />
-            : <Dash />}
+        {tot.avgExitCents != null ? formatCents(tot.avgExitCents) : <Dash />}
       </td>
       <td className="num tradeTable__muted">{formatCents(tot.entryTotalCents)}</td>
       <td className="num tradeTable__muted">
-        {tot.exitTotalCents > 0
-          ? formatCents(tot.exitTotalCents)
-          : liveValueCents != null
-            ? <LiveValue cents={liveValueCents} />
-            : <Dash />}
+        {tot.exitTotalCents > 0 ? formatCents(tot.exitTotalCents) : <Dash />}
       </td>
       <td className="num tradeTable__muted">
         {(() => {
@@ -330,16 +277,6 @@ function SymbolCell({
           </span>
         )}
       </span>
-    </span>
-  );
-}
-
-/** A live, non-realized value — italic + tertiary color to distinguish
- *  from realized numbers that come straight from the executions. */
-function LiveValue({ cents }: { cents: number }) {
-  return (
-    <span style={{ color: "var(--text-secondary)", fontStyle: "italic" }}>
-      {formatCents(cents)}
     </span>
   );
 }

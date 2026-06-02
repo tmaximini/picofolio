@@ -135,6 +135,22 @@ type StoreState = {
    *  account record, its name/color, IBKR link, and contributions. */
   resetAccount: (id: string) => void;
 
+  // Holding actions — manual positions + corrections. Identified by
+  // (accountId, symbol), which is unique within an account.
+  addHolding: (input: {
+    accountId: string;
+    symbol: string;
+    name?: string;
+    qty: number;
+    avgCostCents: number;
+  }) => void;
+  updateHolding: (
+    accountId: string,
+    symbol: string,
+    patch: Partial<Pick<Holding, "symbol" | "name" | "qty" | "avgCostCents">>,
+  ) => void;
+  removeHolding: (accountId: string, symbol: string) => void;
+
   // Journal actions
   addTrade: (t: Trade) => void;
   updateTrade: (id: string, patch: Partial<Trade>) => void;
@@ -397,6 +413,65 @@ export const useStore = create<StoreState>()(
           // If it was the active scope, fall back to the roll-up.
           selectedAccountId:
             s.selectedAccountId === id ? ALL_ACCOUNTS : s.selectedAccountId,
+        })),
+
+      // ---------- holdings ----------
+
+      addHolding: (input) =>
+        set((s) => {
+          const exists = s.holdings.some(
+            (h) => h.accountId === input.accountId && h.symbol === input.symbol,
+          );
+          if (exists) {
+            // Same ticker already held — treat as a correction (overwrite).
+            return {
+              holdings: s.holdings.map((h) =>
+                h.accountId === input.accountId && h.symbol === input.symbol
+                  ? {
+                      ...h,
+                      qty: input.qty,
+                      avgCostCents: input.avgCostCents,
+                      name: input.name?.trim() || h.name,
+                    }
+                  : h,
+              ),
+            };
+          }
+          return {
+            holdings: [
+              ...s.holdings,
+              {
+                symbol: input.symbol.trim(),
+                name: input.name?.trim() || input.symbol.trim(),
+                accountId: input.accountId,
+                qty: input.qty,
+                avgCostCents: input.avgCostCents,
+                source: "manual",
+              },
+            ],
+          };
+        }),
+
+      updateHolding: (accountId, symbol, patch) =>
+        set((s) => ({
+          holdings: s.holdings.map((h) =>
+            h.accountId === accountId && h.symbol === symbol
+              ? {
+                  ...h,
+                  ...(patch.symbol != null ? { symbol: patch.symbol.trim() } : {}),
+                  ...(patch.name != null ? { name: patch.name.trim() || h.name } : {}),
+                  ...(patch.qty != null ? { qty: patch.qty } : {}),
+                  ...(patch.avgCostCents != null ? { avgCostCents: patch.avgCostCents } : {}),
+                }
+              : h,
+          ),
+        })),
+
+      removeHolding: (accountId, symbol) =>
+        set((s) => ({
+          holdings: s.holdings.filter(
+            (h) => !(h.accountId === accountId && h.symbol === symbol),
+          ),
         })),
 
       addTrade: (t) =>
