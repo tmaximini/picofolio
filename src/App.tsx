@@ -65,6 +65,18 @@ function AppInner() {
   const [newTradeSymbol, setNewTradeSymbol] = useState<string | undefined>(undefined);
   // undefined = closed; { editId?: string } = open (create when editId absent).
   const [accountModal, setAccountModal] = useState<{ editId?: string } | null>(null);
+  // Sidebar visibility — open on desktop, collapsed (drawer) on small screens.
+  const [navOpen, setNavOpen] = useState(
+    () => typeof window === "undefined" || window.innerWidth > 900,
+  );
+
+  const onNavSelect = (id: string) => {
+    if (id.startsWith("/")) navigate(id);
+    // On small screens the sidebar is a drawer — close it after navigating.
+    if (typeof window !== "undefined" && window.innerWidth <= 900) {
+      setNavOpen(false);
+    }
+  };
 
   const allNavIds = useMemo(
     () => [...PRIMARY.map((p) => p.id), ...SECONDARY.map((p) => p.id)],
@@ -98,6 +110,8 @@ function AppInner() {
 
   return (
     <Shell
+      navOpen={navOpen}
+      onToggleNav={() => setNavOpen((v) => !v)}
       header={
         <AccountSwitcher
           onNewAccount={() => setAccountModal({})}
@@ -107,9 +121,7 @@ function AppInner() {
       sidebar={
         <Sidebar
           active={normalizedActive}
-          onSelect={(id) => {
-            if (id.startsWith("/")) navigate(id);
-          }}
+          onSelect={onNavSelect}
           primary={PRIMARY}
           secondary={SECONDARY}
           footer={

@@ -25,6 +25,48 @@ export const useHolding = (symbol: string): Holding | undefined =>
   useStore((s) => s.holdings.find((h) => h.symbol === symbol));
 
 export const useHoldings = () => useStore((s) => s.holdings);
+
+/** A holding plus its price-derived metrics — precomputed at the table level
+ *  so the data table can sort by value / day / unrealized P&L. */
+export type HoldingMetrics = {
+  holding: Holding;
+  /** Per-unit price in cents (live Yahoo, else broker mark). null = no price. */
+  priceCents: number | null;
+  valueCents: number | null;
+  dayPct: number | null;
+  unrealCents: number | null;
+  unrealPct: number | null;
+};
+
+export const useHoldingsMetrics = (accountId?: string): HoldingMetrics[] => {
+  const holdings = useStore((s) => s.holdings);
+  const prices = useStore((s) => s.prices);
+  return useMemo(() => {
+    const rows = accountId
+      ? holdings.filter((h) => h.accountId === accountId)
+      : holdings;
+    return rows.map((h) => {
+      const priceCents = unitPriceCentsFor(h, prices);
+      const valueCents =
+        priceCents == null
+          ? null
+          : Math.round(h.qty * priceCents * contractMultiplier(h.symbol));
+      const basis = holdingBasisCents(h);
+      const unrealCents = valueCents == null ? null : valueCents - basis;
+      const unrealPct =
+        unrealCents != null && basis > 0 ? unrealCents / basis : null;
+      // 1-day change from the daily series (null for options / short history).
+      const pts = prices[h.symbol]?.points;
+      let dayPct: number | null = null;
+      if (pts && pts.length >= 2) {
+        const last = pts[pts.length - 1]!.value;
+        const prev = pts[pts.length - 2]!.value;
+        if (prev !== 0) dayPct = (last - prev) / prev;
+      }
+      return { holding: h, priceCents, valueCents, dayPct, unrealCents, unrealPct };
+    });
+  }, [holdings, prices, accountId]);
+};
 export const useAccounts = () => useStore((s) => s.accounts);
 export const useAccountById = (id: string | undefined): Account | undefined =>
   useStore((s) => (id ? s.accounts.find((a) => a.id === id) : undefined));
@@ -39,6 +81,9 @@ export const useAddAccount = () => useStore((s) => s.addAccount);
 export const useUpdateAccount = () => useStore((s) => s.updateAccount);
 export const useRemoveAccount = () => useStore((s) => s.removeAccount);
 export const useResetAccount = () => useStore((s) => s.resetAccount);
+export const useAddHolding = () => useStore((s) => s.addHolding);
+export const useUpdateHolding = () => useStore((s) => s.updateHolding);
+export const useRemoveHolding = () => useStore((s) => s.removeHolding);
 
 export const usePriceStatus = (symbol: string) =>
   useStore((s) => s.prices[symbol]?.status ?? "idle");
@@ -556,6 +601,12 @@ export type DaySummary = {
   returnPct: number;
 };
 
+export type MonthExtreme = {
+  symbol: string;
+  returnCents: number;
+  returnPct: number | null;
+} | null;
+
 export type MonthStats = {
   pnlCents: number;
   returnPct: number;
@@ -563,6 +614,9 @@ export type MonthStats = {
   losses: number;
   open: number;
   trades: number;
+  /** Closed trade with the highest / lowest realized P/L this month. */
+  best: MonthExtreme;
+  worst: MonthExtreme;
 };
 
 /**
@@ -583,6 +637,8 @@ export const useMonthStats = (
     let losses = 0;
     let open = 0;
     let count = 0;
+    let best: MonthExtreme = null;
+    let worst: MonthExtreme = null;
     for (const t of scopeTrades(trades, scope)) {
       const key = tradeDateKey(t);
       if (key === "" || !key.startsWith(yyyymm)) continue;
@@ -596,6 +652,9 @@ export const useMonthStats = (
       capitalCents += tot.entryTotalCents;
       if (tot.status === "WIN") wins++;
       else losses++;
+      const extreme = { symbol: t.symbol, returnCents: tot.returnCents, returnPct: tot.returnPct };
+      if (best == null || tot.returnCents > best.returnCents) best = extreme;
+      if (worst == null || tot.returnCents < worst.returnCents) worst = extreme;
     }
     return {
       pnlCents,
@@ -604,6 +663,8 @@ export const useMonthStats = (
       losses,
       open,
       trades: count,
+      best,
+      worst,
     };
   }, [trades, monthIso, scope]);
 };

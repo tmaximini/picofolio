@@ -1,44 +1,35 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import type { Holding } from "@/lib/mock";
-import {
-  contractMultiplier,
-  formatOptionLabel,
-  parseOccSymbol,
-} from "@/lib/optionSymbol";
+import { formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
 import {
   useAccountValueCents,
   useAccounts,
-  useHoldingDelta,
-  useHoldingValueCents,
-  useHoldings,
-  useLatestPrice,
-  useUnrealizedCents,
+  useHoldingsMetrics,
+  type HoldingMetrics,
 } from "@/store/selectors";
 import { HoldingDetail } from "./HoldingDetail";
+import { SortableTable } from "./SortableTable";
 
 type HoldingsTableProps = {
   /** Account.id to filter rows by. Omit = all accounts (shows Account column). */
   accountId?: string;
-  /** When set together with `accountId`, renders a Cash row + Weight column
-   *  so each position's share of total account value is visible. */
+  /** When set together with `accountId`, renders a Cash row + Weight column. */
   cashCents?: number;
 };
 
 export function HoldingsTable({ accountId, cashCents }: HoldingsTableProps = {}) {
-  const all = useHoldings();
+  const metrics = useHoldingsMetrics(accountId);
   const accounts = useAccounts();
-  const rows = accountId ? all.filter((h) => h.accountId === accountId) : all;
+  const totalValueCents = useAccountValueCents(accountId ?? "");
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  // Map account id → name for the (unfiltered) Account column.
-  const accountNameById = new Map(accounts.map((a) => [a.id, a.name]));
-
-  // Total value of the filtered account (holdings + cash). Used as the
-  // denominator for weight %. Computed here so each row gets a stable
-  // shared value rather than recomputing per render.
-  const totalValueCents = useAccountValueCents(accountId ?? "");
+  const accountNameById = useMemo(
+    () => new Map(accounts.map((a) => [a.id, a.name])),
+    [accounts],
+  );
 
   const toggle = (symbol: string) =>
     setExpanded((cur) => (cur === symbol ? null : symbol));
@@ -47,53 +38,86 @@ export function HoldingsTable({ accountId, cashCents }: HoldingsTableProps = {})
   const showWeight = Boolean(accountId);
   const showCashRow = Boolean(accountId) && cashCents != null;
 
-  // Header column count for expand-row colSpan. Both filtered and
-  // unfiltered shapes land at 8.
-  const colSpan = 8;
+  // Headless column model — drives the header row + sorting. The numbers come
+  // from the precomputed metrics so Value/Day/P&L sort correctly.
+  const columns = useMemo<ColumnDef<HoldingMetrics>[]>(() => {
+    const numMeta = { meta: { align: "right" as const }, sortUndefined: "last" as const };
+    const cols: ColumnDef<HoldingMetrics>[] = [
+      { id: "caret", header: "", enableSorting: false },
+      {
+        id: "symbol",
+        header: "Symbol",
+        accessorFn: (m) => parseOccSymbol(m.holding.symbol)?.underlying ?? m.holding.symbol,
+      },
+    ];
+    if (showAccount) {
+      cols.push({
+        id: "account",
+        header: "Account",
+        accessorFn: (m) => accountNameById.get(m.holding.accountId) ?? "",
+      });
+    }
+    cols.push(
+      { id: "qty", header: "Qty", accessorFn: (m) => m.holding.qty, ...numMeta },
+      { id: "price", header: "Price", accessorFn: (m) => m.priceCents ?? undefined, ...numMeta },
+      { id: "value", header: "Value", accessorFn: (m) => m.valueCents ?? undefined, ...numMeta },
+    );
+    if (showWeight) {
+      cols.push({
+        id: "weight",
+        header: "Weight",
+        accessorFn: (m) =>
+          m.valueCents != null && totalValueCents != null && totalValueCents > 0
+            ? m.valueCents / totalValueCents
+            : undefined,
+        ...numMeta,
+      });
+    }
+    cols.push(
+      { id: "day", header: "Day", accessorFn: (m) => m.dayPct ?? undefined, ...numMeta },
+      { id: "unreal", header: "Unreal. P/L", accessorFn: (m) => m.unrealCents ?? undefined, ...numMeta },
+    );
+    return cols;
+  }, [showAccount, showWeight, accountNameById, totalValueCents]);
+
+  const colSpan = columns.length;
 
   return (
-    <table className="table holdings">
-      <thead>
-        <tr>
-          <th style={{ width: 18 }} />
-          <th>Symbol</th>
-          {showAccount && <th>Account</th>}
-          <th className="num">Qty</th>
-          <th className="num">Price</th>
-          <th className="num">Value</th>
-          {showWeight && <th className="num">Weight</th>}
-          <th className="num">Day</th>
-          <th className="num">Unreal. P/L</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => (
-          <HoldingRow
-            key={r.symbol}
-            holding={r}
-            accountName={accountNameById.get(r.accountId) ?? "—"}
-            isOpen={expanded === r.symbol}
-            onToggle={toggle}
-            showAccount={showAccount}
-            showWeight={showWeight}
-            totalValueCents={totalValueCents}
-            colSpan={colSpan}
-          />
-        ))}
-        {showCashRow && (
+    <SortableTable
+      className="holdings"
+      minWidth={760}
+      data={metrics}
+      columns={columns}
+      getRowId={(m) => m.holding.symbol}
+      initialSorting={[{ id: "value", desc: true }]}
+      renderRow={(m) => (
+        <HoldingRow
+          metrics={m}
+          accountName={accountNameById.get(m.holding.accountId) ?? "—"}
+          isOpen={expanded === m.holding.symbol}
+          onToggle={toggle}
+          showAccount={showAccount}
+          showWeight={showWeight}
+          totalValueCents={totalValueCents}
+          colSpan={colSpan}
+        />
+      )}
+      footer={
+        showCashRow ? (
           <CashRow
             cashCents={cashCents!}
             totalValueCents={totalValueCents}
+            showAccount={showAccount}
             showWeight={showWeight}
           />
-        )}
-      </tbody>
-    </table>
+        ) : null
+      }
+    />
   );
 }
 
 type HoldingRowProps = {
-  holding: Holding;
+  metrics: HoldingMetrics;
   accountName: string;
   isOpen: boolean;
   onToggle: (symbol: string) => void;
@@ -104,7 +128,7 @@ type HoldingRowProps = {
 };
 
 function HoldingRow({
-  holding,
+  metrics,
   accountName,
   isOpen,
   onToggle,
@@ -113,22 +137,12 @@ function HoldingRow({
   totalValueCents,
   colSpan,
 }: HoldingRowProps) {
-  const latest = useLatestPrice(holding.symbol);
-  const value = useHoldingValueCents(holding.symbol);
-  const dayDelta = useHoldingDelta(holding.symbol, "1D");
-  const unrealizedCents = useUnrealizedCents(holding.symbol);
+  const { holding, priceCents, valueCents, dayPct, unrealCents, unrealPct } = metrics;
 
   const weight =
-    showWeight && value != null && totalValueCents != null && totalValueCents > 0
-      ? value / totalValueCents
+    showWeight && valueCents != null && totalValueCents != null && totalValueCents > 0
+      ? valueCents / totalValueCents
       : null;
-
-  // Unrealized return relative to cost basis. Both value and basis carry the
-  // option contract multiplier, so it cancels in the ratio — but compute basis
-  // with it too so the percentage is correct.
-  const basisCents = holding.qty * holding.avgCostCents * contractMultiplier(holding.symbol);
-  const unrealizedPct =
-    unrealizedCents != null && basisCents > 0 ? unrealizedCents / basisCents : null;
 
   return (
     <Fragment>
@@ -148,23 +162,19 @@ function HoldingRow({
         )}
         <td className="num" style={{ color: "var(--text-secondary)" }}>{holding.qty.toLocaleString("en-US")}</td>
         <td className="num" style={{ color: "var(--text-secondary)" }}>
-          {(() => {
-            const priceCents =
-              latest != null ? Math.round(latest * 100) : holding.lastPriceCents ?? null;
-            return priceCents != null ? formatCents(priceCents) : <Dash />;
-          })()}
+          {priceCents != null ? formatCents(priceCents) : <Dash />}
         </td>
-        <td className="num">{value != null ? formatCents(value) : <Dash />}</td>
+        <td className="num">{valueCents != null ? formatCents(valueCents) : <Dash />}</td>
         {showWeight && (
           <td className="num" style={{ color: "var(--text-secondary)" }}>
             {weight != null ? formatPct(weight).replace("+", "") : <Dash />}
           </td>
         )}
         <td className="num">
-          <Pct value={dayDelta} />
+          <Pct value={dayPct} />
         </td>
         <td className="num">
-          <UnrealizedCell cents={unrealizedCents} pct={unrealizedPct} />
+          <UnrealizedCell cents={unrealCents} pct={unrealPct} />
         </td>
       </tr>
       <ExpandRow holding={holding} open={isOpen} colSpan={colSpan} />
@@ -212,13 +222,7 @@ function HoldingSymbolCell({ holding }: { holding: Holding }) {
   );
 }
 
-function UnrealizedCell({
-  cents,
-  pct,
-}: {
-  cents: number | null;
-  pct: number | null;
-}) {
+function UnrealizedCell({ cents, pct }: { cents: number | null; pct: number | null }) {
   if (cents == null) return <Dash />;
   const tone = toneOf(cents);
   const color = tone === "neutral" ? "var(--text-primary)" : `var(--${tone})`;
@@ -244,32 +248,28 @@ function UnrealizedCell({
 function CashRow({
   cashCents,
   totalValueCents,
+  showAccount,
   showWeight,
 }: {
   cashCents: number;
   totalValueCents: number | null;
+  showAccount: boolean;
   showWeight: boolean;
 }) {
   const weight =
-    totalValueCents != null && totalValueCents > 0
-      ? cashCents / totalValueCents
-      : null;
+    totalValueCents != null && totalValueCents > 0 ? cashCents / totalValueCents : null;
   return (
     <tr className="holdings__row holdings__row--cash">
       <td />
       <td>
         <div style={{ display: "flex", flexDirection: "column" }}>
           <span style={{ fontWeight: 500 }}>Cash</span>
-          <span
-            style={{
-              color: "var(--text-tertiary)",
-              fontSize: "var(--text-xs)",
-            }}
-          >
+          <span style={{ color: "var(--text-tertiary)", fontSize: "var(--text-xs)" }}>
             Available balance
           </span>
         </div>
       </td>
+      {showAccount && <td />}
       <td className="num">
         <Dash />
       </td>

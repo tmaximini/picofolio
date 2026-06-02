@@ -1,15 +1,21 @@
-import { useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ExternalLink, Pencil, X } from "lucide-react";
-import { formatCents, formatPct } from "@/lib/money";
-import { formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
+import { formatCents, formatPct, toneOf } from "@/lib/money";
+import { contractMultiplier, formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import { coalesceExecutions, deriveTotals, formatHold } from "@/lib/tradeMath";
 import {
   tradingViewChartUrl,
   tradingViewEmbedUrl,
   tradingViewSymbolFor,
 } from "@/lib/tradingview";
-import { useDeleteTrade, useTrade, useUpdateTrade } from "@/store/selectors";
+import {
+  useDeleteTrade,
+  useLatestPrice,
+  useLoadPrice,
+  useTrade,
+  useUpdateTrade,
+} from "@/store/selectors";
 import { TradeForm } from "./TradeForm";
 import { TradeChart } from "./TradeChart";
 
@@ -25,10 +31,18 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [tab, setTab] = useState<"general" | "journal">("general");
   const [tvEmbedded, setTvEmbedded] = useState(false);
+  const latest = useLatestPrice(trade?.symbol ?? "");
+  const loadPrice = useLoadPrice();
 
-  if (!trade) return null;
+  const tot = trade ? deriveTotals(trade) : null;
+  // Live P/L for OPEN stock positions needs a current price — make sure it's
+  // fetched (options have no Yahoo source; they read "live" without a number).
+  const isOpenStock = trade != null && trade.market === "STOCK" && tot?.status === "OPEN";
+  useEffect(() => {
+    if (isOpenStock && trade) loadPrice(trade.symbol);
+  }, [isOpenStock, trade, loadPrice]);
 
-  const tot = deriveTotals(trade);
+  if (!trade || !tot) return null;
 
   if (isEditing) {
     return createPortal(
@@ -70,13 +84,33 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
     );
   }
 
-  const tone =
-    tot.status === "WIN" ? "gain" : tot.status === "LOSS" ? "loss" : null;
-
   const sidePillClass =
     trade.side === "LONG"
       ? "tradeView__pill tradeView__pill--side--long-active"
       : "tradeView__pill tradeView__pill--side--short";
+
+  const opt = trade.market === "OPTION" ? parseOccSymbol(trade.symbol) : null;
+
+  // Headline P/L: live unrealized for an OPEN stock position (current price vs
+  // entry × qty × multiplier), realized for a closed trade.
+  const mult = contractMultiplier(trade.symbol);
+  const livePriceCents = latest != null ? Math.round(latest * 100) : null;
+  const liveUnrealCents =
+    isOpenStock && livePriceCents != null && tot.avgEntryCents != null
+      ? (trade.side === "LONG" ? 1 : -1) *
+        (livePriceCents - tot.avgEntryCents) *
+        tot.positionQty *
+        mult
+      : null;
+  const liveUnrealPct =
+    liveUnrealCents != null && tot.avgEntryCents != null && tot.avgEntryCents > 0
+      ? liveUnrealCents / (tot.avgEntryCents * tot.positionQty * mult)
+      : null;
+
+  const headlineCents =
+    tot.status === "OPEN" ? liveUnrealCents : tot.returnCents !== 0 ? tot.returnCents : null;
+  const headlinePct = tot.status === "OPEN" ? liveUnrealPct : tot.returnPct;
+  const headlineTone = headlineCents == null ? null : toneOf(headlineCents);
 
   return createPortal(
     <div className="modalBackdrop" onClick={onClose}>
@@ -92,20 +126,43 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
           <div className="tradeView__head">
             <div className="tradeView__symGroup">
               <TradeHeaderSymbol trade={trade} />
-              {tot.returnCents !== 0 && tot.status !== "OPEN" && (
-                <span className={`tradeView__return tradeView__return--${tone ?? "gain"}`}>
-                  {formatCents(tot.returnCents)}
-                  {tot.returnPct != null && (
+              {headlineCents != null && (
+                <span className={`tradeView__return tradeView__return--${headlineTone ?? "neutral"}`}>
+                  {formatCents(headlineCents)}
+                  {headlinePct != null && (
                     <span style={{ marginLeft: "var(--space-2)", fontSize: "var(--text-sm)" }}>
-                      {formatPct(tot.returnPct)}
+                      {formatPct(headlinePct)}
                     </span>
                   )}
                 </span>
               )}
             </div>
             <div className="tradeView__pills">
+              {tot.status === "OPEN" && (
+                <span className="tradeView__pill tradeView__pill--open">
+                  <span
+                    className="livePulse"
+                    style={
+                      {
+                        "--pulse-color": headlineTone
+                          ? `var(--${headlineTone})`
+                          : "var(--text-secondary)",
+                      } as React.CSSProperties
+                    }
+                  />
+                  OPEN
+                </span>
+              )}
+              {opt && (
+                <span
+                  className={`tradeTable__marketBadge tradeTable__marketBadge--${
+                    opt.type === "CALL" ? "call" : "put"
+                  }`}
+                >
+                  {opt.type}
+                </span>
+              )}
               <span className="tradeView__pill">{trade.market}</span>
-              <span className="tradeView__pill">{formatHold(tot.holdMs)}</span>
               <span className={sidePillClass}>{trade.side}</span>
             </div>
           </div>
@@ -285,6 +342,21 @@ function ExecutionList({ trade }: { trade: import("@/lib/trades").Trade }) {
   const execs = coalesceExecutions(trade.executions);
   if (execs.length === 0) return null;
 
+  const tot = deriveTotals(trade);
+  const isOpen = tot.status === "OPEN";
+  // Hold spans open → close (closed) or open → now (open).
+  const holdMs =
+    isOpen && tot.openedAt != null
+      ? Date.now() - new Date(tot.openedAt).getTime()
+      : tot.holdMs;
+
+  // Drop the hold marker before the first closing execution (so it sits
+  // between the buy and the sell); for an open trade there's no close, so it
+  // goes after the last row (under the buy).
+  const openingAction = trade.side === "LONG" ? "BUY" : "SELL";
+  const closeIdx = execs.findIndex((e) => e.action !== openingAction);
+  const insertAt = closeIdx === -1 ? execs.length : closeIdx;
+
   const fmtTime = (iso: string) => {
     const d = new Date(iso);
     return d.toLocaleString("en-US", {
@@ -298,23 +370,45 @@ function ExecutionList({ trade }: { trade: import("@/lib/trades").Trade }) {
 
   return (
     <div className="execList">
-      {execs.map((ex) => {
+      {execs.map((ex, i) => {
         const dotClass =
           ex.action === "BUY" ? "execList__dot--buy" : "execList__dot--sell";
         return (
-          <div className="execList__row" key={ex.id}>
-            <span className={`execList__dot ${dotClass}`}>{ex.action[0]}</span>
-            <span className="execList__time">{fmtTime(ex.at)}</span>
-            <span className="execList__action">{ex.action}</span>
-            <span className="execList__qty num">{ex.qty.toLocaleString("en-US")}</span>
-            <span className="execList__at">@</span>
-            <span className="execList__price num">{formatCents(ex.priceCents)}</span>
-            <span className="execList__total num">
-              = {formatCents(ex.qty * ex.priceCents)}
-            </span>
-          </div>
+          <Fragment key={ex.id}>
+            {i === insertAt && holdMs != null && (
+              <HoldMarker ms={holdMs} open={isOpen} />
+            )}
+            <div className="execList__row">
+              <span className={`execList__dot ${dotClass}`}>{ex.action[0]}</span>
+              <span className="execList__time">{fmtTime(ex.at)}</span>
+              <span className="execList__action">{ex.action}</span>
+              <span className="execList__qty num">{ex.qty.toLocaleString("en-US")}</span>
+              <span className="execList__at">@</span>
+              <span className="execList__price num">{formatCents(ex.priceCents)}</span>
+              <span className="execList__total num">
+                = {formatCents(ex.qty * ex.priceCents)}
+              </span>
+            </div>
+          </Fragment>
         );
       })}
+      {insertAt === execs.length && holdMs != null && (
+        <HoldMarker ms={holdMs} open={isOpen} />
+      )}
+    </div>
+  );
+}
+
+/** Thin connector between the entry and exit (or below the entry for open
+ *  positions) showing how long the position was / has been held. */
+function HoldMarker({ ms, open }: { ms: number; open: boolean }) {
+  return (
+    <div className="execHold">
+      <span className="execHold__line" />
+      <span className="execHold__label">
+        {open ? "open" : "held"} {formatHold(ms)}
+      </span>
+      <span className="execHold__line" />
     </div>
   );
 }

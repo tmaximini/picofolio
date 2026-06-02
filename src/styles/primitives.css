@@ -266,6 +266,28 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Horizontal-scroll wrapper for data tables — keeps wide tables usable on
+   narrow screens instead of clipping columns. */
+.tableScroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Sort caret on sortable headers. Reserve space so the header doesn't shift
+   when the arrow appears. */
+.dataTable__sort {
+  display: inline-block;
+  width: 0.9em;
+  margin-left: 2px;
+  color: var(--text-secondary);
+}
+.table th[aria-sort] {
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.table th[aria-sort]:hover {
+  color: var(--text-secondary);
+}
+
 /* ---------- TAB BAR ---------- */
 
 .tabs {

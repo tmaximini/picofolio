@@ -21,6 +21,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import {
   AreaSeries,
+  BaselineSeries,
   ColorType,
   CrosshairMode,
   LineStyle,
@@ -81,7 +82,7 @@ function localDateKey(iso: string): string {
 export function TradeChart({ trade, height = 240 }: TradeChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<"Area"> | null>(null);
+  const seriesRef = useRef<ISeriesApi<"Area"> | ISeriesApi<"Baseline"> | null>(null);
 
   // Decide chart mode based on calendar-day span. Intraday is used not
   // just for same-day trades but for short multi-day spans too — daily
@@ -268,26 +269,50 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
       seriesRef.current = null;
     }
 
-    const sideTone = colorByOutcome(trade);
-    const palette =
-      sideTone === "gain"
-        ? { line: tokens.gain, top: tokens.gainTop, bottom: tokens.gainBottom }
-        : { line: tokens.loss, top: tokens.lossTop, bottom: tokens.lossBottom };
+    // Open trades render as a BASELINE series anchored at the average entry:
+    // the line + fill turn green above your cost and red below it, so an
+    // underwater position reads as underwater at a glance. Closed trades keep
+    // the single outcome color (whole line green for a win, red for a loss).
+    const totals = deriveTotals(trade);
+    const isOpen = totals.positionQty > 0;
+    const entryPrice = totals.avgEntryCents != null ? totals.avgEntryCents / 100 : null;
 
-    const series = chart.addSeries(AreaSeries, {
-      lineColor: palette.line,
-      topColor: palette.top,
-      bottomColor: palette.bottom,
-      lineWidth: 2,
-      // Always surface the most-recent price on the right axis — both the
-      // dashed horizontal line and the axis-label tag. For a closed trade
-      // this is the most recent market close; for an open trade it's live.
-      priceLineVisible: true,
-      lastValueVisible: true,
-      crosshairMarkerBorderColor: palette.line,
-      crosshairMarkerBackgroundColor: "#14161B",
-      crosshairMarkerRadius: 4,
-    });
+    let series: ISeriesApi<"Area"> | ISeriesApi<"Baseline">;
+    if (isOpen && entryPrice != null) {
+      series = chart.addSeries(BaselineSeries, {
+        baseValue: { type: "price", price: entryPrice },
+        topLineColor: tokens.gain,
+        topFillColor1: "rgba(107, 203, 151, 0.20)",
+        topFillColor2: "rgba(107, 203, 151, 0.00)",
+        bottomLineColor: tokens.loss,
+        bottomFillColor1: "rgba(229, 116, 107, 0.00)",
+        bottomFillColor2: "rgba(229, 116, 107, 0.20)",
+        lineWidth: 2,
+        baseLineVisible: false,
+        priceLineVisible: true,
+        lastValueVisible: true,
+        crosshairMarkerBorderColor: tokens.textBright,
+        crosshairMarkerBackgroundColor: "#14161B",
+        crosshairMarkerRadius: 4,
+      });
+    } else {
+      const sideTone = colorByOutcome(trade);
+      const palette =
+        sideTone === "gain"
+          ? { line: tokens.gain, top: tokens.gainTop, bottom: tokens.gainBottom }
+          : { line: tokens.loss, top: tokens.lossTop, bottom: tokens.lossBottom };
+      series = chart.addSeries(AreaSeries, {
+        lineColor: palette.line,
+        topColor: palette.top,
+        bottomColor: palette.bottom,
+        lineWidth: 2,
+        priceLineVisible: true,
+        lastValueVisible: true,
+        crosshairMarkerBorderColor: palette.line,
+        crosshairMarkerBackgroundColor: "#14161B",
+        crosshairMarkerRadius: 4,
+      });
+    }
     series.setData(data);
     seriesRef.current = series;
 

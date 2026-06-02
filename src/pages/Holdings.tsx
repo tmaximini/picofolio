@@ -1,8 +1,8 @@
-import { RefreshCw } from "lucide-react";
-import { useEffect } from "react";
+import { Plus, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Topbar } from "@/components/layout";
 import { Badge, Button, Card, Kbd } from "@/components/primitives";
-import { HoldingsTable } from "@/components/ui";
+import { HoldingFormModal, HoldingsTable } from "@/components/ui";
 import { ALL_ACCOUNTS } from "@/store";
 import {
   useAccountById,
@@ -18,6 +18,7 @@ export function Holdings() {
   const holdings = useHoldings();
   const refreshAll = useRefreshAll();
   const syncing = useSyncing();
+  const [addOpen, setAddOpen] = useState(false);
 
   useEffect(() => {
     refreshAll();
@@ -25,6 +26,7 @@ export function Holdings() {
 
   const isAll = scope === ALL_ACCOUNTS;
   const rows = isAll ? holdings : holdings.filter((h) => h.accountId === scope);
+  const canAdd = !isAll && account != null;
 
   return (
     <>
@@ -32,11 +34,19 @@ export function Holdings() {
         title="Holdings"
         subtitle={isAll ? "All accounts" : (account?.name ?? "Account")}
         actions={
-          <Button onClick={() => refreshAll()} disabled={syncing}>
-            <RefreshCw size={13} strokeWidth={1.75} className={syncing ? "spin" : undefined} />
-            <span>{syncing ? "Syncing…" : "Sync prices"}</span>
-            <Kbd>⌘R</Kbd>
-          </Button>
+          <>
+            {canAdd && (
+              <Button onClick={() => setAddOpen(true)}>
+                <Plus size={13} strokeWidth={2} />
+                <span>Add position</span>
+              </Button>
+            )}
+            <Button onClick={() => refreshAll()} disabled={syncing}>
+              <RefreshCw size={13} strokeWidth={1.75} className={syncing ? "spin" : undefined} />
+              <span>{syncing ? "Syncing…" : "Sync prices"}</span>
+              <Kbd>⌘R</Kbd>
+            </Button>
+          </>
         }
       />
 
@@ -54,6 +64,12 @@ export function Holdings() {
                 ? "Connect an IBKR account or add trades to see holdings here."
                 : `${account?.name ?? "This account"} has no open positions yet.`}
             </div>
+            {canAdd && (
+              <Button onClick={() => setAddOpen(true)}>
+                <Plus size={13} strokeWidth={2} />
+                <span>Add position</span>
+              </Button>
+            )}
           </div>
         </Card>
       ) : (
@@ -64,6 +80,10 @@ export function Holdings() {
             <HoldingsTable accountId={scope} cashCents={account?.cashCents} />
           )}
         </Card>
+      )}
+
+      {addOpen && account && (
+        <HoldingFormModal accountId={account.id} onClose={() => setAddOpen(false)} />
       )}
     </>
   );

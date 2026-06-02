@@ -8,6 +8,49 @@
   grid-template-columns: 220px 1fr;
   min-height: 100vh;
 }
+.app--nav-collapsed {
+  grid-template-columns: 1fr;
+}
+/* Desktop: collapsing just removes the sidebar from the layout. */
+@media (min-width: 901px) {
+  .app--nav-collapsed .sidebar {
+    display: none;
+  }
+}
+
+/* Dim overlay behind the mobile drawer — hidden on desktop. */
+.navScrim {
+  display: none;
+}
+
+/* Small screens: the sidebar becomes an off-canvas drawer. */
+@media (max-width: 900px) {
+  .app,
+  .app--nav-collapsed {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: min(264px, 82vw);
+    transform: translateX(-100%);
+    transition: transform var(--duration-base) var(--ease-out);
+    z-index: var(--z-overlay);
+  }
+  .app:not(.app--nav-collapsed) .sidebar {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+  }
+  .app:not(.app--nav-collapsed) .navScrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(7, 8, 10, 0.5);
+    z-index: calc(var(--z-overlay) - 1);
+  }
+}
 
 /* ---------- SIDEBAR ---------- */
 
@@ -110,9 +153,43 @@
   box-sizing: border-box;
 }
 
-.mainHeader {
+.mainHeaderRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   margin-bottom: var(--space-6);
+}
+.mainHeader {
+  flex: 1;
   max-width: 360px;
+  min-width: 0;
+}
+.navToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--highlight-top);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.navToggle:hover {
+  border-color: var(--border-default);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.navToggle:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
 }
 
 .topbar {
@@ -783,6 +860,16 @@
   height: 1px;
   background: var(--border-subtle);
   margin: var(--space-3) 0 var(--space-1);
+}
+
+.holdingDetail__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.holdingDetail__actions .btn {
+  flex: 1;
+  justify-content: center;
 }
 
 .holdingDetail__row {
