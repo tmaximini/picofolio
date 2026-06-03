@@ -11,7 +11,8 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Topbar } from "@/components/layout";
 import { Button } from "@/components/primitives";
 import { AccountFormModal } from "@/components/ui";
@@ -24,11 +25,13 @@ import {
   useHoldings,
   useIbkrConnections,
   useImportIbkrXml,
+  useMarketDataToken,
   usePushToast,
   useRemoveAccount,
   useRemoveIbkrConnection,
   useResetAccount,
   useResyncIbkrConnection,
+  useSetMarketDataToken,
   useRestoreDemoPortfolio,
   useRestoreDemoTrades,
   useSelectedAccountId,
@@ -129,6 +132,8 @@ export function Settings() {
           </section>
         )}
 
+        <MarketDataCard />
+
         <OrphanConnections />
 
         <GlobalDemoFooter />
@@ -144,6 +149,109 @@ export function Settings() {
         />
       )}
     </>
+  );
+}
+
+// ---------- options pricing (MarketData.app, app-level BYOK token) ----------
+
+function MarketDataCard() {
+  const token = useMarketDataToken();
+  const setToken = useSetMarketDataToken();
+  const pushToast = usePushToast();
+  const [searchParams] = useSearchParams();
+
+  const cardRef = useRef<HTMLElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [show, setShow] = useState(false);
+  const [draft, setDraft] = useState(token ?? "");
+
+  const trimmed = draft.trim();
+  const dirty = trimmed !== (token ?? "");
+
+  // Deep-link target from the "Add token →" hint on an option chart.
+  useEffect(() => {
+    if (searchParams.get("focus") !== "marketdata") return;
+    cardRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    inputRef.current?.focus();
+  }, [searchParams]);
+
+  const onSave = () => {
+    setToken(trimmed || null);
+    pushToast({
+      kind: trimmed ? "success" : "info",
+      title: trimmed ? "MarketData.app token saved" : "Token cleared",
+      duration: 3000,
+    });
+  };
+
+  return (
+    <section className="settingsCard" ref={cardRef}>
+      <div className="settingsCard__head">
+        <div>
+          <h2 className="settingsCard__title">Options pricing</h2>
+          <div className="settingsCard__sub">
+            Optional. A free{" "}
+            <a
+              href="https://www.marketdata.app/"
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "var(--accent)" }}
+            >
+              MarketData.app
+            </a>{" "}
+            token marks your open option positions to market — live mark and a
+            price-history chart. Equities, closed option trades, and everything
+            else work without it. The token never leaves this browser.
+          </div>
+        </div>
+      </div>
+
+      <div className="tradeForm__field" style={{ marginBottom: "var(--space-4)" }}>
+        <label className="tradeForm__label">MarketData.app Token</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 32px", gap: "var(--space-2)" }}>
+          <input
+            ref={inputRef}
+            className="tradeForm__input num"
+            type={show ? "text" : "password"}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="paste your token"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button
+            type="button"
+            className="btn btn--icon"
+            onClick={() => setShow((v) => !v)}
+            title={show ? "Hide" : "Show"}
+          >
+            {show ? (
+              <EyeOff size={13} strokeWidth={1.75} />
+            ) : (
+              <Eye size={13} strokeWidth={1.75} />
+            )}
+          </button>
+        </div>
+      </div>
+
+      <div className="ibkrActions">
+        <Button onClick={onSave} disabled={!dirty}>
+          Save
+        </Button>
+        {token && (
+          <Button
+            className="btn--danger"
+            onClick={() => {
+              setDraft("");
+              setToken(null);
+              pushToast({ kind: "info", title: "Token cleared", duration: 3000 });
+            }}
+          >
+            Clear
+          </Button>
+        )}
+      </div>
+    </section>
   );
 }
 

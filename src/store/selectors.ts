@@ -14,7 +14,7 @@ import type { PricePoint } from "@/lib/priceHistory";
 import type { Account, Holding } from "@/lib/mock";
 import type { Trade, TradeSetup, TradeStatus } from "@/lib/trades";
 import { deriveTotals, tradeDateKey } from "@/lib/tradeMath";
-import { contractMultiplier } from "@/lib/optionSymbol";
+import { contractMultiplier, parseOccSymbol } from "@/lib/optionSymbol";
 import { inRange, rangeFor, type DateRangeKey } from "@/lib/dateRange";
 
 export type DeltaPeriod = "1D" | "1W" | "1M" | "YTD" | "1Y";
@@ -41,12 +41,13 @@ export type HoldingMetrics = {
 export const useHoldingsMetrics = (accountId?: string): HoldingMetrics[] => {
   const holdings = useStore((s) => s.holdings);
   const prices = useStore((s) => s.prices);
+  const optionPrices = useStore((s) => s.optionPrices);
   return useMemo(() => {
     const rows = accountId
       ? holdings.filter((h) => h.accountId === accountId)
       : holdings;
     return rows.map((h) => {
-      const priceCents = unitPriceCentsFor(h, prices);
+      const priceCents = unitPriceCentsFor(h, prices, optionPrices);
       const valueCents =
         priceCents == null
           ? null
@@ -55,8 +56,11 @@ export const useHoldingsMetrics = (accountId?: string): HoldingMetrics[] => {
       const unrealCents = valueCents == null ? null : valueCents - basis;
       const unrealPct =
         unrealCents != null && basis > 0 ? unrealCents / basis : null;
-      // 1-day change from the daily series (null for options / short history).
-      const pts = prices[h.symbol]?.points;
+      // 1-day change from the daily series (options use the MarketData series;
+      // null when history is too short).
+      const pts = parseOccSymbol(h.symbol)
+        ? optionPrices[h.symbol]?.points
+        : prices[h.symbol]?.points;
       let dayPct: number | null = null;
       if (pts && pts.length >= 2) {
         const last = pts[pts.length - 1]!.value;
@@ -65,7 +69,7 @@ export const useHoldingsMetrics = (accountId?: string): HoldingMetrics[] => {
       }
       return { holding: h, priceCents, valueCents, dayPct, unrealCents, unrealPct };
     });
-  }, [holdings, prices, accountId]);
+  }, [holdings, prices, optionPrices, accountId]);
 };
 export const useAccounts = () => useStore((s) => s.accounts);
 export const useAccountById = (id: string | undefined): Account | undefined =>
@@ -91,6 +95,24 @@ export const usePriceStatus = (symbol: string) =>
 export const usePricePoints = (symbol: string): PricePoint[] | null =>
   useStore((s) => s.prices[symbol]?.points ?? null);
 
+// ---------- option pricing (MarketData.app, open positions only) ----------
+
+export const useOptionPriceStatus = (symbol: string) =>
+  useStore((s) => s.optionPrices[symbol]?.status ?? "idle");
+
+export const useOptionPricePoints = (symbol: string): PricePoint[] | null =>
+  useStore((s) => s.optionPrices[symbol]?.points ?? null);
+
+export const useOptionPriceError = (symbol: string) =>
+  useStore((s) => s.optionPrices[symbol]?.errorKind ?? null);
+
+export const useLoadOptionPrice = () => useStore((s) => s.loadOptionPrice);
+
+export const useMarketDataToken = (): string | null =>
+  useStore((s) => s.marketDataToken);
+
+export const useSetMarketDataToken = () => useStore((s) => s.setMarketDataToken);
+
 // ---------- price-derived ----------
 
 export const useLatestPrice = (symbol: string): number | null =>
@@ -100,14 +122,22 @@ export const useLatestPrice = (symbol: string): number | null =>
   });
 
 /**
- * Per-unit price for a holding, in cents. Prefers the live Yahoo close;
- * falls back to the broker's last mark (`lastPriceCents`) for instruments
- * with no Yahoo source (options, futures). null when neither is available.
+ * Per-unit price for a holding, in cents. Options use the MarketData.app live
+ * mark (latest point in `optionPrices`) when available, else the broker's last
+ * mark (`lastPriceCents`). Equities use the live Yahoo close, else `lastPriceCents`.
+ * null when neither is available.
  */
 function unitPriceCentsFor(
   h: Holding,
   prices: Record<string, { points?: PricePoint[] }>,
+  optionPrices?: Record<string, { points?: PricePoint[] }>,
 ): number | null {
+  if (parseOccSymbol(h.symbol)) {
+    const opts = optionPrices?.[h.symbol]?.points;
+    const live = opts && opts.length > 0 ? opts[opts.length - 1]!.value : null;
+    if (live != null) return Math.round(live * 100);
+    return h.lastPriceCents ?? null;
+  }
   const pts = prices[h.symbol]?.points;
   const live = pts && pts.length > 0 ? pts[pts.length - 1]!.value : null;
   if (live != null) return Math.round(live * 100);
@@ -119,8 +149,9 @@ function unitPriceCentsFor(
 function holdingValueCents(
   h: Holding,
   prices: Record<string, { points?: PricePoint[] }>,
+  optionPrices?: Record<string, { points?: PricePoint[] }>,
 ): number | null {
-  const unit = unitPriceCentsFor(h, prices);
+  const unit = unitPriceCentsFor(h, prices, optionPrices);
   if (unit == null) return null;
   return Math.round(h.qty * unit * contractMultiplier(h.symbol));
 }
@@ -154,7 +185,11 @@ export const useHoldingDelta = (
   period: DeltaPeriod,
 ): number | null =>
   useStore((s) => {
-    const pts = s.prices[symbol]?.points;
+    // Options pull their series from the MarketData cache; equities from Yahoo.
+    // Delta is a ratio so the ×100 contract multiplier cancels out.
+    const pts = parseOccSymbol(symbol)
+      ? s.optionPrices[symbol]?.points
+      : s.prices[symbol]?.points;
     if (!pts || pts.length < 2) return null;
     const last = pts[pts.length - 1]!.value;
     const ref = refPriceFor(pts, period);
@@ -167,14 +202,14 @@ export const useHoldingValueCents = (symbol: string): number | null =>
   useStore((s) => {
     const h = s.holdings.find((x) => x.symbol === symbol);
     if (!h) return null;
-    return holdingValueCents(h, s.prices);
+    return holdingValueCents(h, s.prices, s.optionPrices);
   });
 
 export const useUnrealizedCents = (symbol: string): number | null =>
   useStore((s) => {
     const h = s.holdings.find((x) => x.symbol === symbol);
     if (!h) return null;
-    const value = holdingValueCents(h, s.prices);
+    const value = holdingValueCents(h, s.prices, s.optionPrices);
     if (value == null) return null;
     return value - holdingBasisCents(h);
   });
@@ -193,7 +228,7 @@ export const useAccountValueCents = (accountId: string): number | null =>
     const rows = s.holdings.filter((h) => h.accountId === accountId);
     let total = account.cashCents;
     for (const h of rows) {
-      const v = holdingValueCents(h, s.prices);
+      const v = holdingValueCents(h, s.prices, s.optionPrices);
       if (v == null) return null;
       total += v;
     }
@@ -249,7 +284,7 @@ export const usePortfolioValueCents = (): number | null =>
     let total = 0;
     for (const a of s.accounts) total += a.cashCents;
     for (const h of s.holdings) {
-      const v = holdingValueCents(h, s.prices);
+      const v = holdingValueCents(h, s.prices, s.optionPrices);
       if (v == null) return null;
       total += v;
     }
@@ -302,11 +337,14 @@ function buildValueSeries(
   rows: Holding[],
   cashCents: number,
   prices: Record<string, { points?: PricePoint[] }>,
+  optionPrices?: Record<string, { points?: PricePoint[] }>,
 ): ValuePoint[] {
   if (rows.length === 0) return [];
   const legs: { qty: number; byDate: Map<string, number> }[] = [];
-  // Holdings with no price history but a broker mark (options/futures) get a
-  // constant contribution across the whole curve — we lack their history.
+  // Holdings with no equity price history (options/futures) get a constant
+  // contribution across the curve — we don't fold their series into the legs
+  // (the leg sum has no contract multiplier). The constant uses the live
+  // option mark when available, else the broker mark.
   let flatCents = 0;
   for (const h of rows) {
     const pts = prices[h.symbol]?.points;
@@ -314,10 +352,10 @@ function buildValueSeries(
       const byDate = new Map<string, number>();
       for (const p of pts) byDate.set(p.time, p.value);
       legs.push({ qty: h.qty, byDate });
-    } else if (h.lastPriceCents != null) {
-      flatCents += Math.round(h.qty * h.lastPriceCents * contractMultiplier(h.symbol));
     } else {
-      return []; // a holding still loading its price — wait for coverage
+      const unit = unitPriceCentsFor(h, prices, optionPrices);
+      if (unit == null) return []; // still loading a price — wait for coverage
+      flatCents += Math.round(h.qty * unit * contractMultiplier(h.symbol));
     }
   }
   // No history at all (e.g. an options-only account) — no date axis to draw on.
@@ -355,10 +393,11 @@ export const usePortfolioValueSeries = (): ValuePoint[] => {
   const holdings = useStore((s) => s.holdings);
   const accounts = useStore((s) => s.accounts);
   const prices = useStore((s) => s.prices);
+  const optionPrices = useStore((s) => s.optionPrices);
   return useMemo(() => {
     const cashCents = accounts.reduce((a, acc) => a + acc.cashCents, 0);
-    return buildValueSeries(holdings, cashCents, prices);
-  }, [holdings, accounts, prices]);
+    return buildValueSeries(holdings, cashCents, prices, optionPrices);
+  }, [holdings, accounts, prices, optionPrices]);
 };
 
 /** Daily value series for a single account (its holdings + its cash). */
@@ -366,12 +405,13 @@ export const useAccountValueSeries = (accountId: string): ValuePoint[] => {
   const holdings = useStore((s) => s.holdings);
   const accounts = useStore((s) => s.accounts);
   const prices = useStore((s) => s.prices);
+  const optionPrices = useStore((s) => s.optionPrices);
   return useMemo(() => {
     const account = accounts.find((a) => a.id === accountId);
     if (!account) return [];
     const rows = holdings.filter((h) => h.accountId === accountId);
-    return buildValueSeries(rows, account.cashCents, prices);
-  }, [holdings, accounts, prices, accountId]);
+    return buildValueSeries(rows, account.cashCents, prices, optionPrices);
+  }, [holdings, accounts, prices, optionPrices, accountId]);
 };
 
 // ---------- actions (re-exported for ergonomic access) ----------

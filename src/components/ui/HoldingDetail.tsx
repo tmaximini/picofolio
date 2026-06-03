@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Pencil, Trash2 } from "lucide-react";
 import { Button, Tabs } from "@/components/primitives";
 import type { Holding } from "@/lib/mock";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
 import { sliceRange, type Range } from "@/lib/priceHistory";
+import { formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import {
   useHoldingDelta,
   useHoldingValueCents,
+  useLoadOptionPrice,
   useLoadPrice,
+  useOptionPriceError,
+  useOptionPricePoints,
+  useOptionPriceStatus,
   usePricePoints,
   usePriceStatus,
   usePushToast,
@@ -35,9 +41,22 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
   const removeHolding = useRemoveHolding();
   const pushToast = usePushToast();
 
+  const opt = parseOccSymbol(holding.symbol);
+  const isOption = opt != null;
+
+  // Equities price via Yahoo; open options via MarketData.app. Both sets of
+  // hooks run unconditionally (hooks rules) — we pick the active source below.
   const loadPrice = useLoadPrice();
-  const status = usePriceStatus(holding.symbol);
-  const points = usePricePoints(holding.symbol);
+  const loadOptionPrice = useLoadOptionPrice();
+  const eqStatus = usePriceStatus(holding.symbol);
+  const eqPoints = usePricePoints(holding.symbol);
+  const optStatus = useOptionPriceStatus(holding.symbol);
+  const optPoints = useOptionPricePoints(holding.symbol);
+  const optErrorKind = useOptionPriceError(holding.symbol);
+
+  const status = isOption ? optStatus : eqStatus;
+  const points = isOption ? optPoints : eqPoints;
+
   const valueCents = useHoldingValueCents(holding.symbol);
   const unrealizedCents = useUnrealizedCents(holding.symbol);
   const r1m = useHoldingDelta(holding.symbol, "1M");
@@ -45,8 +64,9 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
   const r1y = useHoldingDelta(holding.symbol, "1Y");
 
   useEffect(() => {
-    loadPrice(holding.symbol);
-  }, [loadPrice, holding.symbol]);
+    if (isOption) loadOptionPrice(holding.symbol);
+    else loadPrice(holding.symbol);
+  }, [isOption, loadOptionPrice, loadPrice, holding.symbol]);
 
   const data = useMemo(
     () => (points ? sliceRange(points, range) : []),
@@ -60,13 +80,23 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
       <div className="holdingDetail__chart">
         <div className="holdingDetail__chartHead">
           <div>
-            <div className="holdingDetail__symbol">{holding.symbol}</div>
-            <div className="holdingDetail__name">{holding.name}</div>
+            <div className="holdingDetail__symbol">
+              {opt ? opt.underlying : holding.symbol}
+            </div>
+            <div className="holdingDetail__name">
+              {opt ? formatOptionLabel(opt) : holding.name}
+            </div>
           </div>
           <Tabs<Range> value={range} onChange={setRange} options={RANGES} />
         </div>
 
-        {status === "error" ? (
+        {isOption && optErrorKind === "no-token" ? (
+          <OptionPricingHint />
+        ) : isOption && optErrorKind != null ? (
+          // Missing/renamed contract (corporate action) or a transient fetch
+          // failure — calm, never a stack trace or broken chart.
+          <ChartFallback>Couldn't fetch pricing for this contract</ChartFallback>
+        ) : status === "error" ? (
           <ChartFallback>Couldn't load price data</ChartFallback>
         ) : data.length === 0 ? (
           <ChartFallback>Loading…</ChartFallback>
@@ -143,6 +173,25 @@ function pctTone(n: number | null): "gain" | "loss" | "neutral" {
 
 function ChartFallback({ children }: { children: React.ReactNode }) {
   return <div className="priceChart priceChart--fallback">{children}</div>;
+}
+
+/** Calm, informational (not an error): one line, one action. Shown only for an
+ *  open option position when no MarketData.app token is configured — the live
+ *  mark + chart are gated, but the rest of the row still renders. */
+function OptionPricingHint() {
+  return (
+    <div className="priceChart priceChart--fallback">
+      <span style={{ color: "var(--text-tertiary)", fontSize: "var(--text-sm)" }}>
+        Option pricing needs a free MarketData.app token.{" "}
+        <Link
+          to="/settings?focus=marketdata"
+          style={{ color: "var(--accent)", fontWeight: 500 }}
+        >
+          Add token →
+        </Link>
+      </span>
+    </div>
+  );
 }
 
 type StatLineProps = {
