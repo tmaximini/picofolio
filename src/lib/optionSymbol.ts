@@ -33,6 +33,16 @@ export function contractMultiplier(symbol: string): number {
   return parseOccSymbol(symbol) ? OPTION_MULTIPLIER : 1;
 }
 
+/**
+ * Compact OSI form for option-data providers (MarketData.app et al.):
+ * the stored symbol minus the space between underlying and the date
+ * (`GOOG 270617C00460000` → `GOOG270617C00460000`). Non-option symbols
+ * pass through unchanged.
+ */
+export function toOsiSymbol(sym: string): string {
+  return sym.replace(/\s+/g, "");
+}
+
 export function parseOccSymbol(sym: string): ParsedOption | null {
   const m = sym.trim().match(OCC_RE);
   if (!m) return null;

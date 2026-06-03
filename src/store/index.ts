@@ -19,6 +19,7 @@ import { fetchYahooDaily, fetchYahooIntraday, type IntradayPoint } from "@/lib/y
 import { fetchFlexStatement, parseFlexXml } from "@/lib/ibkr";
 import type { ParsedPosition } from "@/lib/ibkr/flexParser";
 import { parseOccSymbol } from "@/lib/optionSymbol";
+import { optionsPriceProvider, OptionsNotFoundError } from "@/lib/options";
 
 export type PriceStatus = "idle" | "loading" | "ready" | "error";
 
@@ -35,6 +36,22 @@ export type IntradayEntry = {
   points: IntradayPoint[] | null;
   status: PriceStatus;
   error?: string;
+  fetchedAt?: number;
+};
+
+/** Why an option-price load failed — drives the calm inline UX in the chart
+ *  slot ("Add token →" vs "couldn't fetch this contract" vs generic). */
+export type OptionPriceErrorKind = "no-token" | "not-found" | "fetch";
+
+/** Option-price cache entry. Latest point = current mark. Separate from the
+ *  equity `prices` map so option marking never touches the equity/journal
+ *  path, and so the no-token state stays distinguishable. */
+export type OptionPriceEntry = {
+  points: PricePoint[];
+  status: PriceStatus;
+  error?: string;
+  errorKind?: OptionPriceErrorKind;
+  /** epoch ms */
   fetchedAt?: number;
 };
 
@@ -106,6 +123,15 @@ type StoreState = {
   /** Intraday cache keyed by `${symbol}|${YYYY-MM-DD}`. */
   intraday: Record<string, IntradayEntry>;
 
+  /** Option-price cache keyed by OCC symbol (open positions only). */
+  optionPrices: Record<string, OptionPriceEntry>;
+
+  /** MarketData.app token (BYOK) for options pricing. Optional — the app is
+   *  fully functional without it; only open-option live marks + charts need it.
+   *  PoC stores it in localStorage like the IBKR token; move to OS keychain on
+   *  Tauri. */
+  marketDataToken: string | null;
+
   // Toasts
   toasts: Toast[];
 
@@ -116,7 +142,14 @@ type StoreState = {
   loadPrice: (symbol: string) => Promise<void>;
   /** Fetch + cache intraday for [startKey, endKey] (single-day when endKey omitted). */
   loadIntraday: (symbol: string, startKey: string, endKey?: string) => Promise<void>;
+  /** Fetch + cache the EOD price history (and thus current mark) for an open
+   *  option position via MarketData.app. No-ops on non-option symbols; sets a
+   *  "no-token" state without any network call when no token is configured. */
+  loadOptionPrice: (symbol: string) => Promise<void>;
   refreshAll: () => Promise<void>;
+
+  /** Set or clear the MarketData.app token. */
+  setMarketDataToken: (token: string | null) => void;
 
   // Account actions
   setSelectedAccount: (id: string) => void;
@@ -245,6 +278,8 @@ export const useStore = create<StoreState>()(
       toasts: [],
       prices: {},
       intraday: {},
+      optionPrices: {},
+      marketDataToken: null,
       lastSyncAt: null,
       syncing: false,
 
@@ -323,6 +358,83 @@ export const useStore = create<StoreState>()(
         }
       },
 
+      loadOptionPrice: async (symbol) => {
+        // Options only — equities go through loadPrice/Yahoo. This is the seam
+        // that keeps the journal/closed-trade path from ever calling MarketData.
+        if (!parseOccSymbol(symbol)) return;
+
+        const cur = get().optionPrices[symbol];
+        if (isFresh(cur) || cur?.status === "loading") return;
+
+        // No token → calm "Add token →" state, no network call. The app stays
+        // fully functional; only the live mark + chart are gated.
+        const token = get().marketDataToken;
+        if (!token) {
+          set((s) => ({
+            optionPrices: {
+              ...s.optionPrices,
+              [symbol]: { points: [], status: "error", errorKind: "no-token" },
+            },
+          }));
+          return;
+        }
+
+        set((s) => ({
+          optionPrices: {
+            ...s.optionPrices,
+            [symbol]: { points: cur?.points ?? [], status: "loading" },
+          },
+        }));
+
+        // ~1y of EOD history; `to` is exclusive, so push it a day past today to
+        // include the most recent close (the current mark).
+        const now = new Date();
+        const toDate = new Date(now);
+        toDate.setDate(toDate.getDate() + 1);
+        const fromDate = new Date(now);
+        fromDate.setFullYear(fromDate.getFullYear() - 1);
+        const from = fromDate.toISOString().slice(0, 10);
+        const to = toDate.toISOString().slice(0, 10);
+
+        try {
+          const points = await optionsPriceProvider.getHistory(symbol, token, from, to);
+          set((s) => ({
+            optionPrices: {
+              ...s.optionPrices,
+              [symbol]: { points, status: "ready", fetchedAt: Date.now() },
+            },
+          }));
+        } catch (err) {
+          // Renamed/adjusted contract after a corporate action → not-found.
+          // We do not try to resolve symbol changes here.
+          const errorKind: OptionPriceErrorKind =
+            err instanceof OptionsNotFoundError ? "not-found" : "fetch";
+          set((s) => ({
+            optionPrices: {
+              ...s.optionPrices,
+              [symbol]: {
+                points: cur?.points ?? [],
+                status: "error",
+                errorKind,
+                error: err instanceof Error ? err.message : String(err),
+              },
+            },
+          }));
+        }
+      },
+
+      setMarketDataToken: (token) => {
+        const next = token?.trim() || null;
+        // Clearing or changing the token invalidates any cached no-token / error
+        // states so the next view re-attempts cleanly.
+        set((s) => ({
+          marketDataToken: next,
+          optionPrices: Object.fromEntries(
+            Object.entries(s.optionPrices).filter(([, e]) => e.status === "ready"),
+          ),
+        }));
+      },
+
       refreshAll: async () => {
         if (get().syncing) return;
         set({ syncing: true });
@@ -335,7 +447,20 @@ export const useStore = create<StoreState>()(
               .filter((s) => parseOccSymbol(s) == null),
           ),
         ];
-        await Promise.allSettled(symbols.map((s) => get().loadPrice(s)));
+        // Eagerly prefetch live marks for open option positions too. The
+        // freshness guard avoids redundant hits and the no-token case
+        // short-circuits without a network call.
+        const optionSymbols = [
+          ...new Set(
+            get()
+              .holdings.map((h) => h.symbol)
+              .filter((s) => parseOccSymbol(s) != null),
+          ),
+        ];
+        await Promise.allSettled([
+          ...symbols.map((s) => get().loadPrice(s)),
+          ...optionSymbols.map((s) => get().loadOptionPrice(s)),
+        ]);
         set({ syncing: false, lastSyncAt: Date.now() });
       },
 
@@ -819,6 +944,15 @@ export const useStore = create<StoreState>()(
         setups: s.setups,
         selectedAccountId: s.selectedAccountId,
         prices: s.prices,
+        // Cache EOD option history aggressively — it's immutable once the day
+        // closes. Drop in-flight "loading" entries so a load interrupted by a
+        // page close doesn't rehydrate as a permanent block (the action guards
+        // on status). The MarketData token is sensitive — same PoC caveat as
+        // the IBKR token (localStorage now, OS keychain on Tauri).
+        optionPrices: Object.fromEntries(
+          Object.entries(s.optionPrices).filter(([, e]) => e.status !== "loading"),
+        ),
+        marketDataToken: s.marketDataToken,
         lastSyncAt: s.lastSyncAt,
         // Never persist transient sync status/error — a sync in flight when
         // the page closes would otherwise rehydrate as a permanent "polling"
@@ -829,7 +963,7 @@ export const useStore = create<StoreState>()(
           error: null,
         })),
       }),
-      version: 6,
+      version: 7,
       // Belt-and-suspenders: scrub any transient status that an older build
       // already wrote to storage, so existing stuck "polling" rows recover.
       onRehydrateStorage: () => (state) => {
