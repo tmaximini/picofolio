@@ -7,12 +7,17 @@ import {
   createChart,
   type IChartApi,
   type ISeriesApi,
+  type Time,
 } from "lightweight-charts";
-import type { PricePoint } from "@/lib/priceHistory";
+/** Daily points use a `YYYY-MM-DD` string time; intraday points use a unix
+ *  timestamp (seconds). Lightweight-Charts accepts either per series. */
+type ChartPoint = { time: string | number; value: number };
 
 type PriceChartProps = {
-  data: ReadonlyArray<PricePoint>;
+  data: ReadonlyArray<ChartPoint>;
   height?: number;
+  /** Show HH:MM on the time axis (intraday series). Default daily. */
+  timeVisible?: boolean;
 };
 
 const tokens = {
@@ -27,7 +32,7 @@ const tokens = {
   crosshair: "rgba(232, 232, 234, 0.25)",
 };
 
-export function PriceChart({ data, height = 280 }: PriceChartProps) {
+export function PriceChart({ data, height = 280, timeVisible = false }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Area"> | null>(null);
@@ -60,10 +65,14 @@ export function PriceChart({ data, height = 280 }: PriceChartProps) {
       },
       timeScale: {
         borderVisible: false,
-        timeVisible: false,
-        fixLeftEdge: false,
+        timeVisible,
+        secondsVisible: false,
+        // Pin both edges to the data so the chart always spans exactly the
+        // selected timeframe (left = window start, right = now), with no
+        // trailing empty bars.
+        fixLeftEdge: true,
         fixRightEdge: true,
-        rightOffset: 2,
+        rightOffset: 0,
       },
       crosshair: {
         mode: CrosshairMode.Magnet,
@@ -101,7 +110,7 @@ export function PriceChart({ data, height = 280 }: PriceChartProps) {
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [height]);
+  }, [height, timeVisible]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -131,7 +140,7 @@ export function PriceChart({ data, height = 280 }: PriceChartProps) {
       crosshairMarkerBackgroundColor: "#14161B",
       crosshairMarkerRadius: 4,
     });
-    series.setData(data as PricePoint[]);
+    series.setData(data as { time: Time; value: number }[]);
     chart.timeScale().fitContent();
     seriesRef.current = series;
   }, [data]);

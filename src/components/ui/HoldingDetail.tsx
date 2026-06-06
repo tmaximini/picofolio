@@ -9,6 +9,8 @@ import { formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import {
   useHoldingDelta,
   useHoldingValueCents,
+  useIntradayEntry,
+  useLoadIntraday,
   useLoadOptionPrice,
   useLoadPrice,
   useOptionPriceError,
@@ -27,6 +29,9 @@ type HoldingDetailProps = {
   holding: Holding;
 };
 
+/** Daily (string time) or intraday (unix-seconds time) chart points. */
+type ChartData = ReadonlyArray<{ time: string | number; value: number }>;
+
 const RANGES = [
   { value: "1W", label: "1W" },
   { value: "1M", label: "1M" },
@@ -35,9 +40,33 @@ const RANGES = [
   { value: "All", label: "All" },
 ] as const;
 
+// Remember the user's last-picked range across holdings (and reloads). Kept in
+// its own localStorage key so it survives store version bumps. Defaults to 1M.
+const RANGE_STORAGE_KEY = "picofolio:holdingRange";
+
+function loadStoredRange(): Range {
+  try {
+    const v = localStorage.getItem(RANGE_STORAGE_KEY);
+    if (v && RANGES.some((r) => r.value === v)) return v as Range;
+  } catch {
+    /* localStorage unavailable — fall through to default */
+  }
+  return "1M";
+}
+
 export function HoldingDetail({ holding }: HoldingDetailProps) {
-  const [range, setRange] = useState<Range>("3M");
+  const [range, setRange] = useState<Range>(loadStoredRange);
   const [editing, setEditing] = useState(false);
+
+  // Persist the choice so the next holding (and the next session) opens on it.
+  const selectRange = (r: Range) => {
+    setRange(r);
+    try {
+      localStorage.setItem(RANGE_STORAGE_KEY, r);
+    } catch {
+      /* ignore write failures (private mode, etc.) */
+    }
+  };
   const removeHolding = useRemoveHolding();
   const pushToast = usePushToast();
 
@@ -57,6 +86,27 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
   const status = isOption ? optStatus : eqStatus;
   const points = isOption ? optPoints : eqPoints;
 
+  // Short ranges on a stock holding use intraday bars so the curve isn't a
+  // clunky connect-the-dots of daily closes. One fetch (~1 month of 5-min
+  // bars) covers both 1W and 1M; we slice it per range. Options have no
+  // intraday feed — they stay on the daily/MarketData series.
+  const wantsIntraday = !isOption && (range === "1W" || range === "1M");
+  const loadIntraday = useLoadIntraday();
+  const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  // today-7 maps to the valid 5m/1mo window (~30 days). One fetch covers both
+  // 1W and 1M; we slice it per range. (today-31 would request the invalid
+  // 5m/3mo and error out.)
+  const intraStartKey = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().slice(0, 10);
+  }, []);
+  const intraEntry = useIntradayEntry(holding.symbol, intraStartKey, todayKey);
+
+  useEffect(() => {
+    if (wantsIntraday) loadIntraday(holding.symbol, intraStartKey, todayKey);
+  }, [wantsIntraday, holding.symbol, intraStartKey, todayKey, loadIntraday]);
+
   const valueCents = useHoldingValueCents(holding.symbol);
   const unrealizedCents = useUnrealizedCents(holding.symbol);
   const r1m = useHoldingDelta(holding.symbol, "1M");
@@ -68,10 +118,19 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
     else loadPrice(holding.symbol);
   }, [isOption, loadOptionPrice, loadPrice, holding.symbol]);
 
-  const data = useMemo(
-    () => (points ? sliceRange(points, range) : []),
-    [points, range],
-  );
+  // Prefer the intraday series for short ranges; fall back to daily closes
+  // until it loads (or if the symbol has no intraday coverage), so the chart
+  // is never empty and progressively sharpens.
+  const { data, intradayActive } = useMemo(() => {
+    if (wantsIntraday && intraEntry?.points && intraEntry.points.length > 0) {
+      const days = range === "1W" ? 7 : 31;
+      const cutoff = Date.now() / 1000 - days * 86400;
+      const sliced = intraEntry.points.filter((p) => p.time >= cutoff);
+      if (sliced.length >= 2) return { data: sliced as ChartData, intradayActive: true };
+    }
+    const daily = points ? sliceRange(points, range) : [];
+    return { data: daily as ChartData, intradayActive: false };
+  }, [wantsIntraday, intraEntry, points, range]);
 
   const unrealizedTone = unrealizedCents == null ? "neutral" : toneOf(unrealizedCents);
 
@@ -87,7 +146,7 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
               {opt ? formatOptionLabel(opt) : holding.name}
             </div>
           </div>
-          <Tabs<Range> value={range} onChange={setRange} options={RANGES} />
+          <Tabs<Range> value={range} onChange={selectRange} options={RANGES} />
         </div>
 
         {isOption && optErrorKind === "no-token" ? (
@@ -101,7 +160,7 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
         ) : data.length === 0 ? (
           <ChartFallback>Loading…</ChartFallback>
         ) : (
-          <PriceChart data={data} height={260} />
+          <PriceChart data={data} height={260} timeVisible={intradayActive} />
         )}
       </div>
 

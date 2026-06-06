@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Eyebrow } from "@/components/primitives";
 import { formatPct } from "@/lib/money";
 import { PERF_RANGES, computePctSeries, type PerfRange } from "@/lib/perf";
-import type { ValuePoint } from "@/store/selectors";
+import { useIntradayPctSeries, type ValuePoint } from "@/store/selectors";
 import { PerformanceChart } from "./PerformanceChart";
 
 type PerformanceCardProps = {
@@ -11,17 +11,23 @@ type PerformanceCardProps = {
   label: string;
   valueCents: number | null;
   series: ValuePoint[];
+  /** Scope (accountId or ALL_ACCOUNTS) used to reconstruct an intraday curve
+   *  for short ranges (7D / MTD). Omit to always use the daily series. */
+  scope?: string;
 };
 
 /**
  * Value + rate-of-return over a selected window + a green-above / red-below
- * performance curve. Presentational — the caller supplies the value and the
- * daily value series (portfolio-wide or per-account); range pills rebase.
+ * performance curve. Daily value series drives the long ranges; short ranges
+ * (7D / MTD) upgrade to an intraday-reconstructed curve when available.
  */
-export function PerformanceCard({ label, valueCents, series }: PerformanceCardProps) {
+export function PerformanceCard({ label, valueCents, series, scope }: PerformanceCardProps) {
   const [range, setRange] = useState<PerfRange>("All");
 
-  const pct = useMemo(() => computePctSeries(series, range), [series, range]);
+  const dailyPct = useMemo(() => computePctSeries(series, range), [series, range]);
+  const intraday = useIntradayPctSeries(scope ?? null, range);
+  const usingIntraday = intraday.active;
+  const pct = usingIntraday ? intraday.points : dailyPct;
   const periodReturn = pct.length > 0 ? pct[pct.length - 1]!.value / 100 : null;
   const tone =
     periodReturn == null ? "neutral" : periodReturn >= 0 ? "gain" : "loss";
@@ -62,7 +68,12 @@ export function PerformanceCard({ label, valueCents, series }: PerformanceCardPr
           {series.length < 2 ? "Loading performance…" : "Not enough history for this range"}
         </div>
       ) : (
-        <PerformanceChart data={pct} height={300} format="percent" />
+        <PerformanceChart
+          data={pct}
+          height={300}
+          format="percent"
+          timeVisible={usingIntraday}
+        />
       )}
 
       <div className="perfRanges" role="tablist" aria-label="Performance range">

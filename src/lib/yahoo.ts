@@ -85,10 +85,11 @@ function pickIntradayParams(daysAgo: number): IntradayParams | null {
   // closest token) — gives ~4 trading days of pre-entry context for
   // same-day trades.
   if (daysAgo <= 5) return { interval: "1m", range: "5d" };
-  // 5m bars retain ~60 days. Pick the smallest range that comfortably
-  // covers the oldest date plus context.
-  if (daysAgo <= 25) return { interval: "5m", range: "1mo" };
-  if (daysAgo <= 80) return { interval: "5m", range: "3mo" };
+  // 5m bars within Yahoo's retention. NOTE: `5m` + `range=3mo` is rejected by
+  // Yahoo ("must be within the last 60 days"), and there's no range token
+  // between 1mo and 3mo, so `1mo` (~30 trading days) is the widest valid 5m
+  // window. Beyond that we fall back to daily (caller handles null).
+  if (daysAgo <= 30) return { interval: "5m", range: "1mo" };
   return null;
 }
 

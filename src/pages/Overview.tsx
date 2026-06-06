@@ -167,7 +167,12 @@ function AccountOverview({ accountId }: { accountId: string }) {
         <EmptyAccount name={account.name} hasConnection={Boolean(account.flexConnectionId)} />
       ) : (
         <>
-          <PerformanceCard label="Account Value" valueCents={value} series={valueSeries} />
+          <PerformanceCard
+            label="Account Value"
+            valueCents={value}
+            series={valueSeries}
+            scope={accountId}
+          />
 
           <Card style={{ marginBottom: "var(--space-5)" }}>
             <div className="accountStatsRow accountStatsRow--deltas">

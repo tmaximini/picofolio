@@ -11,7 +11,7 @@ import {
 } from "lightweight-charts";
 import { formatCents } from "@/lib/money";
 
-export type PerfPoint = { time: string; value: number; valueCents?: number };
+export type PerfPoint = { time: string | number; value: number; valueCents?: number };
 
 type PerformanceChartProps = {
   data: PerfPoint[];
@@ -54,8 +54,17 @@ function timeKey(t: Time): string {
   return String(t);
 }
 
-function formatTipDate(key: string): string {
-  const d = new Date(`${key}T00:00:00`);
+function formatTipDate(t: string | number): string {
+  // Intraday points carry a unix-seconds number → show the time too.
+  if (typeof t === "number") {
+    return new Date(t * 1000).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+  const d = new Date(`${t}T00:00:00`);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
@@ -224,7 +233,7 @@ export function PerformanceChart({
     const chart = chartRef.current;
     if (!series || !chart || data.length === 0) return;
     const map = new Map<string, PerfPoint>();
-    for (const p of data) map.set(p.time, p);
+    for (const p of data) map.set(String(p.time), p);
     byTimeRef.current = map;
     series.setData(data as { time: Time; value: number }[]);
     chart.timeScale().fitContent();

@@ -33,14 +33,20 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
+import { Link } from "react-router-dom";
 import {
   useIntradayEntry,
   useLoadIntraday,
+  useLoadOptionPrice,
   useLoadPrice,
+  useOptionPriceError,
+  useOptionPricePoints,
+  useOptionPriceStatus,
   usePricePoints,
   usePriceStatus,
 } from "@/store/selectors";
 import { coalesceExecutions, deriveTotals } from "@/lib/tradeMath";
+import { parseOccSymbol } from "@/lib/optionSymbol";
 import type { Trade } from "@/lib/trades";
 
 const tokens = {
@@ -92,50 +98,69 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
   //  - Span ≤ INTRADAY_MAX_DAYS → intraday range (1m bars within 7d,
   //    5m bars within 60d via Yahoo retention)
   //  - Longer → daily with adaptive window
-  const { isIntraday, intraStartKey, intraEndKey, windowStart, windowEnd } = useMemo(() => {
-    const empty = {
-      isIntraday: false,
-      intraStartKey: "",
-      intraEndKey: "",
-      windowStart: "",
-      windowEnd: "",
-    };
-    if (trade.executions.length === 0) return empty;
-
-    const sorted = [...trade.executions].sort((a, b) => a.at.localeCompare(b.at));
-    const tot = deriveTotals(trade);
-    const isOpen = tot.positionQty > 0;
-
-    const entryKey = localDateKey(sorted[0]!.at);
-    const lastKey = localDateKey(sorted[sorted.length - 1]!.at);
-    const todayKey = localDateKey(new Date().toISOString());
-
-    // For open trades the effective "end" is today, not last execution.
-    const effectiveEndKey = isOpen ? todayKey : lastKey;
-    const spanDays = daysBetween(entryKey, effectiveEndKey);
-
-    if (spanDays <= INTRADAY_MAX_DAYS) {
-      return {
-        isIntraday: true,
-        intraStartKey: entryKey,
-        intraEndKey: effectiveEndKey,
+  const { isIntraday, intraStartKey, intraEndKey, windowStart, windowEnd, isOption, isOpen } =
+    useMemo(() => {
+      const isOption = parseOccSymbol(trade.symbol) != null;
+      const empty = {
+        isIntraday: false,
+        intraStartKey: "",
+        intraEndKey: "",
         windowStart: "",
         windowEnd: "",
+        isOption,
+        isOpen: false,
       };
-    }
+      if (trade.executions.length === 0) return empty;
 
-    const pre = Math.min(MAX_PRE_DAYS, Math.max(1, Math.round(spanDays * 0.6) + 1));
-    const post = isOpen
-      ? 0
-      : Math.min(MAX_POST_DAYS, Math.max(1, Math.round(spanDays * 0.4) + 1));
-    return {
-      isIntraday: false,
-      intraStartKey: "",
-      intraEndKey: "",
-      windowStart: shiftIsoDate(entryKey, -pre),
-      windowEnd: isOpen ? todayKey : shiftIsoDate(lastKey, post),
-    };
-  }, [trade]);
+      const sorted = [...trade.executions].sort((a, b) => a.at.localeCompare(b.at));
+      const tot = deriveTotals(trade);
+      const isOpen = tot.positionQty > 0;
+
+      const entryKey = localDateKey(sorted[0]!.at);
+      const lastKey = localDateKey(sorted[sorted.length - 1]!.at);
+      const todayKey = localDateKey(new Date().toISOString());
+
+      // For open trades the effective "end" is today, not last execution.
+      const effectiveEndKey = isOpen ? todayKey : lastKey;
+      const spanDays = daysBetween(entryKey, effectiveEndKey);
+
+      const dailyWindow = () => {
+        const pre = Math.min(MAX_PRE_DAYS, Math.max(1, Math.round(spanDays * 0.6) + 1));
+        const post = isOpen
+          ? 0
+          : Math.min(MAX_POST_DAYS, Math.max(1, Math.round(spanDays * 0.4) + 1));
+        return {
+          isIntraday: false as const,
+          intraStartKey: "",
+          intraEndKey: "",
+          windowStart: shiftIsoDate(entryKey, -pre),
+          windowEnd: isOpen ? todayKey : shiftIsoDate(lastKey, post),
+          isOption,
+          isOpen,
+        };
+      };
+
+      // Options price off MarketData.app EOD history — daily flow only (no
+      // intraday option feed in scope). Equities can use intraday for short spans.
+      if (isOption) return dailyWindow();
+
+      if (spanDays <= INTRADAY_MAX_DAYS) {
+        return {
+          isIntraday: true,
+          intraStartKey: entryKey,
+          intraEndKey: effectiveEndKey,
+          windowStart: "",
+          windowEnd: "",
+          isOption,
+          isOpen,
+        };
+      }
+
+      return dailyWindow();
+    }, [trade]);
+
+  // Closed option trades are valued from IBKR fills — never an external call.
+  const closedOption = isOption && !isOpen;
 
   // ---- Intraday flow ----
   const loadIntraday = useLoadIntraday();
@@ -147,14 +172,27 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
     }
   }, [isIntraday, intraStartKey, intraEndKey, trade.symbol, loadIntraday]);
 
-  // ---- Daily flow ----
+  // ---- Daily flow (equities via Yahoo, open options via MarketData.app) ----
   const loadPrice = useLoadPrice();
-  const dailyStatus = usePriceStatus(trade.symbol);
-  const dailyPoints = usePricePoints(trade.symbol);
+  const loadOptionPrice = useLoadOptionPrice();
+  const eqStatus = usePriceStatus(trade.symbol);
+  const eqPoints = usePricePoints(trade.symbol);
+  const optStatus = useOptionPriceStatus(trade.symbol);
+  const optPoints = useOptionPricePoints(trade.symbol);
+  const optErrorKind = useOptionPriceError(trade.symbol);
+
+  const dailyStatus = isOption ? optStatus : eqStatus;
+  const dailyPoints = isOption ? optPoints : eqPoints;
 
   useEffect(() => {
-    if (!isIntraday) loadPrice(trade.symbol);
-  }, [isIntraday, trade.symbol, loadPrice]);
+    if (isOption) {
+      // Only OPEN option positions are marked from MarketData. Closed option
+      // trades render from IBKR fills and make no external call.
+      if (isOpen) loadOptionPrice(trade.symbol);
+    } else if (!isIntraday) {
+      loadPrice(trade.symbol);
+    }
+  }, [isOption, isOpen, isIntraday, trade.symbol, loadOptionPrice, loadPrice]);
 
   // Hand the chart the *full* daily history we have (2y). The visible
   // range gets focused to the trade window via setVisibleRange below —
@@ -162,9 +200,10 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
   // zoom merely rescale the existing slice (no new data).
   const dailySeries = useMemo(() => {
     if (isIntraday) return null;
+    if (closedOption) return null; // valued from fills, no price series
     if (!dailyPoints || dailyPoints.length === 0) return null;
     return dailyPoints;
-  }, [isIntraday, dailyPoints]);
+  }, [isIntraday, closedOption, dailyPoints]);
 
   // Init / teardown chart instance.
   useEffect(() => {
@@ -354,7 +393,11 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
       .filter((m): m is NonNullable<typeof m> => m != null)
       .sort((a, b) => compareTime(a.time, b.time));
 
-    createSeriesMarkers(series, markers);
+    // Options price off EOD-only history, so a fill's intraday price won't sit
+    // on the daily close — an arrow anchored to the bar floats off the entry
+    // and reads as pointing at the "wrong" line. The dotted fill-price line
+    // below + the execution list carry entry/exit for options instead.
+    if (!isOption) createSeriesMarkers(series, markers);
 
     // Horizontal dotted price line at every (coalesced) execution price.
     // Differentiates from target/stop (dashed) and reinforces where the
@@ -441,8 +484,42 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
   // never attaches on the first render, the init effect runs with null,
   // and the chart never gets created until the user closes + reopens the
   // modal (at which point the data is already cached so no Loading branch).
-  const showLoadingOverlay = loading && !error && !noData;
-  const showNoDataOverlay = !loading && (error || noData);
+  // Option-specific states (no-token hint, fetch failure, closed-option note)
+  // take priority over the generic equity messaging.
+  const optionNoToken = isOption && isOpen && optErrorKind === "no-token";
+  const optionFetchFail =
+    isOption && isOpen && (optErrorKind === "not-found" || optErrorKind === "fetch");
+
+  const showLoadingOverlay = loading && !error && !noData && !closedOption;
+
+  // Resolve the no-data overlay content once, by priority.
+  let overlayLabel: string | null = null;
+  let overlayBody: React.ReactNode = null;
+  if (!showLoadingOverlay) {
+    if (optionNoToken) {
+      overlayLabel = "Option pricing needs a token";
+      overlayBody = (
+        <>
+          Add a free MarketData.app token to chart this open contract.{" "}
+          <Link to="/settings?focus=marketdata" style={{ color: "var(--accent)", fontWeight: 500 }}>
+            Add token →
+          </Link>
+        </>
+      );
+    } else if (optionFetchFail) {
+      overlayLabel = "No chart data";
+      overlayBody = "Couldn't fetch pricing for this contract.";
+    } else if (closedOption) {
+      overlayLabel = "No price chart";
+      overlayBody = "Closed option trades are valued from your IBKR fills.";
+    } else if (error || noData) {
+      overlayLabel = "No chart data";
+      overlayBody = isIntraday
+        ? "Intraday history unavailable for this date."
+        : `${trade.symbol} isn't on the price feed yet.`;
+    }
+  }
+  const showNoDataOverlay = overlayLabel != null;
 
   return (
     <div style={{ position: "relative", height }}>
@@ -467,12 +544,8 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
       {showNoDataOverlay && (
         <div className="tradeChart__overlay" style={{ height }}>
           <div className="tradeChart__noData" style={{ height, width: "100%" }}>
-            <div className="tradeChart__noDataLabel">No chart data</div>
-            <div className="tradeChart__noDataSub">
-              {isIntraday
-                ? "Intraday history unavailable for this date."
-                : `${trade.symbol} isn't on the price feed yet.`}
-            </div>
+            <div className="tradeChart__noDataLabel">{overlayLabel}</div>
+            <div className="tradeChart__noDataSub">{overlayBody}</div>
           </div>
         </div>
       )}

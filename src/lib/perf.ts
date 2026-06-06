@@ -35,8 +35,10 @@ function startCutoff(range: PerfRange, series: ValuePoint[]): string {
   }
 }
 
-/** `value` is the rebased percent; `valueCents` is the absolute value that day. */
-export type PctPoint = { time: string; value: number; valueCents: number };
+/** `value` is the rebased percent; `valueCents` is the absolute value that day.
+ *  `time` is a `YYYY-MM-DD` string for daily series, or unix seconds for the
+ *  intraday-reconstructed short-range series. */
+export type PctPoint = { time: string | number; value: number; valueCents: number };
 
 /** Rebased percent series for the range. Empty if fewer than 2 points. */
 export function computePctSeries(

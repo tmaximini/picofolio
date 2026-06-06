@@ -37,6 +37,9 @@
 
 .card--flush {
   padding: 0;
+  /* Clip the table's square header/row edges to the card's rounded corners —
+     without this the full-width row borders poke past the radius. */
+  overflow: hidden;
 }
 
 /* ---------- GLASS PANEL ----------

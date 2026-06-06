@@ -23,7 +23,6 @@ export function AccountSwitcher({ onNewAccount, onEditAccount }: AccountSwitcher
   const selectedId = useSelectedAccountId();
   const setSelected = useSetSelectedAccount();
   const portfolioCents = usePortfolioValueCents();
-  const selectedValueCents = useAccountValueCents(selectedId);
 
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -53,7 +52,6 @@ export function AccountSwitcher({ onNewAccount, onEditAccount }: AccountSwitcher
 
   // If the selected account vanished (deleted), fall back to the roll-up.
   const triggerName = isAll ? "All Accounts" : selected?.name ?? "All Accounts";
-  const triggerValue = isAll ? portfolioCents : selectedValueCents;
 
   const pick = (id: string) => {
     setSelected(id);
@@ -79,9 +77,6 @@ export function AccountSwitcher({ onNewAccount, onEditAccount }: AccountSwitcher
             />
           )}
           <span className="acctSwitcher__name">{triggerName}</span>
-        </span>
-        <span className="acctSwitcher__value num">
-          {triggerValue != null ? formatCents(triggerValue, true) : "—"}
         </span>
         <ChevronsUpDown size={14} strokeWidth={1.75} className="acctSwitcher__caret" />
       </button>

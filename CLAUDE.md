@@ -4,27 +4,22 @@ You are working on **Picofolio**, a minimal, beautiful desktop portfolio tracker
 
 ## North Star
 
-We are building the **Fey of self-hosted portfolio trackers**. The reference points:
+Picofolio is built with aesthetic obsession. The reference points we calibrate against:
 
-- **Fey** (acquired by Wealthsimple, Aug 2025) — for aesthetic obsession, chiaroscuro lighting, "expensive" feel
-- **Linear** — for keyboard-first speed, motion design, perfectly-tuned dark interface
-- **Raycast** — for command-palette UX and density without clutter
-- **Bloomberg Terminal** — for tabular numerics and information density done right
+- **Fey** — chiaroscuro lighting, an "expensive" feel, restraint
+- **Linear** — keyboard-first speed, motion design, a perfectly-tuned dark interface
+- **Raycast** — command-palette UX and density without clutter
+- **Bloomberg Terminal** — tabular numerics and information density done right
 
-**What we are NOT:**
-
-- Not Ghostfolio. Their stack (Angular Material + open-source-by-committee) produces functional-but-ugly. We are the opposite.
-- Not Sharesight. Theirs is a web SaaS with subscription. Ours is local-first, pay-once.
-- Not a Yahoo Finance clone. Theirs is ad-driven and dense-with-noise. Ours is calm.
+The bias is always toward restraint: darker, calmer, more typographic.
 
 ## Product Decisions (locked)
 
 | Decision         | Choice                                                                        | Why                                                                  |
 | ---------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| Distribution     | Tauri desktop app (macOS first, Linux/Windows after)                          | Local-first = no server costs, no data liability, justifies pay-once |
-| Pricing          | One-time license, ~$99 USD                                                    | Subscription fatigue is real; lifetime buyers are a better audience  |
+| Distribution     | Tauri desktop app (macOS first, Linux/Windows after)                          | Local-first — your data and credentials stay on your machine; native feel |
 | Stack            | Tauri + React + TypeScript + SQLite (via Rust)                                | Native feel, no Electron bloat                                       |
-| Styling          | Hand-written CSS using design tokens. **No shadcn, no Material, no DaisyUI.** | Component libraries homogenize. Custom components are the moat.      |
+| Styling          | Hand-written CSS using design tokens. **No shadcn, no Material, no DaisyUI.** | Component libraries homogenize. Custom components are the whole point. |
 | Data source (v1) | IBKR via Flex Query + Client Portal Web API                                   | One excellent integration > five mediocre ones                       |
 | Multi-broker     | Not in v1. Maybe v2 via SnapTrade.                                            | Focus.                                                               |
 | Mobile           | No. Companion read-only iOS app in v3 maybe.                                  | Desktop is where serious users live.                                 |
@@ -149,13 +144,13 @@ src-tauri/
 ## When in doubt
 
 - **Make it darker, calmer, more typographic.** The bias is always toward restraint.
-- **Cut features, not polish.** A small product done perfectly beats a big one done okay. This is the Fey playbook.
+- **Cut features, not polish.** A small product done perfectly beats a big one done okay.
 - **If you find yourself reaching for shadcn or a component library — stop.** Build the custom component. It's the whole point.
 - **If a design decision feels generic, it is.** Restart from the design tokens.
 
 ## Reference: the showcase page
 
-`src/index.html` is the design-system reference page rendered as static HTML. Open it in a browser to see how the tokens compose into the actual portfolio UI. **When designing a new screen, glance at this first to recalibrate.**
+`docs/showcase.html` is the design-system reference page rendered as static HTML. Open it in a browser to see how the tokens compose into the actual portfolio UI. **When designing a new screen, glance at this first to recalibrate.**
 
 ## What to build first
 
@@ -172,7 +167,7 @@ In this order (do not skip ahead):
 9. Trading Journal page
 10. Holdings page
 11. Keyboard shortcuts + command palette
-12. Settings + license activation
+12. Settings
 
 Each step ships as a usable artifact. No long branches.
 

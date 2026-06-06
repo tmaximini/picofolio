@@ -3,6 +3,25 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "description": "A minimal, local-first desktop portfolio tracker and trading journal for Interactive Brokers — keyboard-first, BYOK, obsessively designed.",
+  "license": "AGPL-3.0-only",
+  "homepage": "https://github.com/picofolio/picofolio#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/picofolio/picofolio.git"
+  },
+  "bugs": {
+    "url": "https://github.com/picofolio/picofolio/issues"
+  },
+  "keywords": [
+    "portfolio-tracker",
+    "trading-journal",
+    "interactive-brokers",
+    "ibkr",
+    "options",
+    "local-first",
+    "tauri"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

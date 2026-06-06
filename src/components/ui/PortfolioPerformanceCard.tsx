@@ -1,3 +1,4 @@
+import { ALL_ACCOUNTS } from "@/store";
 import {
   usePortfolioValueCents,
   usePortfolioValueSeries,
@@ -13,6 +14,7 @@ export function PortfolioPerformanceCard() {
       label="Total Portfolio Value"
       valueCents={valueCents}
       series={series}
+      scope={ALL_ACCOUNTS}
     />
   );
 }

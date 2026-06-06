@@ -65,11 +65,20 @@
   flex-direction: column;
 }
 
+.sidebar__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+.sidebar__header {
+  margin-bottom: var(--space-6);
+}
 .brand {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-bottom: var(--space-8);
 }
 .brand__mark {
   width: 22px;
@@ -190,6 +199,19 @@
 .navToggle:focus-visible {
   outline: none;
   border-color: var(--border-focus);
+}
+
+/* The collapse toggle lives in the sidebar; this floating twin only appears
+   while the sidebar is collapsed, so there's always a way to bring it back. */
+.navReopen {
+  display: none;
+}
+.app--nav-collapsed .navReopen {
+  display: inline-flex;
+  position: fixed;
+  top: var(--space-5);
+  left: var(--space-5);
+  z-index: var(--z-overlay);
 }
 
 .topbar {

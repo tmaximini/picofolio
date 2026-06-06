@@ -168,6 +168,13 @@ function MarketDataCard() {
   const trimmed = draft.trim();
   const dirty = trimmed !== (token ?? "");
 
+  // Reflect the stored token if it changes after mount (persist hydration, or a
+  // save/clear from elsewhere). The seed in useState only runs once, so without
+  // this the field can show empty even when a token is persisted.
+  useEffect(() => {
+    setDraft(token ?? "");
+  }, [token]);
+
   // Deep-link target from the "Add token →" hint on an option chart.
   useEffect(() => {
     if (searchParams.get("focus") !== "marketdata") return;

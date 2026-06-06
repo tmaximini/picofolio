@@ -8,14 +8,16 @@
  * Components decide how to render the difference.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { ALL_ACCOUNTS, useStore } from "./index";
 import type { PricePoint } from "@/lib/priceHistory";
+import type { IntradayPoint } from "@/lib/yahoo";
 import type { Account, Holding } from "@/lib/mock";
 import type { Trade, TradeSetup, TradeStatus } from "@/lib/trades";
 import { deriveTotals, tradeDateKey } from "@/lib/tradeMath";
 import { contractMultiplier, parseOccSymbol } from "@/lib/optionSymbol";
 import { inRange, rangeFor, type DateRangeKey } from "@/lib/dateRange";
+import type { PctPoint, PerfRange } from "@/lib/perf";
 
 export type DeltaPeriod = "1D" | "1W" | "1M" | "YTD" | "1Y";
 
@@ -413,6 +415,139 @@ export const useAccountValueSeries = (accountId: string): ValuePoint[] => {
     return buildValueSeries(rows, account.cashCents, prices, optionPrices);
   }, [holdings, accounts, prices, optionPrices, accountId]);
 };
+
+// ---------- intraday value reconstruction (short ranges) ----------
+
+export type IntradayValuePoint = { time: number; valueCents: number };
+
+/**
+ * Intraday portfolio-value reconstruction. Same model as buildValueSeries but
+ * over Yahoo intraday bars: each stock leg is a timestamp→price map; options +
+ * cash are a flat contribution at their current mark (there's no intraday
+ * options feed). Returns `ready: false` when any stock leg's intraday bars
+ * aren't loaded yet (or the symbol has no intraday coverage) — callers then
+ * fall back to the daily series, so the chart is never worse than before.
+ */
+function buildIntradayValueSeries(
+  rows: Holding[],
+  cashCents: number,
+  intraday: Record<string, { points?: IntradayPoint[] | null }>,
+  optionPrices: Record<string, { points?: PricePoint[] }>,
+  startKey: string,
+  endKey: string,
+): { points: IntradayValuePoint[]; ready: boolean } {
+  const legs: { qty: number; byTime: Map<number, number> }[] = [];
+  let flatCents = 0;
+  for (const h of rows) {
+    if (parseOccSymbol(h.symbol)) {
+      const unit = unitPriceCentsFor(h, {}, optionPrices);
+      if (unit != null) flatCents += Math.round(h.qty * unit * contractMultiplier(h.symbol));
+      continue;
+    }
+    const pts = intraday[`${h.symbol}|${startKey}|${endKey}`]?.points;
+    if (pts && pts.length > 0) {
+      const byTime = new Map<number, number>();
+      for (const p of pts) byTime.set(p.time, p.value);
+      legs.push({ qty: h.qty, byTime });
+    } else {
+      return { points: [], ready: false };
+    }
+  }
+  if (legs.length === 0) return { points: [], ready: false };
+  // Yahoo returns its full retained intraday range (often wider than the
+  // requested window), so clip to the window start.
+  const startSec = Date.parse(`${startKey}T00:00:00Z`) / 1000;
+  // Anchor on the fewest-points leg so every kept timestamp exists in all legs.
+  let anchor = legs[0]!;
+  for (const leg of legs) if (leg.byTime.size < anchor.byTime.size) anchor = leg;
+  const out: IntradayValuePoint[] = [];
+  for (const t of anchor.byTime.keys()) {
+    if (t < startSec) continue;
+    let dollars = 0;
+    let ok = true;
+    for (const leg of legs) {
+      const v = leg.byTime.get(t);
+      if (v == null) {
+        ok = false;
+        break;
+      }
+      dollars += leg.qty * v;
+    }
+    if (ok) out.push({ time: t, valueCents: Math.round(dollars * 100) + cashCents + flatCents });
+  }
+  out.sort((a, b) => a.time - b.time);
+  return { points: out, ready: true };
+}
+
+/**
+ * Rebased percent series reconstructed from intraday bars, for short ranges
+ * (7D / MTD) on a scope (an accountId, or ALL_ACCOUNTS). `active` is false for
+ * long ranges or until intraday data is ready — callers then use the daily
+ * series. Triggers the per-symbol intraday loads as a side effect.
+ */
+export function useIntradayPctSeries(
+  scope: string | null,
+  range: PerfRange,
+): { active: boolean; points: PctPoint[] } {
+  const isShort = scope != null && (range === "7D" || range === "MTD");
+  const holdings = useStore((s) => s.holdings);
+  const accounts = useStore((s) => s.accounts);
+  const intraday = useStore((s) => s.intraday);
+  const optionPrices = useStore((s) => s.optionPrices);
+  const loadIntraday = useStore((s) => s.loadIntraday);
+
+  const { startKey, endKey } = useMemo(() => {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    if (range === "MTD") return { startKey: `${todayKey.slice(0, 7)}-01`, endKey: todayKey };
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return { startKey: d.toISOString().slice(0, 10), endKey: todayKey };
+  }, [range]);
+
+  const rows = useMemo(() => {
+    if (scope == null) return [];
+    return scope === ALL_ACCOUNTS ? holdings : holdings.filter((h) => h.accountId === scope);
+  }, [scope, holdings]);
+
+  const cashCents = useMemo(() => {
+    if (scope == null) return 0;
+    if (scope === ALL_ACCOUNTS) return accounts.reduce((a, acc) => a + acc.cashCents, 0);
+    return accounts.find((a) => a.id === scope)?.cashCents ?? 0;
+  }, [scope, accounts]);
+
+  const stockSymbols = useMemo(
+    () => [
+      ...new Set(rows.filter((h) => parseOccSymbol(h.symbol) == null).map((h) => h.symbol)),
+    ],
+    [rows],
+  );
+
+  useEffect(() => {
+    if (!isShort) return;
+    for (const sym of stockSymbols) loadIntraday(sym, startKey, endKey);
+  }, [isShort, stockSymbols, startKey, endKey, loadIntraday]);
+
+  return useMemo(() => {
+    if (!isShort) return { active: false, points: [] };
+    const built = buildIntradayValueSeries(
+      rows,
+      cashCents,
+      intraday,
+      optionPrices,
+      startKey,
+      endKey,
+    );
+    if (!built.ready || built.points.length < 2) return { active: false, points: [] };
+    const base = built.points[0]!.valueCents;
+    if (base === 0) return { active: false, points: [] };
+    const points: PctPoint[] = built.points.map((p) => ({
+      time: p.time,
+      value: ((p.valueCents - base) / base) * 100,
+      valueCents: p.valueCents,
+    }));
+    return { active: true, points };
+  }, [isShort, rows, cashCents, intraday, optionPrices, startKey, endKey]);
+}
 
 // ---------- actions (re-exported for ergonomic access) ----------
 

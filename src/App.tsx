@@ -112,18 +112,19 @@ function AppInner() {
     <Shell
       navOpen={navOpen}
       onToggleNav={() => setNavOpen((v) => !v)}
-      header={
-        <AccountSwitcher
-          onNewAccount={() => setAccountModal({})}
-          onEditAccount={(id) => setAccountModal({ editId: id })}
-        />
-      }
       sidebar={
         <Sidebar
           active={normalizedActive}
           onSelect={onNavSelect}
           primary={PRIMARY}
           secondary={SECONDARY}
+          onToggleNav={() => setNavOpen((v) => !v)}
+          header={
+            <AccountSwitcher
+              onNewAccount={() => setAccountModal({})}
+              onEditAccount={(id) => setAccountModal({ editId: id })}
+            />
+          }
           footer={
             <div className="sidebarCtas">
               <button

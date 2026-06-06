@@ -126,6 +126,15 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
           <div className="tradeView__head">
             <div className="tradeView__symGroup">
               <TradeHeaderSymbol trade={trade} />
+              {opt && (
+                <span
+                  className={`tradeTable__marketBadge tradeTable__marketBadge--${
+                    opt.type === "CALL" ? "call" : "put"
+                  }`}
+                >
+                  {opt.type}
+                </span>
+              )}
               {headlineCents != null && (
                 <span className={`tradeView__return tradeView__return--${headlineTone ?? "neutral"}`}>
                   {formatCents(headlineCents)}
@@ -151,15 +160,6 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
                     }
                   />
                   OPEN
-                </span>
-              )}
-              {opt && (
-                <span
-                  className={`tradeTable__marketBadge tradeTable__marketBadge--${
-                    opt.type === "CALL" ? "call" : "put"
-                  }`}
-                >
-                  {opt.type}
                 </span>
               )}
               <span className="tradeView__pill">{trade.market}</span>
