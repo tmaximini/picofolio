@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus, Bookmark, CircleHelp, Terminal } from "lucide-react";
+import { Bookmark, CircleHelp, Plus, Terminal } from "lucide-react";
 import {
   BrowserRouter,
   Navigate,
@@ -9,6 +9,14 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { Shell, Sidebar } from "@/components/layout";
+import {
+  GlyphActivity,
+  GlyphCalendar,
+  GlyphHoldings,
+  GlyphOverview,
+  GlyphPerformance,
+  GlyphSettings,
+} from "@/components/layout/nav-glyphs";
 import { Kbd } from "@/components/primitives";
 import {
   AccountFormModal,
@@ -29,18 +37,20 @@ import { useHotkeys } from "@/lib/hotkeys";
 import type { Note } from "@/lib/notes";
 import { useRefreshAll } from "@/store/selectors";
 
-// Account-scoped views — the switcher narrows what these show.
+// Account-scoped views — the switcher narrows what these show. Glyphs are
+// hand-drawn (components/layout/nav-glyphs), each with a hover animation;
+// every row also reveals its g-chord on hover.
 const PRIMARY = [
-  { id: "/", label: "Overview" },
-  { id: "/activity", label: "Activity" },
-  { id: "/holdings", label: "Holdings" },
-  { id: "/calendar", label: "Calendar" },
+  { id: "/", label: "Overview", icon: <GlyphOverview />, shortcut: "g o" },
+  { id: "/activity", label: "Activity", icon: <GlyphActivity />, shortcut: "g a" },
+  { id: "/holdings", label: "Holdings", icon: <GlyphHoldings />, shortcut: "g h" },
+  { id: "/calendar", label: "Calendar", icon: <GlyphCalendar />, shortcut: "g c" },
 ];
 
 // Global, account-independent views.
 const SECONDARY = [
-  { id: "/performance", label: "Performance" },
-  { id: "/settings", label: "Settings" },
+  { id: "/performance", label: "Performance", icon: <GlyphPerformance />, shortcut: "g p" },
+  { id: "/settings", label: "Settings", icon: <GlyphSettings />, shortcut: "g s" },
 ];
 
 /**
@@ -123,6 +133,7 @@ function AppInner() {
       { combo: "g a", handler: () => navigate("/activity") },
       { combo: "g c", handler: () => navigate("/calendar") },
       { combo: "g h", handler: () => navigate("/holdings") },
+      { combo: "g p", handler: () => navigate("/performance") },
       { combo: "g s", handler: () => navigate("/settings") },
     ],
     [navigate, refreshAll],

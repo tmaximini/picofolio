@@ -1,7 +1,12 @@
 import type { ReactNode } from "react";
 import { Menu } from "lucide-react";
 
-type NavItem = { id: string; label: ReactNode };
+type NavItem = {
+  id: string;
+  label: ReactNode;
+  icon?: ReactNode;
+  shortcut?: string;
+};
 
 type SidebarProps = {
   active: string;
@@ -30,7 +35,9 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="sidebar__top">
         <div className="brand">
-          <div className="brand__mark" aria-hidden />
+          <div className="brand__mark" aria-hidden>
+            <span className="brand__markGlyph">P</span>
+          </div>
           <div className="brand__name">Picofolio</div>
         </div>
         <button
@@ -77,8 +84,9 @@ function NavButton({
       onClick={() => onSelect(item.id)}
       className={item.id === active ? "nav__item nav__item--active" : "nav__item"}
     >
-      <span className="nav__dot" />
-      {item.label}
+      {item.icon && <span className="nav__icon">{item.icon}</span>}
+      <span className="nav__label">{item.label}</span>
+      {item.shortcut && <span className="nav__key">{item.shortcut}</span>}
     </button>
   );
 }
