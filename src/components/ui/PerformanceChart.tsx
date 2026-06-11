@@ -4,6 +4,7 @@ import {
   ColorType,
   CrosshairMode,
   LineStyle,
+  TickMarkType,
   createChart,
   type IChartApi,
   type ISeriesApi,
@@ -52,6 +53,28 @@ function timeKey(t: Time): string {
     return `${b.year}-${String(b.month).padStart(2, "0")}-${String(b.day).padStart(2, "0")}`;
   }
   return String(t);
+}
+
+/** Axis tick labels for intraday (unix-seconds) data, in the user's local
+ *  timezone — the library's default renders timestamps as UTC, which shifts
+ *  the visible session hours for anyone east/west of it. */
+function localTickMark(time: Time, tickType: TickMarkType): string {
+  if (typeof time !== "number") return String(time);
+  const d = new Date(time * 1000);
+  switch (tickType) {
+    case TickMarkType.Year:
+      return d.toLocaleDateString("en-US", { year: "numeric" });
+    case TickMarkType.Month:
+      return d.toLocaleDateString("en-US", { month: "short" });
+    case TickMarkType.DayOfMonth:
+      return d.toLocaleDateString("en-US", { day: "numeric", month: "short" });
+    default:
+      return d.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: false,
+      });
+  }
 }
 
 function formatTipDate(t: string | number): string {
@@ -115,6 +138,13 @@ export function PerformanceChart({
       },
       localization: {
         priceFormatter: format === "percent" ? percentFormatter : currencyFormatter,
+        // Crosshair time label in local time (matches the hover popover).
+        ...(timeVisible
+          ? {
+              timeFormatter: (t: Time) =>
+                formatTipDate(typeof t === "number" ? t : timeKey(t)),
+            }
+          : {}),
       },
       grid: {
         vertLines: { visible: false },
@@ -131,6 +161,7 @@ export function PerformanceChart({
         secondsVisible: false,
         fixLeftEdge: true,
         fixRightEdge: true,
+        ...(timeVisible ? { tickMarkFormatter: localTickMark } : {}),
       },
       crosshair: {
         mode: CrosshairMode.Magnet,
@@ -221,7 +252,13 @@ export function PerformanceChart({
     chartRef.current = chart;
     seriesRef.current = series;
 
+    // Double-click anywhere on the plot resets the zoom to the full range
+    // (the built-in reset only listens on the axis itself).
+    const onDblClick = () => chart.timeScale().fitContent();
+    el.addEventListener("dblclick", onDblClick);
+
     return () => {
+      el.removeEventListener("dblclick", onDblClick);
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;

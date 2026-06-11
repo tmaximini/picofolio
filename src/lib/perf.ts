@@ -40,20 +40,33 @@ function startCutoff(range: PerfRange, series: ValuePoint[]): string {
  *  intraday-reconstructed short-range series. */
 export type PctPoint = { time: string | number; value: number; valueCents: number };
 
-/** Rebased percent series for the range. Empty if fewer than 2 points. */
+/**
+ * Rebased percent series for the range.
+ *
+ * Rebases from the first *non-zero* value in the window — a brand-new
+ * account can report leading $0 days (pre-funding), and 0 can't be a
+ * percent base. When the data starts after the window does (e.g. YTD on an
+ * account opened in June), a flat 0% anchor at the window start draws a
+ * straight line up to the first real point instead of an empty chart.
+ */
 export function computePctSeries(
   series: ValuePoint[],
   range: PerfRange,
 ): PctPoint[] {
-  if (series.length < 2) return [];
+  if (series.length === 0) return [];
   const cutoff = startCutoff(range, series);
   const sliced = series.filter((p) => p.time >= cutoff);
-  if (sliced.length < 2) return [];
-  const base = sliced[0]!.valueCents;
-  if (base === 0) return [];
-  return sliced.map((p) => ({
+  const firstReal = sliced.findIndex((p) => p.valueCents > 0);
+  if (firstReal === -1) return [];
+  const kept = sliced.slice(firstReal);
+  const base = kept[0]!.valueCents;
+  const pct: PctPoint[] = kept.map((p) => ({
     time: p.time,
     value: ((p.valueCents - base) / base) * 100,
     valueCents: p.valueCents,
   }));
+  if (kept[0]!.time > cutoff) {
+    pct.unshift({ time: cutoff, value: 0, valueCents: base });
+  }
+  return pct;
 }

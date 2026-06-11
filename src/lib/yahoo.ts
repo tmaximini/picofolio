@@ -93,6 +93,25 @@ function pickIntradayParams(daysAgo: number): IntradayParams | null {
   return null;
 }
 
+/** Resolve the Yahoo request a window starting at `startKey` maps to. */
+export function intradayParamsFor(startKey: string): IntradayParams | null {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const startMs = new Date(`${startKey}T00:00:00Z`).getTime();
+  const oldestDaysAgo = Math.max(0, Math.round((Date.now() - startMs) / DAY_MS));
+  return pickIntradayParams(oldestDaysAgo);
+}
+
+/**
+ * Cache key for an intraday window — keyed by the *resolved request*
+ * (interval + range token), not the requested dates. Different windows that
+ * map to the same Yahoo call (e.g. 7D and MTD mid-month) share one entry,
+ * so toggling between them never refetches or flashes a fallback chart.
+ */
+export function intradayCacheKey(symbol: string, startKey: string): string {
+  const p = intradayParamsFor(startKey);
+  return p ? `${symbol}|${p.interval}|${p.range}` : `${symbol}|daily`;
+}
+
 /**
  * Returns intraday close points for [startKey, endKey] (inclusive,
  * YYYY-MM-DD strings, defaults to single-day when endKey is omitted).
@@ -107,11 +126,7 @@ export async function fetchYahooIntraday(
   startKey: string,
   endKey: string = startKey,
 ): Promise<IntradayPoint[] | null> {
-  const DAY_MS = 24 * 60 * 60 * 1000;
-  const now = Date.now();
-  const startMs = new Date(`${startKey}T00:00:00Z`).getTime();
-  const oldestDaysAgo = Math.max(0, Math.round((now - startMs) / DAY_MS));
-  const params = pickIntradayParams(oldestDaysAgo);
+  const params = intradayParamsFor(startKey);
   if (!params) return null;
   const { interval, range } = params;
 

@@ -1,8 +1,8 @@
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Eyebrow } from "@/components/primitives";
 import { formatPct } from "@/lib/money";
-import { PERF_RANGES, computePctSeries, type PerfRange } from "@/lib/perf";
+import { PERF_RANGES, computePctSeries, type PctPoint, type PerfRange } from "@/lib/perf";
 import { useIntradayPctSeries, type ValuePoint } from "@/store/selectors";
 import { PerformanceChart } from "./PerformanceChart";
 
@@ -26,8 +26,22 @@ export function PerformanceCard({ label, valueCents, series, scope }: Performanc
 
   const dailyPct = useMemo(() => computePctSeries(series, range), [series, range]);
   const intraday = useIntradayPctSeries(scope ?? null, range);
-  const usingIntraday = intraday.active;
-  const pct = usingIntraday ? intraday.points : dailyPct;
+
+  // While an intraday series is expected but its bars are still in flight
+  // (e.g. right after a range toggle), hold the last settled curve instead
+  // of flashing the low-detail daily fallback for a beat.
+  const lastSettled = useRef<{ points: PctPoint[]; usingIntraday: boolean } | null>(null);
+  let usingIntraday = intraday.active;
+  let pct = usingIntraday ? intraday.points : dailyPct;
+  const holding = intraday.pending && !intraday.active && lastSettled.current != null;
+  if (holding) {
+    pct = lastSettled.current!.points;
+    usingIntraday = lastSettled.current!.usingIntraday;
+  }
+  useEffect(() => {
+    if (!holding && pct.length >= 2) lastSettled.current = { points: pct, usingIntraday };
+  });
+
   const periodReturn = pct.length > 0 ? pct[pct.length - 1]!.value / 100 : null;
   const tone =
     periodReturn == null ? "neutral" : periodReturn >= 0 ? "gain" : "loss";

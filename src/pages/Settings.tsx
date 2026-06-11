@@ -971,28 +971,40 @@ function IbkrSetupGuide() {
         Copy the long alphanumeric string — that's your <strong>Flex Token</strong>.
       </Step>
       <Step n={4} title="Create an Activity Flex Query">
-        Create an <strong>Activity Flex Query</strong>, Format{" "}
-        <strong>XML</strong>, Period <strong>Last 365 Calendar Days</strong>.
-        Tick these sections:
+        Under <strong>Activity Flex Query</strong>, hit <strong>+</strong> and
+        name it anything (e.g. <code>picofolio</code>). Set Format{" "}
+        <strong>XML</strong> and Period{" "}
+        <strong>Last 365 Calendar Days</strong> — the full year backfills your
+        account-value chart on the first sync.
+      </Step>
+      <Step n={5} title="Tick exactly four sections">
+        In each section's popup, tick the topmost box to select all fields.
+        Leave every other section off and all date/time formats at their
+        defaults.
         <ul>
           <li>
-            <strong>Trades</strong> — drives the Activity journal.
+            <strong>Trades</strong> — fills the Activity journal.
           </li>
           <li>
-            <strong>Open Positions</strong> — required for Holdings &amp;
-            account value. Without it the account shows $0.
+            <strong>Open Positions</strong> — Holdings &amp; live account
+            value. Without it the account shows $0.
           </li>
           <li>
-            <strong>Cash Report</strong> — adds your cash balance to account
-            value.
+            <strong>Cash Report</strong> — your cash balance.
+          </li>
+          <li>
+            <strong>Net Asset Value (NAV) in Base</strong> — IBKR's official
+            daily account value. This is what makes the performance chart
+            match IBKR exactly.
           </li>
         </ul>
-        Defaults for date/time format are what the parser expects.
+        Already have a query? Edit it, tick the missing sections, save — the
+        next sync picks them up.
       </Step>
-      <Step n={5} title="Find the Query ID, paste, sync">
-        Your query has a numeric <strong>Query ID</strong>. Paste the token +
-        Query ID into the account's connection below, Save, then{" "}
-        <strong>Sync now</strong>.
+      <Step n={6} title="Find the Query ID, paste, sync">
+        Save the query — it appears in the list with a numeric{" "}
+        <strong>Query ID</strong>. Paste the token + Query ID into the
+        account's connection below, Save, then <strong>Sync now</strong>.
       </Step>
     </ol>
   );

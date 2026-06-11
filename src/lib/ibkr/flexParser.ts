@@ -56,6 +56,18 @@ export type ParsedPosition = {
   markPriceCents: number;
 };
 
+/** One day of broker-reported NAV, from the "Net Asset Value (NAV) in Base"
+ *  section (<EquitySummaryInBase>). This is IBKR's official end-of-day
+ *  account value — the ground truth the performance chart should follow. */
+export type ParsedNavPoint = {
+  /** Account id from IBKR (Uxxxxx / DUxxxxx). */
+  accountId: string;
+  /** YYYY-MM-DD report date. */
+  time: string;
+  /** Total NAV in base currency, integer cents. */
+  valueCents: number;
+};
+
 export type FlexParseResult = {
   trades: Trade[];
   /** Underlying executions in document order — useful for debugging or future re-grouping. */
@@ -64,6 +76,8 @@ export type FlexParseResult = {
   positions: ParsedPosition[];
   /** Base-currency cash (from <CashReport> BASE_SUMMARY), in cents. 0 if absent. */
   cashCents: number;
+  /** Daily NAV history (from the NAV-in-Base section), date-ascending. Empty if absent. */
+  nav: ParsedNavPoint[];
   warnings: string[];
   accountIds: string[];
 };
@@ -231,6 +245,39 @@ function parseCashCents(doc: Document): number {
   if (base) return pick(base);
   // Single-currency account: use the sole row.
   return rows.length === 1 ? pick(rows[0]!) : 0;
+}
+
+/**
+ * Parse the "Net Asset Value (NAV) in Base" section. One row per report
+ * date (per account); `total` is the full EOD NAV — cash + stock + options
+ * + accruals — in base currency.
+ */
+function parseNavHistory(doc: Document, warnings: string[]): ParsedNavPoint[] {
+  const els = Array.from(
+    doc.getElementsByTagName("EquitySummaryByReportDateInBase"),
+  );
+  const out: ParsedNavPoint[] = [];
+  for (const el of els) {
+    // reportDate arrives as "YYYYMMDD" or "YYYY-MM-DD" depending on the
+    // query's date-format setting — accept both.
+    const raw = el.getAttribute("reportDate") ?? "";
+    const m = raw.match(/^(\d{4})-?(\d{2})-?(\d{2})$/);
+    if (!m) continue;
+    const totalRaw = el.getAttribute("total");
+    if (!totalRaw) continue;
+    const total = parseFloat(totalRaw);
+    if (!Number.isFinite(total)) continue;
+    out.push({
+      accountId: el.getAttribute("accountId") ?? "",
+      time: `${m[1]}-${m[2]}-${m[3]}`,
+      valueCents: Math.round(total * 100),
+    });
+  }
+  if (els.length > 0 && out.length === 0) {
+    warnings.push("NAV section had no usable rows.");
+  }
+  out.sort((a, b) => a.time.localeCompare(b.time));
+  return out;
 }
 
 /**
@@ -454,6 +501,7 @@ export function parseFlexXml(xml: string): FlexParseResult {
 
   const positions = parseOpenPositions(doc, warnings);
   const cashCents = parseCashCents(doc);
+  const nav = parseNavHistory(doc, warnings);
 
   const tradeEls = Array.from(doc.getElementsByTagName("Trade"));
   const executions: ParsedExecution[] = [];
@@ -466,6 +514,7 @@ export function parseFlexXml(xml: string): FlexParseResult {
     }
   }
   for (const p of positions) if (p.accountId) accountIds.add(p.accountId);
+  for (const n of nav) if (n.accountId) accountIds.add(n.accountId);
 
   if (tradeEls.length === 0 && positions.length === 0) {
     warnings.push("No <Trade> or <OpenPosition> rows found in XML — nothing to import.");
@@ -478,6 +527,7 @@ export function parseFlexXml(xml: string): FlexParseResult {
     executions,
     positions,
     cashCents,
+    nav,
     warnings,
     accountIds: Array.from(accountIds),
   };

@@ -9,9 +9,9 @@
  */
 
 import { useEffect, useMemo } from "react";
-import { ALL_ACCOUNTS, useStore } from "./index";
+import { ALL_ACCOUNTS, useStore, type IntradayEntry } from "./index";
+import { intradayCacheKey } from "@/lib/yahoo";
 import type { PricePoint } from "@/lib/priceHistory";
-import type { IntradayPoint } from "@/lib/yahoo";
 import type { Account, Holding } from "@/lib/mock";
 import type { Trade, TradeSetup, TradeStatus } from "@/lib/trades";
 import { deriveTotals, tradeDateKey } from "@/lib/tradeMath";
@@ -218,42 +218,84 @@ export const useUnrealizedCents = (symbol: string): number | null =>
 
 // ---------- account aggregates ----------
 
+/** Cash + sum of holding values, or null while any holding lacks a price —
+ *  we'd rather show "—" than a misleading partial total. */
+function accountValueCentsOf(
+  account: Account,
+  rows: Holding[],
+  prices: Record<string, { points?: PricePoint[] }>,
+  optionPrices: Record<string, { points?: PricePoint[] }>,
+): number | null {
+  let total = account.cashCents;
+  for (const h of rows) {
+    const v = holdingValueCents(h, prices, optionPrices);
+    if (v == null) return null;
+    total += v;
+  }
+  return total;
+}
+
 /**
  * Account market value (sum of holding values for that account + cash).
- * Returns null if any holding in the account is missing a price — we'd
- * rather show "—" than a misleading partial total.
+ * Returns null if any holding in the account is missing a price.
  */
 export const useAccountValueCents = (accountId: string): number | null =>
   useStore((s) => {
     const account = s.accounts.find((a) => a.id === accountId);
     if (!account) return null;
     const rows = s.holdings.filter((h) => h.accountId === accountId);
-    let total = account.cashCents;
-    for (const h of rows) {
-      const v = holdingValueCents(h, s.prices, s.optionPrices);
-      if (v == null) return null;
-      total += v;
-    }
-    return total;
+    return accountValueCentsOf(account, rows, s.prices, s.optionPrices);
   });
+
+/**
+ * Sum of qty × price-change over the period for a set of holdings, in cents.
+ * Options use their MarketData series (×100 contract multiplier) when
+ * available, else contribute 0 — a flat broker mark shouldn't blank the
+ * whole account's delta. Stocks with no series yet return null (loading).
+ */
+function holdingsDeltaCents(
+  rows: Holding[],
+  period: DeltaPeriod,
+  prices: Record<string, { points?: PricePoint[] }>,
+  optionPrices: Record<string, { points?: PricePoint[] }>,
+): number | null {
+  let total = 0;
+  for (const h of rows) {
+    if (parseOccSymbol(h.symbol)) {
+      const pts = optionPrices[h.symbol]?.points;
+      if (pts && pts.length >= 2) {
+        const last = pts[pts.length - 1]!.value;
+        const ref = refPriceFor(pts, period);
+        if (ref != null) {
+          total += Math.round(
+            h.qty * (last - ref) * contractMultiplier(h.symbol) * 100,
+          );
+        }
+      }
+      continue;
+    }
+    const pts = prices[h.symbol]?.points;
+    if (!pts || pts.length < 2) return null;
+    const last = pts[pts.length - 1]!.value;
+    const ref = refPriceFor(pts, period);
+    if (ref == null) return null;
+    total += Math.round(h.qty * (last - ref) * 100);
+  }
+  return total;
+}
 
 export const useAccountDeltaCents = (
   accountId: string,
   period: DeltaPeriod,
 ): number | null =>
-  useStore((s) => {
-    const rows = s.holdings.filter((h) => h.accountId === accountId);
-    let total = 0;
-    for (const h of rows) {
-      const pts = s.prices[h.symbol]?.points;
-      if (!pts || pts.length < 2) return null;
-      const last = pts[pts.length - 1]!.value;
-      const ref = refPriceFor(pts, period);
-      if (ref == null) return null;
-      total += Math.round(h.qty * (last - ref) * 100);
-    }
-    return total;
-  });
+  useStore((s) =>
+    holdingsDeltaCents(
+      s.holdings.filter((h) => h.accountId === accountId),
+      period,
+      s.prices,
+      s.optionPrices,
+    ),
+  );
 
 /**
  * Rate-of-return headline: derived value vs. net contributions.
@@ -294,18 +336,7 @@ export const usePortfolioValueCents = (): number | null =>
   });
 
 export const usePortfolioDeltaCents = (period: DeltaPeriod): number | null =>
-  useStore((s) => {
-    let total = 0;
-    for (const h of s.holdings) {
-      const pts = s.prices[h.symbol]?.points;
-      if (!pts || pts.length < 2) return null;
-      const last = pts[pts.length - 1]!.value;
-      const ref = refPriceFor(pts, period);
-      if (ref == null) return null;
-      total += Math.round(h.qty * (last - ref) * 100);
-    }
-    return total;
-  });
+  useStore((s) => holdingsDeltaCents(s.holdings, period, s.prices, s.optionPrices));
 
 /** Sum of every account's net contributions — the portfolio cost basis. */
 export const usePortfolioContributionsCents = (): number =>
@@ -331,9 +362,13 @@ export type ValuePoint = { time: string; valueCents: number };
  * Daily market-value series for a set of holdings + a constant cash balance.
  * Current positions are valued back through the available price history
  * (assumes today's holdings were held over the window — the right model for
- * a "how is this book performing" curve). Only dates where *every* holding
- * has a close are kept, so the total never jumps when one symbol's history
- * starts. Returns [] until all holdings have prices (caller shows loading).
+ * a "how is this book performing" curve).
+ *
+ * Date axis = the union of every leg's dates, starting where all legs have
+ * data. A leg missing a date (exchange holiday, lagging fetch) carries its
+ * last known close forward instead of dropping the date for the whole
+ * portfolio — a strict intersection used to truncate the curve's most recent
+ * days whenever one symbol lagged. Returns [] until all holdings have prices.
  */
 function buildValueSeries(
   rows: Holding[],
@@ -342,7 +377,7 @@ function buildValueSeries(
   optionPrices?: Record<string, { points?: PricePoint[] }>,
 ): ValuePoint[] {
   if (rows.length === 0) return [];
-  const legs: { qty: number; byDate: Map<string, number> }[] = [];
+  const legs: { qty: number; times: string[]; values: number[] }[] = [];
   // Holdings with no equity price history (options/futures) get a constant
   // contribution across the curve — we don't fold their series into the legs
   // (the leg sum has no contract multiplier). The constant uses the live
@@ -351,9 +386,11 @@ function buildValueSeries(
   for (const h of rows) {
     const pts = prices[h.symbol]?.points;
     if (pts && pts.length > 0) {
-      const byDate = new Map<string, number>();
-      for (const p of pts) byDate.set(p.time, p.value);
-      legs.push({ qty: h.qty, byDate });
+      legs.push({
+        qty: h.qty,
+        times: pts.map((p) => p.time),
+        values: pts.map((p) => p.value),
+      });
     } else {
       const unit = unitPriceCentsFor(h, prices, optionPrices);
       if (unit == null) return []; // still loading a price — wait for coverage
@@ -362,44 +399,122 @@ function buildValueSeries(
   }
   // No history at all (e.g. an options-only account) — no date axis to draw on.
   if (legs.length === 0) return [];
-  // Anchor the date axis on the holding with the fewest points (shortest
-  // history) — every kept date is then guaranteed present in the others.
-  let anchor = legs[0]!;
-  for (const leg of legs) if (leg.byDate.size < anchor.byDate.size) anchor = leg;
+  // Start where the shortest history begins so the total never jumps when
+  // one symbol's series starts mid-window.
+  let start = legs[0]!.times[0]!;
+  for (const leg of legs) if (leg.times[0]! > start) start = leg.times[0]!;
+  const dates = [...new Set(legs.flatMap((l) => l.times))]
+    .filter((d) => d >= start)
+    .sort();
 
-  const out: ValuePoint[] = [];
-  for (const date of anchor.byDate.keys()) {
+  // Walk all legs in lockstep with per-leg cursors (dates are ascending).
+  const cursors = legs.map(() => 0);
+  return dates.map((date) => {
     let dollars = 0;
-    let ok = true;
-    for (const leg of legs) {
-      const v = leg.byDate.get(date);
-      if (v == null) {
-        ok = false;
-        break;
-      }
-      dollars += leg.qty * v;
+    for (let i = 0; i < legs.length; i++) {
+      const leg = legs[i]!;
+      let c = cursors[i]!;
+      while (c + 1 < leg.times.length && leg.times[c + 1]! <= date) c++;
+      cursors[i] = c;
+      dollars += leg.qty * leg.values[c]!;
     }
-    if (ok) {
-      out.push({
-        time: date,
-        valueCents: Math.round(dollars * 100) + cashCents + flatCents,
-      });
-    }
-  }
-  out.sort((a, b) => a.time.localeCompare(b.time));
-  return out;
+    return {
+      time: date,
+      valueCents: Math.round(dollars * 100) + cashCents + flatCents,
+    };
+  });
 }
 
-/** Portfolio-wide daily value series (all holdings + all cash). */
+/**
+ * Broker NAV series + a live "today" point. NAV is end-of-day, so during the
+ * session the curve would lag behind the headline value — append (or replace)
+ * today's point with the live computed value when it's fully priced.
+ */
+function withLiveToday(nav: ValuePoint[], liveCents: number | null): ValuePoint[] {
+  if (liveCents == null) return nav;
+  const today = new Date().toISOString().slice(0, 10);
+  const last = nav[nav.length - 1]!;
+  if (last.time >= today) {
+    return [...nav.slice(0, -1), { time: last.time, valueCents: liveCents }];
+  }
+  return [...nav, { time: today, valueCents: liveCents }];
+}
+
+/** Daily value curve for one account: broker-reported NAV when imported
+ *  (authoritative — matches IBKR exactly), else reconstructed from price
+ *  history. [] while prices are still loading (NAV needs no prices). */
+function accountValueCurve(
+  account: Account,
+  rows: Holding[],
+  nav: ValuePoint[] | undefined,
+  prices: Record<string, { points?: PricePoint[] }>,
+  optionPrices: Record<string, { points?: PricePoint[] }>,
+): ValuePoint[] {
+  if (nav && nav.length >= 2) {
+    return withLiveToday(nav, accountValueCentsOf(account, rows, prices, optionPrices));
+  }
+  return buildValueSeries(rows, account.cashCents, prices, optionPrices);
+}
+
+/** Sum per-account curves with carry-forward alignment, starting where every
+ *  curve has data. `flatCents` adds curve-less contributions (cash-only accounts). */
+function sumValueCurves(curves: ValuePoint[][], flatCents: number): ValuePoint[] {
+  if (curves.length === 0) return [];
+  let start = curves[0]![0]!.time;
+  for (const c of curves) if (c[0]!.time > start) start = c[0]!.time;
+  const dates = [...new Set(curves.flatMap((c) => c.map((p) => p.time)))]
+    .filter((d) => d >= start)
+    .sort();
+  const cursors = curves.map(() => 0);
+  return dates.map((date) => {
+    let cents = flatCents;
+    for (let i = 0; i < curves.length; i++) {
+      const c = curves[i]!;
+      let k = cursors[i]!;
+      while (k + 1 < c.length && c[k + 1]!.time <= date) k++;
+      cursors[i] = k;
+      cents += c[k]!.valueCents;
+    }
+    return { time: date, valueCents: cents };
+  });
+}
+
+/** Portfolio-wide daily value series — the sum of every account's curve
+ *  (broker NAV where available, price reconstruction elsewhere). */
 export const usePortfolioValueSeries = (): ValuePoint[] => {
   const holdings = useStore((s) => s.holdings);
   const accounts = useStore((s) => s.accounts);
   const prices = useStore((s) => s.prices);
   const optionPrices = useStore((s) => s.optionPrices);
+  const navHistory = useStore((s) => s.navHistory);
   return useMemo(() => {
-    const cashCents = accounts.reduce((a, acc) => a + acc.cashCents, 0);
-    return buildValueSeries(holdings, cashCents, prices, optionPrices);
-  }, [holdings, accounts, prices, optionPrices]);
+    const curves: ValuePoint[][] = [];
+    let flatCents = 0;
+    for (const account of accounts) {
+      const rows = holdings.filter((h) => h.accountId === account.id);
+      if (rows.length === 0 && !(navHistory[account.id]?.length)) {
+        flatCents += account.cashCents; // cash-only account, no curve to draw
+        continue;
+      }
+      const curve = accountValueCurve(
+        account,
+        rows,
+        navHistory[account.id],
+        prices,
+        optionPrices,
+      );
+      if (curve.length === 0) {
+        // No drawable curve: with holdings that means prices are still
+        // loading — wait. Without holdings (e.g. a one-point NAV record)
+        // the account just contributes its cash flat.
+        if (rows.length > 0) return [];
+        flatCents += account.cashCents;
+        continue;
+      }
+      curves.push(curve);
+    }
+    return sumValueCurves(curves, flatCents);
+  }, [holdings, accounts, prices, optionPrices, navHistory]);
 };
 
 /** Daily value series for a single account (its holdings + its cash). */
@@ -408,12 +523,13 @@ export const useAccountValueSeries = (accountId: string): ValuePoint[] => {
   const accounts = useStore((s) => s.accounts);
   const prices = useStore((s) => s.prices);
   const optionPrices = useStore((s) => s.optionPrices);
+  const nav = useStore((s) => s.navHistory[accountId]);
   return useMemo(() => {
     const account = accounts.find((a) => a.id === accountId);
     if (!account) return [];
     const rows = holdings.filter((h) => h.accountId === accountId);
-    return buildValueSeries(rows, account.cashCents, prices, optionPrices);
-  }, [holdings, accounts, prices, optionPrices, accountId]);
+    return accountValueCurve(account, rows, nav, prices, optionPrices);
+  }, [holdings, accounts, nav, prices, optionPrices, accountId]);
 };
 
 // ---------- intraday value reconstruction (short ranges) ----------
@@ -422,79 +538,99 @@ export type IntradayValuePoint = { time: number; valueCents: number };
 
 /**
  * Intraday portfolio-value reconstruction. Same model as buildValueSeries but
- * over Yahoo intraday bars: each stock leg is a timestamp→price map; options +
- * cash are a flat contribution at their current mark (there's no intraday
- * options feed). Returns `ready: false` when any stock leg's intraday bars
- * aren't loaded yet (or the symbol has no intraday coverage) — callers then
- * fall back to the daily series, so the chart is never worse than before.
+ * over Yahoo intraday bars: each stock leg is a sorted timestamp series;
+ * options + cash are a flat contribution at their current mark (there's no
+ * intraday options feed). A stock whose intraday fetch settled empty (outside
+ * Yahoo retention, or an error) joins the flat bucket at its latest known
+ * price instead of failing the whole reconstruction — one odd symbol used to
+ * force the entire chart back to daily points.
+ *
+ * `ready: false` + `loading: true`  → bars still in flight (caller may hold
+ * the previous chart); `loading: false` → no intraday coverage at all (daily
+ * is the right chart).
  */
 function buildIntradayValueSeries(
   rows: Holding[],
   cashCents: number,
-  intraday: Record<string, { points?: IntradayPoint[] | null }>,
+  intraday: Record<string, IntradayEntry | undefined>,
+  prices: Record<string, { points?: PricePoint[] }>,
   optionPrices: Record<string, { points?: PricePoint[] }>,
   startKey: string,
-  endKey: string,
-): { points: IntradayValuePoint[]; ready: boolean } {
-  const legs: { qty: number; byTime: Map<number, number> }[] = [];
+): { points: IntradayValuePoint[]; ready: boolean; loading: boolean } {
+  const legs: { qty: number; times: number[]; values: number[] }[] = [];
   let flatCents = 0;
+  const addFlat = (h: Holding): boolean => {
+    const unit = unitPriceCentsFor(h, prices, optionPrices);
+    if (unit == null) return false;
+    flatCents += Math.round(h.qty * unit * contractMultiplier(h.symbol));
+    return true;
+  };
   for (const h of rows) {
     if (parseOccSymbol(h.symbol)) {
-      const unit = unitPriceCentsFor(h, {}, optionPrices);
-      if (unit != null) flatCents += Math.round(h.qty * unit * contractMultiplier(h.symbol));
+      addFlat(h);
       continue;
     }
-    const pts = intraday[`${h.symbol}|${startKey}|${endKey}`]?.points;
-    if (pts && pts.length > 0) {
-      const byTime = new Map<number, number>();
-      for (const p of pts) byTime.set(p.time, p.value);
-      legs.push({ qty: h.qty, byTime });
+    const entry = intraday[intradayCacheKey(h.symbol, startKey)];
+    if (entry?.points && entry.points.length > 0) {
+      legs.push({
+        qty: h.qty,
+        times: entry.points.map((p) => p.time),
+        values: entry.points.map((p) => p.value),
+      });
+    } else if (entry && entry.status !== "loading" && entry.status !== "idle") {
+      // Settled without bars (no coverage / error) — hold it flat.
+      if (!addFlat(h)) return { points: [], ready: false, loading: true };
     } else {
-      return { points: [], ready: false };
+      return { points: [], ready: false, loading: true }; // still in flight
     }
   }
-  if (legs.length === 0) return { points: [], ready: false };
+  if (legs.length === 0) return { points: [], ready: false, loading: false };
   // Yahoo returns its full retained intraday range (often wider than the
-  // requested window), so clip to the window start.
-  const startSec = Date.parse(`${startKey}T00:00:00Z`) / 1000;
-  // Anchor on the fewest-points leg so every kept timestamp exists in all legs.
+  // requested window), so clip to the window start; also start no earlier
+  // than the latest-starting leg so the total never jumps mid-curve.
+  let startSec = Date.parse(`${startKey}T00:00:00Z`) / 1000;
+  for (const leg of legs) if (leg.times[0]! > startSec) startSec = leg.times[0]!;
+  // Anchor the time axis on the densest leg; other legs carry their last
+  // known price forward — bar timestamps rarely align exactly across symbols.
   let anchor = legs[0]!;
-  for (const leg of legs) if (leg.byTime.size < anchor.byTime.size) anchor = leg;
+  for (const leg of legs) if (leg.times.length > anchor.times.length) anchor = leg;
+  const cursors = legs.map(() => 0);
   const out: IntradayValuePoint[] = [];
-  for (const t of anchor.byTime.keys()) {
+  for (const t of anchor.times) {
     if (t < startSec) continue;
     let dollars = 0;
-    let ok = true;
-    for (const leg of legs) {
-      const v = leg.byTime.get(t);
-      if (v == null) {
-        ok = false;
-        break;
-      }
-      dollars += leg.qty * v;
+    for (let i = 0; i < legs.length; i++) {
+      const leg = legs[i]!;
+      let c = cursors[i]!;
+      while (c + 1 < leg.times.length && leg.times[c + 1]! <= t) c++;
+      cursors[i] = c;
+      dollars += leg.qty * leg.values[c]!;
     }
-    if (ok) out.push({ time: t, valueCents: Math.round(dollars * 100) + cashCents + flatCents });
+    out.push({ time: t, valueCents: Math.round(dollars * 100) + cashCents + flatCents });
   }
-  out.sort((a, b) => a.time - b.time);
-  return { points: out, ready: true };
+  return { points: out, ready: true, loading: false };
 }
 
 /**
  * Rebased percent series reconstructed from intraday bars, for short ranges
  * (7D / MTD) on a scope (an accountId, or ALL_ACCOUNTS). `active` is false for
  * long ranges or until intraday data is ready — callers then use the daily
- * series. Triggers the per-symbol intraday loads as a side effect.
+ * series. `pending` is true while an intraday series is expected but its bars
+ * are still in flight — callers may hold the current chart instead of
+ * flashing the daily fallback. Triggers the per-symbol loads as a side effect.
  */
 export function useIntradayPctSeries(
   scope: string | null,
   range: PerfRange,
-): { active: boolean; points: PctPoint[] } {
+): { active: boolean; pending: boolean; points: PctPoint[] } {
   const isShort = scope != null && (range === "7D" || range === "MTD");
   const holdings = useStore((s) => s.holdings);
   const accounts = useStore((s) => s.accounts);
   const intraday = useStore((s) => s.intraday);
+  const prices = useStore((s) => s.prices);
   const optionPrices = useStore((s) => s.optionPrices);
   const loadIntraday = useStore((s) => s.loadIntraday);
+  const lastSyncAt = useStore((s) => s.lastSyncAt);
 
   const { startKey, endKey } = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
@@ -522,31 +658,35 @@ export function useIntradayPctSeries(
     [rows],
   );
 
+  // lastSyncAt in the deps re-runs the loads after a sync; per-entry
+  // staleness inside loadIntraday keeps that from spamming Yahoo.
   useEffect(() => {
     if (!isShort) return;
     for (const sym of stockSymbols) loadIntraday(sym, startKey, endKey);
-  }, [isShort, stockSymbols, startKey, endKey, loadIntraday]);
+  }, [isShort, stockSymbols, startKey, endKey, loadIntraday, lastSyncAt]);
 
   return useMemo(() => {
-    if (!isShort) return { active: false, points: [] };
+    if (!isShort) return { active: false, pending: false, points: [] };
     const built = buildIntradayValueSeries(
       rows,
       cashCents,
       intraday,
+      prices,
       optionPrices,
       startKey,
-      endKey,
     );
-    if (!built.ready || built.points.length < 2) return { active: false, points: [] };
+    if (!built.ready || built.points.length < 2) {
+      return { active: false, pending: built.loading, points: [] };
+    }
     const base = built.points[0]!.valueCents;
-    if (base === 0) return { active: false, points: [] };
+    if (base === 0) return { active: false, pending: false, points: [] };
     const points: PctPoint[] = built.points.map((p) => ({
       time: p.time,
       value: ((p.valueCents - base) / base) * 100,
       valueCents: p.valueCents,
     }));
-    return { active: true, points };
-  }, [isShort, rows, cashCents, intraday, optionPrices, startKey, endKey]);
+    return { active: true, pending: false, points };
+  }, [isShort, rows, cashCents, intraday, prices, optionPrices, startKey]);
 }
 
 // ---------- actions (re-exported for ergonomic access) ----------
@@ -557,11 +697,13 @@ export const useRefreshAll = () => useStore((s) => s.refreshAll);
 export const useSyncing = () => useStore((s) => s.syncing);
 export const useLastSyncAt = () => useStore((s) => s.lastSyncAt);
 
+// endKey kept on the signature for callers; the cache key only depends on
+// the resolved request, which startKey determines (see intradayCacheKey).
 export const useIntradayEntry = (
   symbol: string,
   startKey: string,
-  endKey: string = startKey,
-) => useStore((s) => s.intraday[`${symbol}|${startKey}|${endKey}`]);
+  _endKey?: string,
+) => useStore((s) => s.intraday[intradayCacheKey(symbol, startKey)]);
 
 // ---------- journal: raw lookups ----------
 

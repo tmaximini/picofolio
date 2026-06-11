@@ -41,7 +41,7 @@ export function Holdings() {
                 <span>Add position</span>
               </Button>
             )}
-            <Button onClick={() => refreshAll()} disabled={syncing}>
+            <Button onClick={() => refreshAll({ force: true })} disabled={syncing}>
               <RefreshCw size={13} strokeWidth={1.75} className={syncing ? "spin" : undefined} />
               <span>{syncing ? "Syncing…" : "Sync prices"}</span>
               <Kbd>⌘R</Kbd>

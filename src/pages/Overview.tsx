@@ -67,7 +67,7 @@ function SyncButton({ accountId }: { accountId?: string }) {
       for (const id of connIds) {
         await syncConn(id); // pushes its own result toast
       }
-      await refreshAll();
+      await refreshAll({ force: true }); // user asked — bypass the freshness window
       if (connIds.length === 0) {
         pushToast({ kind: "info", title: "Prices updated", duration: 2500 });
       }

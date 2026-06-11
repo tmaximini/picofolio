@@ -15,9 +15,14 @@ import { setupsSeed, tradesSeed } from "@/lib/mockTrades";
 import type { PricePoint } from "@/lib/priceHistory";
 import type { Trade, TradeSetup } from "@/lib/trades";
 import type { DateRangeKey } from "@/lib/dateRange";
-import { fetchYahooDaily, fetchYahooIntraday, type IntradayPoint } from "@/lib/yahoo";
+import {
+  fetchYahooDaily,
+  fetchYahooIntraday,
+  intradayCacheKey,
+  type IntradayPoint,
+} from "@/lib/yahoo";
 import { fetchFlexStatement, parseFlexXml } from "@/lib/ibkr";
-import type { ParsedPosition } from "@/lib/ibkr/flexParser";
+import type { ParsedNavPoint, ParsedPosition } from "@/lib/ibkr/flexParser";
 import { parseOccSymbol } from "@/lib/optionSymbol";
 import { optionsPriceProvider, OptionsNotFoundError } from "@/lib/options";
 
@@ -75,6 +80,9 @@ export type IbkrConnection = {
   } | null;
 };
 
+/** One day of broker-reported account value (IBKR NAV-in-Base). */
+export type NavPoint = { time: string; valueCents: number };
+
 /** Sentinel scope = the consolidated "All Accounts" roll-up. */
 export const ALL_ACCOUNTS = "ALL" as const;
 
@@ -120,11 +128,16 @@ type StoreState = {
   // Async price data, keyed by symbol
   prices: Record<string, PriceEntry>;
 
-  /** Intraday cache keyed by `${symbol}|${YYYY-MM-DD}`. */
+  /** Intraday cache keyed by resolved request (see intradayCacheKey). */
   intraday: Record<string, IntradayEntry>;
 
   /** Option-price cache keyed by OCC symbol (open positions only). */
   optionPrices: Record<string, OptionPriceEntry>;
+
+  /** Broker-reported daily NAV per account (from the Flex NAV-in-Base
+   *  section), date-ascending. The authoritative account-value history —
+   *  charts prefer it over the price-reconstructed curve. */
+  navHistory: Record<string, NavPoint[]>;
 
   /** MarketData.app token (BYOK) for options pricing. Optional — the app is
    *  fully functional without it; only open-option live marks + charts need it.
@@ -139,14 +152,16 @@ type StoreState = {
   syncing: boolean;
 
   // Price actions
-  loadPrice: (symbol: string) => Promise<void>;
+  loadPrice: (symbol: string, opts?: { force?: boolean }) => Promise<void>;
   /** Fetch + cache intraday for [startKey, endKey] (single-day when endKey omitted). */
   loadIntraday: (symbol: string, startKey: string, endKey?: string) => Promise<void>;
   /** Fetch + cache the EOD price history (and thus current mark) for an open
    *  option position via MarketData.app. No-ops on non-option symbols; sets a
    *  "no-token" state without any network call when no token is configured. */
   loadOptionPrice: (symbol: string) => Promise<void>;
-  refreshAll: () => Promise<void>;
+  /** `force` bypasses the freshness window — used by the explicit Sync
+   *  button so a user-initiated sync always re-pulls prices. */
+  refreshAll: (opts?: { force?: boolean }) => Promise<void>;
 
   /** Set or clear the MarketData.app token. */
   setMarketDataToken: (token: string | null) => void;
@@ -248,12 +263,32 @@ function buildIbkrHoldings(accountId: string, positions: ParsedPosition[]): Hold
     }));
 }
 
+/**
+ * Merge freshly parsed NAV rows into an account's existing history. Rows for
+ * the same date sum (a statement can span several raw IBKR accounts feeding
+ * one Picofolio account); fresh dates overwrite, older history outside the
+ * query window is kept — so a 365-day query never erodes a longer record.
+ */
+function mergeNavHistory(prev: NavPoint[] | undefined, rows: ParsedNavPoint[]): NavPoint[] {
+  const fresh = new Map<string, number>();
+  for (const r of rows) fresh.set(r.time, (fresh.get(r.time) ?? 0) + r.valueCents);
+  const merged = new Map((prev ?? []).map((p) => [p.time, p.valueCents]));
+  for (const [time, valueCents] of fresh) merged.set(time, valueCents);
+  return [...merged.entries()]
+    .map(([time, valueCents]) => ({ time, valueCents }))
+    .sort((a, b) => a.time.localeCompare(b.time));
+}
+
 function firstOfThisMonthISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
-const STALE_MS = 60 * 60 * 1000; // 1h
+// Daily closes move once a day, but the *last* point is the live quote during
+// market hours — 15 min keeps the headline value honest without hammering Yahoo.
+const STALE_MS = 15 * 60 * 1000;
+// Intraday bars grow throughout the session; refresh more eagerly.
+const INTRADAY_STALE_MS = 5 * 60 * 1000;
 
 function isFresh(entry: PriceEntry | undefined): boolean {
   return (
@@ -279,16 +314,18 @@ export const useStore = create<StoreState>()(
       prices: {},
       intraday: {},
       optionPrices: {},
+      navHistory: {},
       marketDataToken: null,
       lastSyncAt: null,
       syncing: false,
 
-      loadPrice: async (symbol) => {
+      loadPrice: async (symbol, opts) => {
         // Option (OCC) symbols have no Yahoo daily history — they'd just 404.
         // Their value comes from the broker mark on the holding instead.
         if (parseOccSymbol(symbol)) return;
         const cur = get().prices[symbol];
-        if (isFresh(cur) || cur?.status === "loading") return;
+        if (cur?.status === "loading") return;
+        if (!opts?.force && isFresh(cur)) return;
 
         set((s) => ({
           prices: {
@@ -324,10 +361,16 @@ export const useStore = create<StoreState>()(
       },
 
       loadIntraday: async (symbol, startKey, endKey = startKey) => {
-        const key = `${symbol}|${startKey}|${endKey}`;
+        // Keyed by resolved request, not date window — windows that map to
+        // the same Yahoo call share one entry (see intradayCacheKey).
+        const key = intradayCacheKey(symbol, startKey);
         const cur = get().intraday[key];
         if (cur?.status === "loading") return;
-        if (cur?.status === "ready" && cur.fetchedAt && Date.now() - cur.fetchedAt < STALE_MS) {
+        if (
+          cur?.status === "ready" &&
+          cur.fetchedAt &&
+          Date.now() - cur.fetchedAt < INTRADAY_STALE_MS
+        ) {
           return;
         }
         set((s) => ({
@@ -435,7 +478,7 @@ export const useStore = create<StoreState>()(
         }));
       },
 
-      refreshAll: async () => {
+      refreshAll: async (opts) => {
         if (get().syncing) return;
         set({ syncing: true });
         // Unique, Yahoo-priceable symbols only — skip OCC option contracts
@@ -458,9 +501,11 @@ export const useStore = create<StoreState>()(
           ),
         ];
         await Promise.allSettled([
-          ...symbols.map((s) => get().loadPrice(s)),
+          ...symbols.map((s) => get().loadPrice(s, { force: opts?.force })),
           ...optionSymbols.map((s) => get().loadOptionPrice(s)),
         ]);
+        // lastSyncAt also nudges the intraday reconstruction (its load effect
+        // keys on it), so charts re-pull bars after an explicit sync.
         set({ syncing: false, lastSyncAt: Date.now() });
       },
 
@@ -521,6 +566,9 @@ export const useStore = create<StoreState>()(
           trades: s.trades.filter((t) => t.accountId !== id),
           holdings: s.holdings.filter((h) => h.accountId !== id),
           setups: s.setups.filter((sp) => sp.accountId !== id),
+          navHistory: Object.fromEntries(
+            Object.entries(s.navHistory).filter(([k]) => k !== id),
+          ),
           accounts: s.accounts.map((a) =>
             a.id === id
               ? { ...a, cashCents: 0, updatedAt: new Date().toISOString() }
@@ -535,6 +583,9 @@ export const useStore = create<StoreState>()(
           holdings: s.holdings.filter((h) => h.accountId !== id),
           trades: s.trades.filter((t) => t.accountId !== id),
           setups: s.setups.filter((sp) => sp.accountId !== id),
+          navHistory: Object.fromEntries(
+            Object.entries(s.navHistory).filter(([k]) => k !== id),
+          ),
           // If it was the active scope, fall back to the roll-up.
           selectedAccountId:
             s.selectedAccountId === id ? ALL_ACCOUNTS : s.selectedAccountId,
@@ -778,6 +829,24 @@ export const useStore = create<StoreState>()(
             }
           }
         }
+
+        // Daily NAV rows → per-resolved-account history.
+        if (result.nav.length > 0) {
+          const navByAccount = new Map<string, ParsedNavPoint[]>();
+          for (const n of result.nav) {
+            const accId = resolve(n.accountId);
+            const arr = navByAccount.get(accId) ?? [];
+            arr.push(n);
+            navByAccount.set(accId, arr);
+          }
+          set((s) => {
+            const navHistory = { ...s.navHistory };
+            for (const [accId, rows] of navByAccount) {
+              navHistory[accId] = mergeNavHistory(navHistory[accId], rows);
+            }
+            return { navHistory };
+          });
+        }
         return {
           added: fresh.length,
           skipped: result.trades.length - fresh.length,
@@ -845,6 +914,15 @@ export const useStore = create<StoreState>()(
               return { trades: [...toAdd, ...base] };
             });
           }
+          // Broker-reported daily NAV → authoritative account-value history.
+          if (result.nav.length > 0) {
+            set((s) => ({
+              navHistory: {
+                ...s.navHistory,
+                [accountId]: mergeNavHistory(s.navHistory[accountId], result.nav),
+              },
+            }));
+          }
           // Replace this account's IBKR positions + cash from the snapshot
           // (only when the query actually includes the OpenPositions section).
           if (result.positions.length > 0) {
@@ -873,10 +951,12 @@ export const useStore = create<StoreState>()(
           // Holdings feedback: how many priceable positions landed, or a nudge
           // if the query has no Open Positions section (so the account is $0).
           const stockPositions = buildIbkrHoldings(accountId, result.positions).length;
-          const posNote =
+          const navDays = new Set(result.nav.map((n) => n.time)).size;
+          let posNote =
             result.positions.length > 0
               ? `${stockPositions} position${stockPositions === 1 ? "" : "s"} updated.`
               : "No Open Positions in this query — add that section for Holdings & value.";
+          if (navDays > 0) posNote += ` ${navDays} days of NAV history.`;
           const join = (a: string | undefined, b: string) => (a ? `${a} ${b}` : b);
 
           if (summary.added > 0) {
@@ -943,7 +1023,15 @@ export const useStore = create<StoreState>()(
         trades: s.trades,
         setups: s.setups,
         selectedAccountId: s.selectedAccountId,
-        prices: s.prices,
+        // A "loading" entry persisted mid-flight would rehydrate as a permanent
+        // block (loadPrice early-returns on loading) — freeze the symbol's
+        // history forever. Demote to idle so the next view refetches.
+        prices: Object.fromEntries(
+          Object.entries(s.prices).map(([k, e]) => [
+            k,
+            e.status === "loading" ? { ...e, status: "idle" as const } : e,
+          ]),
+        ),
         // Cache EOD option history aggressively — it's immutable once the day
         // closes. Drop in-flight "loading" entries so a load interrupted by a
         // page close doesn't rehydrate as a permanent block (the action guards
@@ -953,6 +1041,7 @@ export const useStore = create<StoreState>()(
           Object.entries(s.optionPrices).filter(([, e]) => e.status !== "loading"),
         ),
         marketDataToken: s.marketDataToken,
+        navHistory: s.navHistory,
         lastSyncAt: s.lastSyncAt,
         // Never persist transient sync status/error — a sync in flight when
         // the page closes would otherwise rehydrate as a permanent "polling"
@@ -973,6 +1062,11 @@ export const useStore = create<StoreState>()(
             c.status = "idle";
             c.error = null;
           }
+        }
+        // Repair price entries an older build persisted as "loading" — they
+        // would otherwise never refetch (see partialize note).
+        for (const e of Object.values(state.prices)) {
+          if (e.status === "loading") e.status = "idle";
         }
       },
       migrate: (persistedState, version) => {
