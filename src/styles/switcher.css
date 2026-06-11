@@ -76,8 +76,9 @@
   top: calc(100% + var(--space-2));
   left: 0;
   right: 0;
-  /* Sidebar is narrow; let the menu extend past it so rows stay readable. */
-  min-width: 232px;
+  /* Sidebar is narrow; let the menu extend past it so a full account name
+     and a seven-figure value fit side by side without truncating. */
+  min-width: 288px;
   z-index: 40;
   padding: var(--space-2);
   background: var(--surface-overlay);
@@ -103,8 +104,12 @@
   margin: var(--space-2) var(--space-1);
 }
 
+/* Strict three-column grid so every row lines up: name (truncates last),
+   right-anchored value, and a fixed trailing slot shared by the check and
+   the hover-pencil — conditional elements never shift the columns. */
 .acctSwitcher__row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 20px;
   align-items: center;
   gap: var(--space-2);
   width: 100%;
@@ -135,7 +140,6 @@
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  flex: 1;
 }
 .acctSwitcher__rowMain--btn {
   background: transparent;
@@ -154,25 +158,35 @@
 .acctSwitcher__rowValue {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
-  margin-left: auto;
+  justify-self: end;
+}
+
+/* Trailing slot — check and pencil share the same cell; hover swaps them. */
+.acctSwitcher__slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+}
+.acctSwitcher__slot > * {
+  grid-area: 1 / 1;
 }
 .acctSwitcher__check {
   color: var(--accent);
-  flex: none;
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
-
 .acctSwitcher__edit {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
   color: var(--text-tertiary);
   cursor: pointer;
-  flex: none;
   opacity: 0;
   transition:
     opacity var(--duration-fast) var(--ease-out),
@@ -181,6 +195,9 @@
 }
 .acctSwitcher__row:hover .acctSwitcher__edit {
   opacity: 1;
+}
+.acctSwitcher__row:hover .acctSwitcher__slot:has(.acctSwitcher__edit) .acctSwitcher__check {
+  opacity: 0;
 }
 .acctSwitcher__edit:hover {
   color: var(--text-primary);

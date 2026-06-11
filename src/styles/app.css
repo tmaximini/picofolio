@@ -173,12 +173,11 @@
   flex: 1;
   min-width: 0;
 }
-/* The row's g-chord, revealed on hover — the nav doubles as a legend. */
+/* The row's g-chord, revealed on hover — the nav doubles as a legend.
+   Same .kbd chips as the create buttons below, for one shortcut language. */
 .nav__key {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  color: var(--text-tertiary);
+  display: inline-flex;
+  gap: 3px;
   opacity: 0;
   transform: translateX(2px);
   transition:

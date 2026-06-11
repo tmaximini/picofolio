@@ -86,7 +86,13 @@ function NavButton({
     >
       {item.icon && <span className="nav__icon">{item.icon}</span>}
       <span className="nav__label">{item.label}</span>
-      {item.shortcut && <span className="nav__key">{item.shortcut}</span>}
+      {item.shortcut && (
+        <span className="nav__key">
+          {item.shortcut.split(" ").map((k) => (
+            <kbd className="kbd" key={k}>{k}</kbd>
+          ))}
+        </span>
+      )}
     </button>
   );
 }

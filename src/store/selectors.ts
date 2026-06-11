@@ -911,7 +911,17 @@ export type JournalStats = {
   returnPct: number;
   /** P/L series, one bucket per trade (for sparkline). */
   cumulativeSeries: { at: string; cumulativeCents: number }[];
+  /** Highest-return winning trade in range; null when nothing closed green. */
+  best: TradeExtreme;
+  /** Lowest-return losing trade in range; null when nothing closed red. */
+  worst: TradeExtreme;
 };
+
+export type TradeExtreme = {
+  symbol: string;
+  returnCents: number;
+  returnPct: number | null;
+} | null;
 
 export const useTradeStats = (scope: string = ALL_ACCOUNTS): JournalStats => {
   const trades = useFilteredTrades(scope);
@@ -930,6 +940,8 @@ function computeStats(trades: Trade[]): JournalStats {
   let entryCapitalCents = 0;
 
   const closed: { at: string; returnCents: number }[] = [];
+  let best: TradeExtreme = null;
+  let worst: TradeExtreme = null;
 
   for (const t of trades) {
     const tot = deriveTotals(t);
@@ -941,6 +953,12 @@ function computeStats(trades: Trade[]): JournalStats {
     pnlCents += tot.returnCents;
     entryCapitalCents += tot.entryTotalCents;
     closed.push({ at: tradeDateKey(t), returnCents: tot.returnCents });
+    if (tot.returnCents > 0 && (best == null || tot.returnCents > best.returnCents)) {
+      best = { symbol: t.symbol, returnCents: tot.returnCents, returnPct: tot.returnPct };
+    }
+    if (tot.returnCents < 0 && (worst == null || tot.returnCents < worst.returnCents)) {
+      worst = { symbol: t.symbol, returnCents: tot.returnCents, returnPct: tot.returnPct };
+    }
     if (status === "WIN") {
       wins++;
       winSumCents += tot.returnCents;
@@ -972,6 +990,8 @@ function computeStats(trades: Trade[]): JournalStats {
     winRate: totalClosed > 0 ? wins / totalClosed : 0,
     returnPct: entryCapitalCents > 0 ? pnlCents / entryCapitalCents : 0,
     cumulativeSeries,
+    best,
+    worst,
   };
 }
 
