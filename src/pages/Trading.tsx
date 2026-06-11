@@ -5,24 +5,34 @@ import { Button, Kbd } from "@/components/primitives";
 import {
   DateRangePills,
   JournalStats,
+  NoteRow,
   TradeSetupRow,
   TradeTable,
 } from "@/components/ui";
+import { NewNoteModal } from "@/features/notes";
+import { NewSetupModal } from "@/features/setups";
+import type { Note } from "@/lib/notes";
 import { labelForRange } from "@/lib/dateRange";
 import { deriveTotals } from "@/lib/tradeMath";
-import type { TradeStatus } from "@/lib/trades";
+import type { TradeSetup, TradeStatus } from "@/lib/trades";
 import { TradeViewModal } from "@/features/trades/TradeViewModal";
 import { NewTradeModal } from "@/features/trades/NewTradeModal";
 import { ALL_ACCOUNTS } from "@/store";
 import {
   useAccountById,
   useAccounts,
+  useDeleteSetup,
   useFilteredTrades,
+  useFilteredNotes,
   useJournalRange,
+  usePushToast,
   useSelectedAccountId,
   useSetJournalRange,
   useSetups,
 } from "@/store/selectors";
+
+/** How many notes the strip shows before collapsing behind "+N more". */
+const NOTE_STRIP_LIMIT = 3;
 
 const STATUS_FILTERS: {
   key: TradeStatus;
@@ -54,6 +64,19 @@ export function Trading() {
   const [statuses, setStatuses] = useState<Set<TradeStatus>>(new Set());
   const [viewTradeId, setViewTradeId] = useState<string | null>(null);
   const [newTradeOpen, setNewTradeOpen] = useState(false);
+  // Setup being converted into a trade — prefills the New Trade modal.
+  const [convertSetup, setConvertSetup] = useState<TradeSetup | null>(null);
+  // Setup being edited — reopens the terminal prefilled.
+  const [editSetup, setEditSetup] = useState<TradeSetup | null>(null);
+  const deleteSetup = useDeleteSetup();
+  const pushToast = usePushToast();
+  // Market notes strip — scoped to the selected period like trades are.
+  // Setups stay unscoped on purpose: a pending plan is current regardless
+  // of which period you're reviewing.
+  const notes = useFilteredNotes(scope);
+  const [editNote, setEditNote] = useState<Note | null>(null);
+  const [notesExpanded, setNotesExpanded] = useState(false);
+  const visibleNotes = notesExpanded ? notes : notes.slice(0, NOTE_STRIP_LIMIT);
 
   const visibleTrades = useMemo(() => {
     if (statuses.size === 0) return trades;
@@ -92,8 +115,32 @@ export function Trading() {
       {setups.length > 0 && (
         <div className="journalSetups">
           {setups.map((s) => (
-            <TradeSetupRow key={s.id} setup={s} />
+            <TradeSetupRow
+              key={s.id}
+              setup={s}
+              onConvert={() => setConvertSetup(s)}
+              onEdit={() => setEditSetup(s)}
+            />
           ))}
+        </div>
+      )}
+
+      {notes.length > 0 && (
+        <div className="journalSetups">
+          {visibleNotes.map((n) => (
+            <NoteRow key={n.id} note={n} onEdit={() => setEditNote(n)} />
+          ))}
+          {notes.length > NOTE_STRIP_LIMIT && (
+            <button
+              type="button"
+              className="noteStrip__more"
+              onClick={() => setNotesExpanded((v) => !v)}
+            >
+              {notesExpanded
+                ? "Show fewer"
+                : `+${notes.length - NOTE_STRIP_LIMIT} more ${notes.length - NOTE_STRIP_LIMIT === 1 ? "note" : "notes"}`}
+            </button>
+          )}
         </div>
       )}
 
@@ -135,8 +182,40 @@ export function Trading() {
         />
       )}
 
+      {editNote && (
+        <NewNoteModal note={editNote} onClose={() => setEditNote(null)} />
+      )}
+
+      {editSetup && (
+        <NewSetupModal setup={editSetup} onClose={() => setEditSetup(null)} />
+      )}
+
       {newTradeOpen && (
         <NewTradeModal onClose={() => setNewTradeOpen(false)} />
+      )}
+
+      {convertSetup && (
+        <NewTradeModal
+          onClose={() => setConvertSetup(null)}
+          prefill={{
+            symbol: convertSetup.symbol,
+            side: convertSetup.side,
+            market: convertSetup.market,
+            targetCents: convertSetup.targetCents,
+            stopCents: convertSetup.stopCents,
+            entryCents: convertSetup.entryCents,
+            notes: convertSetup.notes,
+          }}
+          onSaved={() => {
+            // The plan became a trade — retire the setup, thesis carried over.
+            deleteSetup(convertSetup.id);
+            pushToast({
+              kind: "success",
+              title: "Setup converted to trade",
+              duration: 3000,
+            });
+          }}
+        />
       )}
     </>
   );

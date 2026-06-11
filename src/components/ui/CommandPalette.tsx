@@ -1,7 +1,8 @@
-import { ArrowRight, Plus, Search } from "lucide-react";
+import { ArrowRight, Bookmark, Plus, RefreshCw, Search, Terminal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useHoldings, useTrades } from "@/store/selectors";
+import type { Note } from "@/lib/notes";
+import { useHoldings, useNotes, useTrades } from "@/store/selectors";
 
 // Small built-in pool — guarantees the palette is useful from a fresh start
 // before any sync. Replace with a remote symbol search later.
@@ -41,21 +42,36 @@ type SymbolResult = {
 };
 type NavResult = { kind: "nav"; path: string; label: string; shortcut?: string };
 type CreateResult = { kind: "create"; symbol: string };
-type Result = SymbolResult | NavResult | CreateResult;
+type ActionId = "new-trade" | "new-setup" | "new-note" | "sync";
+type ActionResult = { kind: "action"; id: ActionId; label: string; shortcut: string };
+type NoteResult = { kind: "note"; note: Note };
+type Result = SymbolResult | NavResult | CreateResult | ActionResult | NoteResult;
+
+const ACTIONS: ReadonlyArray<ActionResult> = [
+  { kind: "action", id: "new-trade", label: "New Trade", shortcut: "n" },
+  { kind: "action", id: "new-setup", label: "New Setup", shortcut: "s" },
+  { kind: "action", id: "new-note", label: "New Note", shortcut: "b" },
+  { kind: "action", id: "sync", label: "Sync prices", shortcut: "r" },
+];
 
 type CommandPaletteProps = {
   onClose: () => void;
   onPickSymbol: (symbol: string) => void;
   onPickNav: (path: string) => void;
+  onAction: (id: ActionId) => void;
+  onEditNote: (note: Note) => void;
 };
 
 export function CommandPalette({
   onClose,
   onPickSymbol,
   onPickNav,
+  onAction,
+  onEditNote,
 }: CommandPaletteProps) {
   const trades = useTrades();
   const holdings = useHoldings();
+  const notes = useNotes();
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -99,11 +115,17 @@ export function CommandPalette({
   const results = useMemo((): Result[] => {
     const q = query.trim().toUpperCase();
     if (!q) {
-      // Empty query — show top symbols + nav targets
-      const topSyms = symbolPool.slice(0, 8);
-      return [...topSyms, ...NAV_TARGETS.map(navToResult)];
+      // Empty query — actions first, then top symbols + nav targets
+      const topSyms = symbolPool.slice(0, 6);
+      return [...ACTIONS, ...topSyms, ...NAV_TARGETS.map(navToResult)];
     }
     const matched: Result[] = [];
+
+    // Action matches
+    for (const a of ACTIONS) {
+      if (a.label.toUpperCase().includes(q)) matched.push(a);
+    }
+
     // Symbol matches: prefix > substring > name substring
     const prefixHits: SymbolResult[] = [];
     const substringHits: SymbolResult[] = [];
@@ -116,6 +138,18 @@ export function CommandPalette({
     matched.push(...prefixHits.slice(0, 8));
     matched.push(...substringHits.slice(0, 8));
 
+    // Note matches — body, inline $symbols and #tags
+    let noteHits = 0;
+    for (const n of notes) {
+      if (noteHits >= 4) break;
+      const hay =
+        `${n.body} ${n.symbols.join(" ")} ${n.tags.join(" ")}`.toUpperCase();
+      if (hay.includes(q)) {
+        matched.push({ kind: "note", note: n });
+        noteHits++;
+      }
+    }
+
     // Nav matches
     for (const nav of NAV_TARGETS) {
       if (nav.label.toUpperCase().includes(q)) matched.push(navToResult(nav));
@@ -127,7 +161,7 @@ export function CommandPalette({
     }
 
     return matched.slice(0, 16);
-  }, [query, symbolPool]);
+  }, [query, symbolPool, notes]);
 
   useEffect(() => {
     setActiveIdx(0);
@@ -169,6 +203,10 @@ export function CommandPalette({
   const pick = (r: Result) => {
     if (r.kind === "symbol" || r.kind === "create") {
       onPickSymbol(r.symbol);
+    } else if (r.kind === "action") {
+      onAction(r.id);
+    } else if (r.kind === "note") {
+      onEditNote(r.note);
     } else {
       onPickNav(r.path);
     }
@@ -261,6 +299,10 @@ function CommandRow({
           <span className="cmdRow__symBadge">$</span>
         ) : result.kind === "create" ? (
           <Plus size={14} strokeWidth={1.75} />
+        ) : result.kind === "note" ? (
+          <Bookmark size={14} strokeWidth={1.75} />
+        ) : result.kind === "action" ? (
+          <ActionIcon id={result.id} />
         ) : (
           <ArrowRight size={14} strokeWidth={1.75} />
         )}
@@ -276,6 +318,10 @@ function CommandRow({
             New trade with{" "}
             <span style={{ color: "var(--accent)" }}>{result.symbol}</span>
           </span>
+        ) : result.kind === "note" ? (
+          <span className="cmdRow__title cmdRow__title--truncate">
+            {result.note.body}
+          </span>
         ) : (
           <span className="cmdRow__title">{result.label}</span>
         )}
@@ -289,10 +335,28 @@ function CommandRow({
               : "Common"
           : result.kind === "create"
             ? "Create"
-            : (result.shortcut ?? "")}
+            : result.kind === "note"
+              ? new Date(result.note.createdAt).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                })
+              : (result.shortcut ?? "")}
       </span>
     </button>
   );
+}
+
+function ActionIcon({ id }: { id: ActionId }) {
+  switch (id) {
+    case "new-trade":
+      return <Plus size={14} strokeWidth={1.75} />;
+    case "new-setup":
+      return <Terminal size={14} strokeWidth={1.75} />;
+    case "new-note":
+      return <Bookmark size={14} strokeWidth={1.75} />;
+    case "sync":
+      return <RefreshCw size={14} strokeWidth={1.75} />;
+  }
 }
 
 function navToResult(n: (typeof NAV_TARGETS)[number]): NavResult {
@@ -302,5 +366,7 @@ function navToResult(n: (typeof NAV_TARGETS)[number]): NavResult {
 function resultKey(r: Result): string {
   if (r.kind === "symbol") return `sym:${r.symbol}`;
   if (r.kind === "create") return `new:${r.symbol}`;
+  if (r.kind === "action") return `act:${r.id}`;
+  if (r.kind === "note") return `note:${r.note.id}`;
   return `nav:${r.path}`;
 }

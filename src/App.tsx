@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus, Bookmark, Terminal } from "lucide-react";
+import { Plus, Bookmark, CircleHelp, Terminal } from "lucide-react";
 import {
   BrowserRouter,
   Navigate,
@@ -9,14 +9,25 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { Shell, Sidebar } from "@/components/layout";
-import { AccountFormModal, AccountSwitcher, CommandPalette, Toaster } from "@/components/ui";
+import { Kbd } from "@/components/primitives";
+import {
+  AccountFormModal,
+  AccountSwitcher,
+  CommandPalette,
+  ShortcutsHelp,
+  Toaster,
+} from "@/components/ui";
 import { Overview } from "@/pages/Overview";
 import { Trading } from "@/pages/Trading";
 import { Holdings } from "@/pages/Holdings";
 import { Calendar } from "@/pages/Calendar";
 import { Settings } from "@/pages/Settings";
 import { NewTradeModal } from "@/features/trades";
+import { NewSetupModal } from "@/features/setups";
+import { NewNoteModal } from "@/features/notes";
 import { useHotkeys } from "@/lib/hotkeys";
+import type { Note } from "@/lib/notes";
+import { useRefreshAll } from "@/store/selectors";
 
 // Account-scoped views — the switcher narrows what these show.
 const PRIMARY = [
@@ -61,8 +72,13 @@ function AppInner() {
   const navigate = useNavigate();
   const location = useLocation();
   const [newTradeOpen, setNewTradeOpen] = useState(false);
+  const [newSetupOpen, setNewSetupOpen] = useState(false);
+  // null = closed; { note? } = open (create when note absent, edit otherwise).
+  const [noteModal, setNoteModal] = useState<{ note?: Note } | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [newTradeSymbol, setNewTradeSymbol] = useState<string | undefined>(undefined);
+  const refreshAll = useRefreshAll();
   // undefined = closed; { editId?: string } = open (create when editId absent).
   const [accountModal, setAccountModal] = useState<{ editId?: string } | null>(null);
   // Sidebar visibility — open on desktop, collapsed (drawer) on small screens.
@@ -96,6 +112,11 @@ function AppInner() {
   const bindings = useMemo(
     () => [
       { combo: "n", handler: () => openNewTrade() },
+      { combo: "s", handler: () => setNewSetupOpen(true) },
+      { combo: "b", handler: () => setNoteModal({}) },
+      // "r" (not ⌘R — the browser owns that) force-syncs all prices.
+      { combo: "r", handler: () => refreshAll({ force: true }) },
+      { combo: "?", handler: () => setHelpOpen((v) => !v) },
       { combo: "cmd+k", handler: () => setPaletteOpen((v) => !v) },
       { combo: "ctrl+k", handler: () => setPaletteOpen((v) => !v) },
       { combo: "g o", handler: () => navigate("/") },
@@ -104,7 +125,7 @@ function AppInner() {
       { combo: "g h", handler: () => navigate("/holdings") },
       { combo: "g s", handler: () => navigate("/settings") },
     ],
-    [navigate],
+    [navigate, refreshAll],
   );
   useHotkeys(bindings);
 
@@ -134,14 +155,34 @@ function AppInner() {
               >
                 <Plus size={13} strokeWidth={2} />
                 <span>New Trade</span>
+                <Kbd>N</Kbd>
               </button>
-              <button type="button" className="sidebarCta" disabled title="Coming soon">
+              <button
+                type="button"
+                className="sidebarCta"
+                onClick={() => setNewSetupOpen(true)}
+              >
                 <Terminal size={13} strokeWidth={1.75} />
                 <span>New Setup</span>
+                <Kbd>S</Kbd>
               </button>
-              <button type="button" className="sidebarCta" disabled title="Coming soon">
+              <button
+                type="button"
+                className="sidebarCta"
+                onClick={() => setNoteModal({})}
+              >
                 <Bookmark size={13} strokeWidth={1.75} />
                 <span>New Note</span>
+                <Kbd>B</Kbd>
+              </button>
+              <button
+                type="button"
+                className="sidebarCta sidebarCta--ghost"
+                onClick={() => setHelpOpen(true)}
+              >
+                <CircleHelp size={13} strokeWidth={1.75} />
+                <span>Shortcuts</span>
+                <Kbd>?</Kbd>
               </button>
             </div>
           }
@@ -164,6 +205,11 @@ function AppInner() {
       {newTradeOpen && (
         <NewTradeModal onClose={closeNewTrade} initialSymbol={newTradeSymbol} />
       )}
+      {newSetupOpen && <NewSetupModal onClose={() => setNewSetupOpen(false)} />}
+      {noteModal && (
+        <NewNoteModal note={noteModal.note} onClose={() => setNoteModal(null)} />
+      )}
+      {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
       {accountModal && (
         <AccountFormModal
           accountId={accountModal.editId}
@@ -175,6 +221,13 @@ function AppInner() {
           onClose={() => setPaletteOpen(false)}
           onPickSymbol={(sym) => openNewTrade(sym)}
           onPickNav={(path) => navigate(path)}
+          onAction={(id) => {
+            if (id === "new-trade") openNewTrade();
+            else if (id === "new-setup") setNewSetupOpen(true);
+            else if (id === "new-note") setNoteModal({});
+            else refreshAll({ force: true });
+          }}
+          onEditNote={(note) => setNoteModal({ note })}
         />
       )}
       <Toaster />

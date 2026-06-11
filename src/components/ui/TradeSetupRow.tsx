@@ -1,9 +1,17 @@
-import { RefreshCw, X } from "lucide-react";
+import { Pencil, RefreshCw, X } from "lucide-react";
 import type { TradeSetup } from "@/lib/trades";
 import { formatCents } from "@/lib/money";
 import { useDeleteSetup } from "@/store/selectors";
 
-export function TradeSetupRow({ setup }: { setup: TradeSetup }) {
+export function TradeSetupRow({
+  setup,
+  onConvert,
+  onEdit,
+}: {
+  setup: TradeSetup;
+  onConvert?: () => void;
+  onEdit?: () => void;
+}) {
   const deleteSetup = useDeleteSetup();
   const dateLabel = new Date(setup.createdAt).toLocaleDateString("en-US", {
     month: "numeric",
@@ -36,9 +44,26 @@ export function TradeSetupRow({ setup }: { setup: TradeSetup }) {
         {setup.notes && <span className="setupRow__notes">{setup.notes}</span>}
       </div>
       <div className="setupRow__actions">
-        <button type="button" className="setupRow__iconBtn" title="Convert to trade">
-          <RefreshCw size={12} strokeWidth={1.75} />
-        </button>
+        {onEdit && (
+          <button
+            type="button"
+            className="setupRow__iconBtn"
+            title="Edit setup"
+            onClick={onEdit}
+          >
+            <Pencil size={12} strokeWidth={1.75} />
+          </button>
+        )}
+        {onConvert && (
+          <button
+            type="button"
+            className="setupRow__iconBtn"
+            title="Convert to trade"
+            onClick={onConvert}
+          >
+            <RefreshCw size={12} strokeWidth={1.75} />
+          </button>
+        )}
         <button
           type="button"
           className="setupRow__iconBtn"

@@ -81,7 +81,7 @@ function SyncButton({ accountId }: { accountId?: string }) {
     <Button onClick={onSync} disabled={busy}>
       <RefreshCw size={13} strokeWidth={1.75} className={busy ? "spin" : undefined} />
       <span>{busy ? "Syncing…" : "Sync"}</span>
-      <Kbd>⌘R</Kbd>
+      <Kbd>R</Kbd>
     </Button>
   );
 }

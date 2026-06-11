@@ -1,18 +1,21 @@
-import { useState } from "react";
+import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useAccounts, useAddTrade, useSelectedAccountId } from "@/store/selectors";
 import { ALL_ACCOUNTS } from "@/store";
 import type { Trade } from "@/lib/trades";
-import { TradeForm } from "./TradeForm";
+import { TradeForm, type TradePrefill } from "./TradeForm";
 
 type NewTradeModalProps = {
   onClose: () => void;
   initialSymbol?: string;
+  /** Seed the form from a trade setup (convert-to-trade flow). */
+  prefill?: TradePrefill;
+  /** Called after the trade was added (before closing). */
+  onSaved?: () => void;
 };
 
-export function NewTradeModal({ onClose, initialSymbol }: NewTradeModalProps) {
-  const [tab, setTab] = useState<"general" | "journal">("general");
+export function NewTradeModal({ onClose, initialSymbol, prefill, onSaved }: NewTradeModalProps) {
   const addTrade = useAddTrade();
   const accounts = useAccounts();
   const selectedAccountId = useSelectedAccountId();
@@ -23,10 +26,23 @@ export function NewTradeModal({ onClose, initialSymbol }: NewTradeModalProps) {
       ? selectedAccountId
       : accounts[0]?.id ?? "";
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
   return createPortal(
     <div className="modalBackdrop" onClick={onClose}>
       <div
-        className="modal"
+        className="modal modal--trade"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -39,9 +55,8 @@ export function NewTradeModal({ onClose, initialSymbol }: NewTradeModalProps) {
         </div>
 
         <TradeForm
-          tab={tab}
-          onTabChange={setTab}
           initialSymbol={initialSymbol}
+          prefill={prefill}
           submitLabel="Save"
           onSubmit={(data) => {
             const trade: Trade = {
@@ -59,6 +74,7 @@ export function NewTradeModal({ onClose, initialSymbol }: NewTradeModalProps) {
               source: "manual",
             };
             addTrade(trade);
+            onSaved?.();
             onClose();
           }}
         />

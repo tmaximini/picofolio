@@ -1,5 +1,7 @@
 import { Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Kbd } from "@/components/primitives";
+import { riskReward } from "@/lib/tradeMath";
 import type {
   ExecutionAction,
   Market,
@@ -10,6 +12,17 @@ import type {
 import { SymbolPreview } from "./SymbolPreview";
 
 const MARKETS: Market[] = ["STOCK", "OPTION", "CRYPTO", "FOREX", "FUTURE"];
+
+/** Seed values for a fresh form — used when converting a setup to a trade. */
+export type TradePrefill = {
+  symbol: string;
+  side: Side;
+  market: Market;
+  targetCents?: number;
+  stopCents?: number;
+  entryCents?: number;
+  notes?: string;
+};
 
 type FormExec = {
   id: string;
@@ -57,24 +70,24 @@ function centsToDollars(cents: number | undefined): string {
   return (cents / 100).toFixed(2);
 }
 
-function initialFromTrade(trade?: Trade): FormState {
+function initialFromTrade(trade?: Trade, prefill?: TradePrefill): FormState {
   if (!trade) {
     return {
-      market: "STOCK",
-      symbol: "",
-      side: "LONG",
-      target: "",
-      stop: "",
-      notes: "",
+      market: prefill?.market ?? "STOCK",
+      symbol: prefill?.symbol ?? "",
+      side: prefill?.side ?? "LONG",
+      target: centsToDollars(prefill?.targetCents),
+      stop: centsToDollars(prefill?.stopCents),
+      notes: prefill?.notes ?? "",
       tags: "",
       confidence: "",
       execs: [
         {
           id: uid(),
-          action: "BUY",
+          action: (prefill?.side ?? "LONG") === "LONG" ? "BUY" : "SELL",
           at: nowLocal(),
           qty: "",
-          price: "",
+          price: centsToDollars(prefill?.entryCents),
           fee: "0",
         },
       ],
@@ -104,6 +117,8 @@ type TradeFormProps = {
   trade?: Trade;
   /** Pre-fill the symbol field (e.g. when opened from cmd+k). */
   initialSymbol?: string;
+  /** Seed a fresh form from a trade setup (convert-to-trade flow). */
+  prefill?: TradePrefill;
   /** Returns the assembled patch ready to merge into a Trade. */
   onSubmit: (data: {
     market: Market;
@@ -118,22 +133,19 @@ type TradeFormProps = {
   }) => void;
   submitLabel: string;
   onDelete?: () => void;
-  tab: "general" | "journal";
-  onTabChange: (next: "general" | "journal") => void;
 };
 
 export function TradeForm({
   trade,
   initialSymbol,
+  prefill,
   onSubmit,
   submitLabel,
   onDelete,
-  tab,
-  onTabChange,
 }: TradeFormProps) {
   const [form, setForm] = useState<FormState>(() => {
-    const initial = initialFromTrade(trade);
-    if (initialSymbol && !trade) {
+    const initial = initialFromTrade(trade, prefill);
+    if (initialSymbol && !trade && !prefill) {
       initial.symbol = initialSymbol.toUpperCase();
     }
     return initial;
@@ -142,6 +154,7 @@ export function TradeForm({
   // Avoids hammering Yahoo while the user is mid-type.
   const [lockedSymbol, setLockedSymbol] = useState<string>(() => {
     if (trade) return trade.symbol;
+    if (prefill) return prefill.symbol.toUpperCase();
     if (initialSymbol) return initialSymbol.toUpperCase();
     return "";
   });
@@ -169,6 +182,13 @@ export function TradeForm({
       ...f,
       execs: f.execs.map((e) => (e.id === id ? { ...e, ...patch } : e)),
     }));
+
+  // FormExec.at stays a single "YYYY-MM-DDTHH:MM" string; the table renders
+  // it as separate date + time inputs and reassembles on change.
+  const setExecDate = (ex: FormExec, date: string) =>
+    updateExec(ex.id, { at: `${date || ex.at.slice(0, 10)}T${ex.at.slice(11, 16) || "00:00"}` });
+  const setExecTime = (ex: FormExec, time: string) =>
+    updateExec(ex.id, { at: `${ex.at.slice(0, 10)}T${time || "00:00"}` });
 
   const addExec = () => {
     const lastAction = form.execs[form.execs.length - 1]?.action ?? "BUY";
@@ -231,16 +251,28 @@ export function TradeForm({
     });
   };
 
-  const sideToggleClass =
-    form.side === "LONG"
-      ? "tradeForm__sideToggle tradeForm__sideToggle--long"
-      : "tradeForm__sideToggle tradeForm__sideToggle--short";
+  // Live R:R from the planned levels and the first opening-side fill.
+  const openingAction: ExecutionAction = form.side === "LONG" ? "BUY" : "SELL";
+  const entryExec =
+    form.execs.find((e) => e.action === openingAction && e.price) ??
+    form.execs.find((e) => e.price);
+  const rr = riskReward(
+    entryExec ? dollarsToCents(entryExec.price) : null,
+    form.target ? dollarsToCents(form.target) : null,
+    form.stop ? dollarsToCents(form.stop) : null,
+    form.side,
+  );
 
   // Prevent accidental form submission on Enter from any text input.
-  // The Save button is the only path that commits a trade. textarea
-  // newlines and explicit submit are exempt.
+  // ⌘↵ / ctrl+↵ submits from anywhere (textarea included); plain Enter on
+  // the symbol field locks the symbol in.
   const onFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
     if (e.key !== "Enter") return;
+    if (e.metaKey || e.ctrlKey) {
+      e.preventDefault();
+      e.currentTarget.requestSubmit();
+      return;
+    }
     const target = e.target as HTMLElement;
     if (target.tagName === "TEXTAREA") return;
     if (
@@ -250,7 +282,6 @@ export function TradeForm({
       return;
     }
     e.preventDefault();
-    // If the focused element is the symbol input, lock it in instead.
     if (target.tagName === "INPUT" && (target as HTMLInputElement).dataset.field === "symbol") {
       lockSymbol();
     }
@@ -262,192 +293,212 @@ export function TradeForm({
       onKeyDown={onFormKeyDown}
       style={{ display: "contents" }}
     >
-      <div className="modal__tabs">
-        <button
-          type="button"
-          className={tab === "general" ? "modal__tab modal__tab--active" : "modal__tab"}
-          onClick={() => onTabChange("general")}
-        >
-          General
-        </button>
-        <button
-          type="button"
-          className={tab === "journal" ? "modal__tab modal__tab--active" : "modal__tab"}
-          onClick={() => onTabChange("journal")}
-        >
-          Journal
-        </button>
-      </div>
-
       <div className="modal__body">
-        {tab === "general" ? (
-          <>
-            <div className="tradeForm__grid">
-              <div className="tradeForm__field">
-                <label className="tradeForm__label">Market</label>
-                <select
-                  className="tradeForm__select"
-                  value={form.market}
-                  onChange={(e) => setForm({ ...form, market: e.target.value as Market })}
+        <div className="tradeForm__row tradeForm__row--head">
+          <div className="tradeForm__field">
+            <label className="tradeForm__label">Market</label>
+            <select
+              className="tradeForm__select"
+              value={form.market}
+              onChange={(e) => setForm({ ...form, market: e.target.value as Market })}
+            >
+              {MARKETS.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+          <div className="tradeForm__field">
+            <label className="tradeForm__label">Symbol</label>
+            <input
+              className="tradeForm__input"
+              data-field="symbol"
+              value={form.symbol}
+              onChange={(e) => setForm({ ...form, symbol: e.target.value })}
+              onBlur={lockSymbol}
+              placeholder="NVDA"
+              autoFocus
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+          <div className="tradeForm__field">
+            <label className="tradeForm__label">Side</label>
+            <div className="tradeForm__sideSeg" role="radiogroup" aria-label="Side">
+              {(["LONG", "SHORT"] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  role="radio"
+                  aria-checked={form.side === s}
+                  className={
+                    form.side === s
+                      ? `tradeForm__sideSegBtn tradeForm__sideSegBtn--${s.toLowerCase()}`
+                      : "tradeForm__sideSegBtn"
+                  }
+                  onClick={() => setForm({ ...form, side: s })}
                 >
-                  {MARKETS.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="tradeForm__field">
-                <label className="tradeForm__label">Symbol</label>
-                <input
-                  className="tradeForm__input"
-                  data-field="symbol"
-                  value={form.symbol}
-                  onChange={(e) => setForm({ ...form, symbol: e.target.value })}
-                  onBlur={lockSymbol}
-                  placeholder="NVDA"
-                  autoFocus
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </div>
-              <div className="tradeForm__field">
-                <label className="tradeForm__label">Target</label>
-                <input
-                  className="tradeForm__input num"
-                  value={form.target}
-                  onChange={(e) => setForm({ ...form, target: e.target.value })}
-                  placeholder="0.00"
-                  inputMode="decimal"
-                />
-              </div>
-              <div className="tradeForm__field">
-                <label className="tradeForm__label">Stop-Loss</label>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 64px", gap: "var(--space-2)" }}>
-                  <input
-                    className="tradeForm__input num"
-                    value={form.stop}
-                    onChange={(e) => setForm({ ...form, stop: e.target.value })}
-                    placeholder="0.00"
-                    inputMode="decimal"
-                  />
-                  <button
-                    type="button"
-                    className={sideToggleClass}
-                    onClick={() =>
-                      setForm({ ...form, side: form.side === "LONG" ? "SHORT" : "LONG" })
-                    }
-                    title="Toggle side"
-                  >
-                    {form.side}
-                  </button>
-                </div>
-              </div>
+                  {s}
+                </button>
+              ))}
             </div>
+          </div>
+        </div>
 
-            {lockedSymbol && <SymbolPreview symbol={lockedSymbol} />}
-
-            <div className="tradeForm__execRowHead">
-              <span />
-              <span className="tradeForm__execHeadLabel">Action</span>
-              <span className="tradeForm__execHeadLabel">Date / Time</span>
-              <span className="tradeForm__execHeadLabel" style={{ textAlign: "right" }}>Quantity</span>
-              <span className="tradeForm__execHeadLabel" style={{ textAlign: "right" }}>Price</span>
-              <span className="tradeForm__execHeadLabel" style={{ textAlign: "right" }}>Fee</span>
+        <div className="tradeForm__row tradeForm__row--levels">
+          <div className="tradeForm__field">
+            <label className="tradeForm__label">Target</label>
+            <input
+              className="tradeForm__input num"
+              value={form.target}
+              onChange={(e) => setForm({ ...form, target: e.target.value })}
+              placeholder="0.00"
+              inputMode="decimal"
+            />
+          </div>
+          <div className="tradeForm__field">
+            <label className="tradeForm__label">Stop-Loss</label>
+            <input
+              className="tradeForm__input num"
+              value={form.stop}
+              onChange={(e) => setForm({ ...form, stop: e.target.value })}
+              placeholder="0.00"
+              inputMode="decimal"
+            />
+          </div>
+          <div className="tradeForm__field">
+            <label className="tradeForm__label">R : R</label>
+            <div
+              className={rr != null && rr >= 2 ? "tradeForm__rr tradeForm__rr--good" : "tradeForm__rr"}
+              title="Reward-to-risk from entry, target and stop"
+            >
+              {rr == null ? "—" : `${rr.toFixed(1)} : 1`}
             </div>
+          </div>
+        </div>
 
-            {form.execs.map((ex) => (
-              <div className="tradeForm__execRow" key={ex.id}>
+        {lockedSymbol && <SymbolPreview symbol={lockedSymbol} />}
+
+        <div className="tradeForm__execTable">
+          <div className="tradeForm__execCols tradeForm__execHead">
+            <span className="tradeForm__execHeadLabel">Action</span>
+            <span className="tradeForm__execHeadLabel">Date</span>
+            <span className="tradeForm__execHeadLabel">Time</span>
+            <span className="tradeForm__execHeadLabel tradeForm__execHeadLabel--num">Quantity</span>
+            <span className="tradeForm__execHeadLabel tradeForm__execHeadLabel--num">Price</span>
+            <span className="tradeForm__execHeadLabel tradeForm__execHeadLabel--num">Fee</span>
+            <span />
+          </div>
+
+          {form.execs.map((ex) => (
+            <div className="tradeForm__execCols tradeForm__execRow" key={ex.id}>
+              <button
+                type="button"
+                className={`tradeForm__execAction tradeForm__execAction--${ex.action.toLowerCase()}`}
+                onClick={() => updateExec(ex.id, { action: ex.action === "BUY" ? "SELL" : "BUY" })}
+                title="Toggle buy / sell"
+              >
+                {ex.action}
+              </button>
+              <input
+                type="date"
+                className="tradeForm__execInput"
+                value={ex.at.slice(0, 10)}
+                onChange={(e) => setExecDate(ex, e.target.value)}
+                aria-label="Execution date"
+              />
+              <input
+                type="time"
+                className="tradeForm__execInput"
+                value={ex.at.slice(11, 16)}
+                onChange={(e) => setExecTime(ex, e.target.value)}
+                aria-label="Execution time"
+              />
+              <input
+                className="tradeForm__execInput tradeForm__execInput--num"
+                inputMode="numeric"
+                value={ex.qty}
+                onChange={(e) => updateExec(ex.id, { qty: e.target.value })}
+                placeholder="0"
+                aria-label="Quantity"
+              />
+              <input
+                className="tradeForm__execInput tradeForm__execInput--num"
+                inputMode="decimal"
+                value={ex.price}
+                onChange={(e) => updateExec(ex.id, { price: e.target.value })}
+                placeholder="0.00"
+                aria-label="Price"
+              />
+              <input
+                className="tradeForm__execInput tradeForm__execInput--num"
+                inputMode="decimal"
+                value={ex.fee}
+                onChange={(e) => updateExec(ex.id, { fee: e.target.value })}
+                placeholder="0.00"
+                aria-label="Fee"
+              />
+              {form.execs.length > 1 ? (
                 <button
                   type="button"
-                  className="tradeForm__execRemove"
+                  className="tradeForm__execX"
                   onClick={() => removeExec(ex.id)}
                   title="Remove execution"
-                  disabled={form.execs.length === 1}
                 >
                   <X size={12} strokeWidth={2} />
                 </button>
-                <button
-                  type="button"
-                  className={`tradeForm__execAction tradeForm__execAction--${ex.action.toLowerCase()}`}
-                  onClick={() => updateExec(ex.id, { action: ex.action === "BUY" ? "SELL" : "BUY" })}
-                >
-                  {ex.action}
-                </button>
-                <input
-                  type="datetime-local"
-                  className="tradeForm__input num"
-                  value={ex.at}
-                  onChange={(e) => updateExec(ex.id, { at: e.target.value })}
-                />
-                <input
-                  className="tradeForm__input num"
-                  inputMode="numeric"
-                  value={ex.qty}
-                  onChange={(e) => updateExec(ex.id, { qty: e.target.value })}
-                  style={{ textAlign: "right" }}
-                />
-                <input
-                  className="tradeForm__input num"
-                  inputMode="decimal"
-                  value={ex.price}
-                  onChange={(e) => updateExec(ex.id, { price: e.target.value })}
-                  style={{ textAlign: "right" }}
-                />
-                <input
-                  className="tradeForm__input num"
-                  inputMode="decimal"
-                  value={ex.fee}
-                  onChange={(e) => updateExec(ex.id, { fee: e.target.value })}
-                  style={{ textAlign: "right" }}
-                />
-              </div>
-            ))}
+              ) : (
+                <span />
+              )}
+            </div>
+          ))}
 
-            <button
-              type="button"
-              className="tradeForm__execAdd"
-              onClick={addExec}
-              title="Add execution"
-            >
-              <Plus size={16} strokeWidth={2} />
-            </button>
-          </>
-        ) : (
-          <div style={{ display: "grid", gap: "var(--space-4)" }}>
+          <button
+            type="button"
+            className="tradeForm__execAddRow"
+            onClick={addExec}
+          >
+            <Plus size={13} strokeWidth={1.75} />
+            <span>Add execution</span>
+          </button>
+        </div>
+
+        <div className="tradeForm__sectionLabel">Journal</div>
+
+        <div style={{ display: "grid", gap: "var(--space-4)" }}>
+          <div className="tradeForm__field">
+            <label className="tradeForm__label">Notes</label>
+            <textarea
+              className="tradeForm__input"
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              rows={4}
+              style={{ height: "auto", padding: "var(--space-3)", resize: "vertical", fontFamily: "var(--font-ui)" }}
+              placeholder="Why this trade? What did you see?"
+            />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "var(--space-3)" }}>
             <div className="tradeForm__field">
-              <label className="tradeForm__label">Notes</label>
-              <textarea
+              <label className="tradeForm__label">Tags</label>
+              <input
                 className="tradeForm__input"
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                rows={5}
-                style={{ height: "auto", padding: "var(--space-3)", resize: "vertical", fontFamily: "var(--font-ui)" }}
-                placeholder="Why this trade? What did you see?"
+                value={form.tags}
+                onChange={(e) => setForm({ ...form, tags: e.target.value })}
+                placeholder="breakout, momentum"
               />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "var(--space-3)" }}>
-              <div className="tradeForm__field">
-                <label className="tradeForm__label">Tags</label>
-                <input
-                  className="tradeForm__input"
-                  value={form.tags}
-                  onChange={(e) => setForm({ ...form, tags: e.target.value })}
-                  placeholder="breakout, momentum"
-                />
-              </div>
-              <div className="tradeForm__field">
-                <label className="tradeForm__label">Confidence (1-5)</label>
-                <input
-                  className="tradeForm__input num"
-                  inputMode="numeric"
-                  value={form.confidence}
-                  onChange={(e) => setForm({ ...form, confidence: e.target.value })}
-                  placeholder="3"
-                  maxLength={1}
-                />
-              </div>
+            <div className="tradeForm__field">
+              <label className="tradeForm__label">Confidence (1-5)</label>
+              <input
+                className="tradeForm__input num"
+                inputMode="numeric"
+                value={form.confidence}
+                onChange={(e) => setForm({ ...form, confidence: e.target.value })}
+                placeholder="3"
+                maxLength={1}
+              />
             </div>
           </div>
-        )}
+        </div>
       </div>
 
       <div className="modal__foot">
@@ -468,7 +519,8 @@ export function TradeForm({
           <span />
         )}
         <button type="submit" className="btn btn--primary">
-          {submitLabel}
+          <span>{submitLabel}</span>
+          <Kbd>⌘↵</Kbd>
         </button>
       </div>
     </form>

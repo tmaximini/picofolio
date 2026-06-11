@@ -13,6 +13,7 @@ import {
   useDeleteTrade,
   useLatestPrice,
   useLoadPrice,
+  useNotesForSymbol,
   useTrade,
   useUpdateTrade,
 } from "@/store/selectors";
@@ -29,10 +30,23 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
   const updateTrade = useUpdateTrade();
   const deleteTrade = useDeleteTrade();
   const [isEditing, setIsEditing] = useState(false);
-  const [tab, setTab] = useState<"general" | "journal">("general");
   const [tvEmbedded, setTvEmbedded] = useState(false);
   const latest = useLatestPrice(trade?.symbol ?? "");
   const loadPrice = useLoadPrice();
+
+  // Escape closes; lock body scroll while open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
 
   const tot = trade ? deriveTotals(trade) : null;
   // Live P/L for OPEN stock positions needs a current price — make sure it's
@@ -47,7 +61,7 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
   if (isEditing) {
     return createPortal(
       <div className="modalBackdrop" onClick={onClose}>
-        <div className="modal modal--wide" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div className="modal modal--trade" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
           <div className="modal__head">
             <div className="modal__title">Edit Trade</div>
             <button className="modal__close" onClick={onClose} aria-label="Close">
@@ -56,8 +70,6 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
           </div>
           <TradeForm
             trade={trade}
-            tab={tab}
-            onTabChange={setTab}
             submitLabel="Save"
             onDelete={() => {
               deleteTrade(trade.id);
@@ -193,6 +205,8 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
             </div>
           )}
 
+          <RelatedNotes trade={trade} />
+
           <div className="tradeView__chipRow">
             {trade.targetCents != null && (
               <span className="tradeView__chip">
@@ -231,6 +245,53 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
       </div>
     </div>,
     document.body,
+  );
+}
+
+/** Market notes mentioning this trade's symbol inline ($NVDA) — read-only,
+ *  max three, newest first. Options match on the underlying. */
+function RelatedNotes({ trade }: { trade: import("@/lib/trades").Trade }) {
+  const underlying =
+    trade.market === "OPTION"
+      ? parseOccSymbol(trade.symbol)?.underlying ?? trade.symbol
+      : trade.symbol;
+  const notes = useNotesForSymbol(underlying);
+  if (notes.length === 0) return null;
+
+  return (
+    <div className="tradeView__notesBox">
+      <span className="tradeView__notesLabel">Related notes</span>
+      <span style={{ display: "grid", gap: "var(--space-2)" }}>
+        {notes.slice(0, 3).map((n) => (
+          <span key={n.id} className="tradeView__notesText" style={{ display: "flex", gap: "var(--space-3)" }}>
+            <span
+              style={{
+                color: "var(--text-tertiary)",
+                fontFamily: "var(--font-mono)",
+                fontVariantNumeric: "tabular-nums",
+                fontSize: "var(--text-xs)",
+                whiteSpace: "nowrap",
+                paddingTop: 2,
+              }}
+            >
+              {new Date(n.createdAt).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+              })}
+            </span>
+            <span
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {n.body}
+            </span>
+          </span>
+        ))}
+      </span>
+    </div>
   );
 }
 
