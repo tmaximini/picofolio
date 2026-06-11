@@ -13,6 +13,7 @@ import { ALL_ACCOUNTS, useStore, type IntradayEntry } from "./index";
 import { intradayCacheKey } from "@/lib/yahoo";
 import type { PricePoint } from "@/lib/priceHistory";
 import type { Account, Holding } from "@/lib/mock";
+import type { Note } from "@/lib/notes";
 import type { Trade, TradeSetup, TradeStatus } from "@/lib/trades";
 import { deriveTotals, tradeDateKey } from "@/lib/tradeMath";
 import { contractMultiplier, parseOccSymbol } from "@/lib/optionSymbol";
@@ -716,7 +717,86 @@ export const useAddTrade = () => useStore((s) => s.addTrade);
 export const useUpdateTrade = () => useStore((s) => s.updateTrade);
 export const useDeleteTrade = () => useStore((s) => s.deleteTrade);
 export const useAddSetup = () => useStore((s) => s.addSetup);
+export const useUpdateSetup = () => useStore((s) => s.updateSetup);
 export const useDeleteSetup = () => useStore((s) => s.deleteSetup);
+
+// ---------- notes ----------
+
+export const useNotes = (): Note[] => useStore((s) => s.notes);
+export const useNote = (id: string): Note | undefined =>
+  useStore((s) => s.notes.find((n) => n.id === id));
+export const useAddNote = () => useStore((s) => s.addNote);
+export const useUpdateNote = () => useStore((s) => s.updateNote);
+export const useDeleteNote = () => useStore((s) => s.deleteNote);
+
+/** Account-scoped notes — notes without an accountId are global and always show. */
+export const useScopedNotes = (scope: string = ALL_ACCOUNTS): Note[] => {
+  const notes = useStore((s) => s.notes);
+  return useMemo(() => {
+    if (scope === ALL_ACCOUNTS) return notes;
+    return notes.filter((n) => n.accountId == null || n.accountId === scope);
+  }, [notes, scope]);
+};
+
+/** Local calendar day (YYYY-MM-DD) of an ISO timestamp — matches the
+ *  calendar grid's local-date keys. */
+function localDayKey(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Account-scoped notes filtered to the journal date range — what the
+ *  Activity page shows. Notes are dated entries, so reviewing a period
+ *  shows the notes written in it. */
+export const useFilteredNotes = (scope: string = ALL_ACCOUNTS): Note[] => {
+  const notes = useScopedNotes(scope);
+  const journalRange = useStore((s) => s.journalRange);
+  return useMemo(() => {
+    const range = rangeFor(journalRange);
+    return notes.filter((n) => inRange(localDayKey(n.createdAt), range));
+  }, [notes, journalRange]);
+};
+
+/** Notes bucketed by the local day they were written. */
+export const useNotesByDay = (scope: string = ALL_ACCOUNTS): Map<string, Note[]> => {
+  const notes = useScopedNotes(scope);
+  return useMemo(() => {
+    const map = new Map<string, Note[]>();
+    for (const n of notes) {
+      const key = localDayKey(n.createdAt);
+      const list = map.get(key);
+      if (list) list.push(n);
+      else map.set(key, [n]);
+    }
+    return map;
+  }, [notes]);
+};
+
+/** Setups bucketed by the local day they were planned. */
+export const useSetupsByDay = (scope: string = ALL_ACCOUNTS): Map<string, TradeSetup[]> => {
+  const setups = useStore((s) => s.setups);
+  return useMemo(() => {
+    const map = new Map<string, TradeSetup[]>();
+    for (const sp of setups) {
+      if (scope !== ALL_ACCOUNTS && sp.accountId !== scope) continue;
+      const key = localDayKey(sp.createdAt);
+      const list = map.get(key);
+      if (list) list.push(sp);
+      else map.set(key, [sp]);
+    }
+    return map;
+  }, [setups, scope]);
+};
+
+/** Notes mentioning a symbol inline ($NVDA), newest first. */
+export const useNotesForSymbol = (symbol: string): Note[] => {
+  const notes = useStore((s) => s.notes);
+  return useMemo(() => {
+    const sym = symbol.toUpperCase();
+    return notes.filter((n) => n.symbols.includes(sym));
+  }, [notes, symbol]);
+};
 export const useSetJournalRange = () => useStore((s) => s.setJournalRange);
 export const useSetCalendarMonth = () => useStore((s) => s.setCalendarMonth);
 export const useClearDemoTrades = () => useStore((s) => s.clearDemoTrades);
@@ -831,7 +911,17 @@ export type JournalStats = {
   returnPct: number;
   /** P/L series, one bucket per trade (for sparkline). */
   cumulativeSeries: { at: string; cumulativeCents: number }[];
+  /** Highest-return winning trade in range; null when nothing closed green. */
+  best: TradeExtreme;
+  /** Lowest-return losing trade in range; null when nothing closed red. */
+  worst: TradeExtreme;
 };
+
+export type TradeExtreme = {
+  symbol: string;
+  returnCents: number;
+  returnPct: number | null;
+} | null;
 
 export const useTradeStats = (scope: string = ALL_ACCOUNTS): JournalStats => {
   const trades = useFilteredTrades(scope);
@@ -850,6 +940,8 @@ function computeStats(trades: Trade[]): JournalStats {
   let entryCapitalCents = 0;
 
   const closed: { at: string; returnCents: number }[] = [];
+  let best: TradeExtreme = null;
+  let worst: TradeExtreme = null;
 
   for (const t of trades) {
     const tot = deriveTotals(t);
@@ -861,6 +953,12 @@ function computeStats(trades: Trade[]): JournalStats {
     pnlCents += tot.returnCents;
     entryCapitalCents += tot.entryTotalCents;
     closed.push({ at: tradeDateKey(t), returnCents: tot.returnCents });
+    if (tot.returnCents > 0 && (best == null || tot.returnCents > best.returnCents)) {
+      best = { symbol: t.symbol, returnCents: tot.returnCents, returnPct: tot.returnPct };
+    }
+    if (tot.returnCents < 0 && (worst == null || tot.returnCents < worst.returnCents)) {
+      worst = { symbol: t.symbol, returnCents: tot.returnCents, returnPct: tot.returnPct };
+    }
     if (status === "WIN") {
       wins++;
       winSumCents += tot.returnCents;
@@ -892,6 +990,8 @@ function computeStats(trades: Trade[]): JournalStats {
     winRate: totalClosed > 0 ? wins / totalClosed : 0,
     returnPct: entryCapitalCents > 0 ? pnlCents / entryCapitalCents : 0,
     cumulativeSeries,
+    best,
+    worst,
   };
 }
 

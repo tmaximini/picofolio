@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
+import { parseOccSymbol } from "@/lib/optionSymbol";
 import { useTradeStats } from "@/store/selectors";
 import { PerformanceChart } from "./PerformanceChart";
 
@@ -9,8 +10,15 @@ const TIPS = {
   losses: "Closed trades with negative realized P/L.",
   avgWin: "Average realized profit across winning trades.",
   avgLoss: "Average realized loss across losing trades.",
+  best: "Largest realized gain on a single trade in the selected range.",
+  worst: "Largest realized loss on a single trade in the selected range.",
   pnl: "Sum of realized P/L across all closed trades in the selected range.",
 } as const;
+
+/** Options show as their underlying — the strip has no room for OCC strings. */
+function symLabel(symbol: string): string {
+  return parseOccSymbol(symbol)?.underlying ?? symbol;
+}
 
 export function JournalStats({ scope }: { scope?: string }) {
   const stats = useTradeStats(scope);
@@ -67,6 +75,22 @@ export function JournalStats({ scope }: { scope?: string }) {
           tone="loss"
         />
         <Stat
+          label="Best"
+          tip={TIPS.best}
+          value={stats.best ? formatCents(stats.best.returnCents, true) : "—"}
+          sub={stats.best ? symLabel(stats.best.symbol) : undefined}
+          tone={stats.best ? "gain" : undefined}
+          subTone="neutral"
+        />
+        <Stat
+          label="Worst"
+          tip={TIPS.worst}
+          value={stats.worst ? formatCents(stats.worst.returnCents, true) : "—"}
+          sub={stats.worst ? symLabel(stats.worst.symbol) : undefined}
+          tone={stats.worst ? "loss" : undefined}
+          subTone="neutral"
+        />
+        <Stat
           label="PnL"
           tip={TIPS.pnl}
           value={stats.pnlCents !== 0 ? formatCents(stats.pnlCents, true) : "—"}
@@ -91,11 +115,13 @@ type StatProps = {
   value: React.ReactNode;
   sub?: string;
   tone?: "gain" | "loss";
+  /** Color for the sub line; defaults to `tone`. */
+  subTone?: "gain" | "loss" | "neutral";
   tip?: string;
   hero?: boolean;
 };
 
-function Stat({ label, value, sub, tone, tip, hero }: StatProps) {
+function Stat({ label, value, sub, tone, subTone, tip, hero }: StatProps) {
   const valueClass = [
     "journalStat__value",
     hero && "journalStat__value--hero",
@@ -108,7 +134,7 @@ function Stat({ label, value, sub, tone, tip, hero }: StatProps) {
       <div className="journalStat__label">{label}</div>
       <div className={valueClass}>{value}</div>
       {sub && (
-        <div className={`journalStat__sub journalStat__sub--${tone ?? "neutral"}`}>
+        <div className={`journalStat__sub journalStat__sub--${subTone ?? tone ?? "neutral"}`}>
           {sub}
         </div>
       )}

@@ -160,7 +160,12 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
         ) : data.length === 0 ? (
           <ChartFallback>Loading…</ChartFallback>
         ) : (
-          <PriceChart data={data} height={260} timeVisible={intradayActive} />
+          <PriceChart
+            data={data}
+            height={260}
+            timeVisible={intradayActive}
+            baselinePrice={holding.avgCostCents > 0 ? holding.avgCostCents / 100 : undefined}
+          />
         )}
       </div>
 

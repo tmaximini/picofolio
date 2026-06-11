@@ -1,0 +1,359 @@
+/* ============================================================
+   CAPTURE SURFACES — setup terminal, note modal, note rows,
+   shortcuts help. Quick keyboard-first creation flows.
+   ============================================================ */
+
+/* ---------- SETUP TERMINAL ----------
+   One command line in, a parsed trade plan out. The preview renders the
+   exact chip-chain the Activity setup row uses, so what you see while
+   typing is literally what gets saved. */
+
+.setupTerminal {
+  width: min(640px, 100%);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--highlight-top), var(--shadow-xl);
+  overflow: hidden;
+  transform: translateY(8px) scale(0.985);
+  animation: modalRise var(--duration-base) var(--ease-out) forwards;
+}
+
+.setupTerminal__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) var(--space-4) 0;
+}
+.setupTerminal__title {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+}
+
+.setupTerminal__inputRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) 0;
+}
+.setupTerminal__prompt {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  font-weight: 600;
+  user-select: none;
+}
+.setupTerminal__input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-base);
+}
+.setupTerminal__input:focus { outline: none; }
+.setupTerminal__input::placeholder { color: var(--text-tertiary); opacity: 0.7; }
+
+.setupTerminal__hint {
+  padding: var(--space-1) var(--space-4) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.setupTerminal__preview {
+  margin: 0 var(--space-4) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-2);
+  background: var(--glass-thin);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+}
+.setupTerminal__empty {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+.setupTerminal__missing {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+.setupTerminal__rr {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.setupTerminal__rr--good { color: var(--gain); }
+
+.setupTerminal__foot {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-base);
+}
+.setupTerminal__foot > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.setupTerminal__footHint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+/* ---------- NOTE MODAL ----------
+   Frictionless quick capture: one borderless textarea, inline $symbols
+   and #tags extracted live into chips below. */
+
+.noteModal {
+  width: min(560px, 100%);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--highlight-top), var(--shadow-xl);
+  overflow: hidden;
+  transform: translateY(8px) scale(0.985);
+  animation: modalRise var(--duration-base) var(--ease-out) forwards;
+}
+
+.noteModal__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5) 0;
+}
+.noteModal__title {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+}
+.noteModal__stamp {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.noteModal__body {
+  display: block;
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  background: transparent;
+  border: 0;
+  resize: vertical;
+  min-height: 120px;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: 1.6;
+}
+.noteModal__body:focus { outline: none; }
+.noteModal__body::placeholder { color: var(--text-tertiary); opacity: 0.7; }
+
+.noteModal__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 0 var(--space-5) var(--space-4);
+}
+
+.noteModal__foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-base);
+}
+
+/* Inline token chips — shared by the note modal, note rows, palette. */
+.noteChip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 var(--space-2);
+  background: var(--glass-medium);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.noteChip--sym {
+  color: var(--accent);
+  background: var(--accent-muted);
+  border-color: transparent;
+}
+
+/* ---------- NOTE ROW ----------
+   One-line note on the Activity strip / Calendar day panel. Mirrors the
+   setup row's anatomy (label · content · actions) with a solid border —
+   a note is an observation, not a plan. */
+
+.noteRow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-2);
+  background: var(--glass-thin);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.noteRow__label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.noteRow__main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.noteRow__body {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.noteRow__chips {
+  display: inline-flex;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+.noteRow__actions {
+  display: flex;
+  gap: var(--space-1);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.noteRow:hover .noteRow__actions,
+.noteRow:focus-within .noteRow__actions { opacity: 1; }
+
+/* Palette note results — one line, ellipsized. */
+.cmdRow__title--truncate {
+  display: block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- CALENDAR MARKS ----------
+   Quiet glyph row on day cells: a Terminal glyph per planned setup,
+   a Bookmark per note. Information, not decoration. */
+
+.calendarDay__marks {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+.calendarDay__mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+}
+
+/* Small-caps section label inside the calendar day panel. */
+.dayPanel__sectionLabel {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+/* ---------- SHORTCUTS HELP ----------
+   The "?" overlay — a quiet glass reference card, grouped by intent. */
+
+.shortcutsHelp {
+  width: min(560px, 100%);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--highlight-top), var(--shadow-xl);
+  overflow: hidden;
+  transform: translateY(8px) scale(0.985);
+  animation: modalRise var(--duration-base) var(--ease-out) forwards;
+}
+.shortcutsHelp__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.shortcutsHelp__title {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+}
+.shortcutsHelp__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5) var(--space-6);
+  padding: var(--space-5);
+  background: var(--glass-thin);
+}
+.shortcutsHelp__groupTitle {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-tertiary);
+  font-weight: 500;
+  margin-bottom: var(--space-2);
+}
+.shortcutsHelp__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+}
+.shortcutsHelp__label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.shortcutsHelp__keys {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+/* Muted "+N more" toggle under the Activity note strip. */
+.noteStrip__more {
+  background: transparent;
+  border: 0;
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.noteStrip__more:hover { color: var(--text-primary); }

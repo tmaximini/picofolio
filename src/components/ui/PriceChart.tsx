@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import {
   AreaSeries,
+  BaselineSeries,
   ColorType,
   CrosshairMode,
   LineStyle,
@@ -18,6 +19,10 @@ type PriceChartProps = {
   height?: number;
   /** Show HH:MM on the time axis (intraday series). Default daily. */
   timeVisible?: boolean;
+  /** Entry / avg-cost anchor (dollars). When set, the chart renders as a
+   *  baseline series — green above, terracotta below — with a dotted line
+   *  marking the price itself. */
+  baselinePrice?: number;
 };
 
 const tokens = {
@@ -32,10 +37,15 @@ const tokens = {
   crosshair: "rgba(232, 232, 234, 0.25)",
 };
 
-export function PriceChart({ data, height = 280, timeVisible = false }: PriceChartProps) {
+export function PriceChart({
+  data,
+  height = 280,
+  timeVisible = false,
+  baselinePrice,
+}: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<"Area"> | null>(null);
+  const seriesRef = useRef<ISeriesApi<"Area"> | ISeriesApi<"Baseline"> | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -116,16 +126,47 @@ export function PriceChart({ data, height = 280, timeVisible = false }: PriceCha
     const chart = chartRef.current;
     if (!chart || data.length === 0) return;
 
-    const gaining = (data.at(-1)?.value ?? 0) >= (data.at(0)?.value ?? 0);
-    const palette = gaining
-      ? { line: tokens.gain, top: tokens.gainTop, bottom: tokens.gainBottom }
-      : { line: tokens.loss, top: tokens.lossTop, bottom: tokens.lossBottom };
-
     // Recreate series so color swaps cleanly when range changes tone
     if (seriesRef.current) {
       chart.removeSeries(seriesRef.current);
       seriesRef.current = null;
     }
+
+    if (baselinePrice != null && baselinePrice > 0) {
+      // Anchored to entry: green above the avg cost, terracotta below —
+      // the chart reads as "where am I relative to my entry" at a glance.
+      const series = chart.addSeries(BaselineSeries, {
+        baseValue: { type: "price", price: baselinePrice },
+        topLineColor: tokens.gain,
+        topFillColor1: tokens.gainTop,
+        topFillColor2: tokens.gainBottom,
+        bottomLineColor: tokens.loss,
+        bottomFillColor1: tokens.lossBottom,
+        bottomFillColor2: tokens.lossTop,
+        lineWidth: 2,
+        priceLineVisible: true,
+        lastValueVisible: true,
+        crosshairMarkerBackgroundColor: "#14161B",
+        crosshairMarkerRadius: 4,
+      });
+      series.createPriceLine({
+        price: baselinePrice,
+        color: tokens.text,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: true,
+        title: "entry",
+      });
+      series.setData(data as { time: Time; value: number }[]);
+      chart.timeScale().fitContent();
+      seriesRef.current = series;
+      return;
+    }
+
+    const gaining = (data.at(-1)?.value ?? 0) >= (data.at(0)?.value ?? 0);
+    const palette = gaining
+      ? { line: tokens.gain, top: tokens.gainTop, bottom: tokens.gainBottom }
+      : { line: tokens.loss, top: tokens.lossTop, bottom: tokens.lossBottom };
 
     const series = chart.addSeries(AreaSeries, {
       lineColor: palette.line,
@@ -143,7 +184,7 @@ export function PriceChart({ data, height = 280, timeVisible = false }: PriceCha
     series.setData(data as { time: Time; value: number }[]);
     chart.timeScale().fitContent();
     seriesRef.current = series;
-  }, [data]);
+  }, [data, baselinePrice]);
 
   return <div ref={containerRef} className="priceChart" style={{ height }} />;
 }

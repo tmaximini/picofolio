@@ -97,7 +97,9 @@ export function AccountSwitcher({ onNewAccount, onEditAccount }: AccountSwitcher
             <span className="acctSwitcher__rowValue num">
               {portfolioCents != null ? formatCents(portfolioCents, true) : "—"}
             </span>
-            {isAll && <Check size={13} strokeWidth={2} className="acctSwitcher__check" />}
+            <span className="acctSwitcher__slot">
+              {isAll && <Check size={13} strokeWidth={2} className="acctSwitcher__check" />}
+            </span>
           </button>
 
           <div className="acctSwitcher__divider" />
@@ -163,18 +165,20 @@ function AccountRow({
       <span className="acctSwitcher__rowValue num">
         {valueCents != null ? formatCents(valueCents, true) : "—"}
       </span>
-      {active && <Check size={13} strokeWidth={2} className="acctSwitcher__check" />}
-      {onEdit && (
-        <button
-          type="button"
-          className="acctSwitcher__edit"
-          title={`Edit ${account.name}`}
-          aria-label={`Edit ${account.name}`}
-          onClick={onEdit}
-        >
-          <Pencil size={12} strokeWidth={1.75} />
-        </button>
-      )}
+      <span className="acctSwitcher__slot">
+        {active && <Check size={13} strokeWidth={2} className="acctSwitcher__check" />}
+        {onEdit && (
+          <button
+            type="button"
+            className="acctSwitcher__edit"
+            title={`Edit ${account.name}`}
+            aria-label={`Edit ${account.name}`}
+            onClick={onEdit}
+          >
+            <Pencil size={12} strokeWidth={1.75} />
+          </button>
+        )}
+      </span>
     </div>
   );
 }

@@ -1,18 +1,24 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Bookmark, ChevronLeft, ChevronRight, Terminal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Topbar } from "@/components/layout";
+import { NoteRow, TradeSetupRow } from "@/components/ui";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
+import type { Note } from "@/lib/notes";
 import { formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import {
   useCalendarMonth,
   useDayTrades,
   useMonthStats,
+  useNotesByDay,
   useSelectedAccountId,
   useSetCalendarMonth,
+  useSetupsByDay,
   useTradesByDay,
 } from "@/store/selectors";
+import { NewNoteModal } from "@/features/notes";
+import { NewSetupModal } from "@/features/setups";
 import { TradeViewModal } from "@/features/trades";
-import type { Trade } from "@/lib/trades";
+import type { Trade, TradeSetup } from "@/lib/trades";
 import { deriveTotals } from "@/lib/tradeMath";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
@@ -75,6 +81,8 @@ export function Calendar() {
   const monthIso = useCalendarMonth();
   const setMonthIso = useSetCalendarMonth();
   const tradesByDay = useTradesByDay(scope);
+  const notesByDay = useNotesByDay(scope);
+  const setupsByDay = useSetupsByDay(scope);
   const monthStats = useMonthStats(monthIso, scope);
   const [openDayKey, setOpenDayKey] = useState<string | null>(null);
 
@@ -161,6 +169,8 @@ export function Calendar() {
             key={week.sunKey}
             week={week}
             tradesByDay={tradesByDay}
+            notesByDay={notesByDay}
+            setupsByDay={setupsByDay}
             today={today}
             onDayClick={setOpenDayKey}
           />
@@ -275,11 +285,15 @@ function MonthSummary({ stats }: { stats: import("@/store/selectors").MonthStats
 function WeekRow({
   week,
   tradesByDay,
+  notesByDay,
+  setupsByDay,
   today,
   onDayClick,
 }: {
   week: WeekRow;
   tradesByDay: Map<string, import("@/store/selectors").DaySummary>;
+  notesByDay: Map<string, Note[]>;
+  setupsByDay: Map<string, import("@/lib/trades").TradeSetup[]>;
   today: string;
   onDayClick: (key: string) => void;
 }) {
@@ -312,6 +326,8 @@ function WeekRow({
           inMonth={d.inMonth}
           isToday={d.dateKey === today}
           summary={tradesByDay.get(d.dateKey)}
+          noteCount={notesByDay.get(d.dateKey)?.length ?? 0}
+          setupCount={setupsByDay.get(d.dateKey)?.length ?? 0}
           onClick={onDayClick}
         />
       ))}
@@ -349,6 +365,8 @@ function DayCell({
   inMonth,
   isToday,
   summary,
+  noteCount,
+  setupCount,
   onClick,
 }: {
   date: Date;
@@ -356,6 +374,8 @@ function DayCell({
   inMonth: boolean;
   isToday: boolean;
   summary: import("@/store/selectors").DaySummary | undefined;
+  noteCount: number;
+  setupCount: number;
   onClick: (key: string) => void;
 }) {
   const tone = summary
@@ -365,6 +385,8 @@ function DayCell({
         ? "loss"
         : null
     : null;
+
+  const clickable = summary != null || noteCount > 0 || setupCount > 0;
 
   const classes = [
     "calendarDay",
@@ -379,7 +401,8 @@ function DayCell({
   return (
     <div
       className={classes}
-      onClick={summary ? () => onClick(dateKey) : undefined}
+      onClick={clickable ? () => onClick(dateKey) : undefined}
+      style={clickable && !summary ? { cursor: "pointer" } : undefined}
     >
       <span className="calendarDay__num">{date.getDate()}</span>
       {summary && (
@@ -392,6 +415,22 @@ function DayCell({
           </span>
         </>
       )}
+      {(noteCount > 0 || setupCount > 0) && (
+        <span className="calendarDay__marks">
+          {setupCount > 0 && (
+            <span className="calendarDay__mark" title={`${setupCount} setup${setupCount === 1 ? "" : "s"}`}>
+              <Terminal size={10} strokeWidth={1.75} />
+              {setupCount > 1 && setupCount}
+            </span>
+          )}
+          {noteCount > 0 && (
+            <span className="calendarDay__mark" title={`${noteCount} note${noteCount === 1 ? "" : "s"}`}>
+              <Bookmark size={10} strokeWidth={1.75} />
+              {noteCount > 1 && noteCount}
+            </span>
+          )}
+        </span>
+      )}
     </div>
   );
 }
@@ -399,17 +438,21 @@ function DayCell({
 function DayPanel({ dateKey, onClose }: { dateKey: string; onClose: () => void }) {
   const scope = useSelectedAccountId();
   const trades = useDayTrades(dateKey, scope);
+  const dayNotes = useNotesByDay(scope).get(dateKey) ?? [];
+  const daySetups = useSetupsByDay(scope).get(dateKey) ?? [];
   const [viewTradeId, setViewTradeId] = useState<string | null>(null);
+  const [editNote, setEditNote] = useState<Note | null>(null);
+  const [editSetup, setEditSetup] = useState<TradeSetup | null>(null);
 
   // Close on Escape (unless a trade modal is open over the drawer).
   // Outside-click is handled by the backdrop below.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !viewTradeId) onClose();
+      if (e.key === "Escape" && !viewTradeId && !editNote && !editSetup) onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose, viewTradeId]);
+  }, [onClose, viewTradeId, editNote, editSetup]);
 
   const date = new Date(`${dateKey}T00:00:00`);
   const dateLabel = date.toLocaleDateString("en-US", {
@@ -459,6 +502,24 @@ function DayPanel({ dateKey, onClose }: { dateKey: string; onClose: () => void }
           {trades.map((t) => (
             <DayTradeCard key={t.id} trade={t} onClick={() => setViewTradeId(t.id)} />
           ))}
+
+          {daySetups.length > 0 && (
+            <>
+              <div className="dayPanel__sectionLabel">Planned</div>
+              {daySetups.map((sp) => (
+                <TradeSetupRow key={sp.id} setup={sp} onEdit={() => setEditSetup(sp)} />
+              ))}
+            </>
+          )}
+
+          {dayNotes.length > 0 && (
+            <>
+              <div className="dayPanel__sectionLabel">Notes</div>
+              {dayNotes.map((n) => (
+                <NoteRow key={n.id} note={n} onEdit={() => setEditNote(n)} />
+              ))}
+            </>
+          )}
         </div>
       </div>
 
@@ -467,6 +528,14 @@ function DayPanel({ dateKey, onClose }: { dateKey: string; onClose: () => void }
           tradeId={viewTradeId}
           onClose={() => setViewTradeId(null)}
         />
+      )}
+
+      {editNote && (
+        <NewNoteModal note={editNote} onClose={() => setEditNote(null)} />
+      )}
+
+      {editSetup && (
+        <NewSetupModal setup={editSetup} onClose={() => setEditSetup(null)} />
       )}
     </>
   );

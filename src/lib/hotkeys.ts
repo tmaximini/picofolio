@@ -61,7 +61,22 @@ export function useHotkeys(bindings: BindingSpec[]) {
 
       if (inEditable && !hasModifier) return;
 
-      // Combo match first
+      // Pending chord wins over single-key bindings — "g s" must beat a
+      // lone "s". On a miss the chord is cancelled and the key falls
+      // through to normal matching.
+      if (chordPrefix && !hasModifier) {
+        const sequence = `${chordPrefix} ${e.key.toLowerCase()}`;
+        cancelChord();
+        for (const b of bindings) {
+          if (normalizeCombo(b.combo) === sequence) {
+            e.preventDefault();
+            b.handler(e);
+            return;
+          }
+        }
+      }
+
+      // Combo match
       for (const b of bindings) {
         if (normalizeCombo(b.combo) === combo) {
           e.preventDefault();
@@ -69,21 +84,6 @@ export function useHotkeys(bindings: BindingSpec[]) {
           cancelChord();
           return;
         }
-      }
-
-      // Chord match
-      if (chordPrefix) {
-        const sequence = `${chordPrefix} ${e.key.toLowerCase()}`;
-        for (const b of bindings) {
-          if (normalizeCombo(b.combo) === sequence) {
-            e.preventDefault();
-            b.handler(e);
-            cancelChord();
-            return;
-          }
-        }
-        cancelChord();
-        return;
       }
 
       // Single-key chord starter?

@@ -4,8 +4,27 @@
  * tables, modals, stats. Single source of truth.
  */
 
-import type { Trade, TradeExecution, TradeStatus } from "./trades";
+import type { Side, Trade, TradeExecution, TradeStatus } from "./trades";
 import { contractMultiplier } from "./optionSymbol";
+
+/**
+ * Planned risk:reward ratio for an entry/target/stop triple. Returns null
+ * when any leg is missing or the risk side is zero/inverted (stop on the
+ * wrong side of entry). Shared by the trade form and setup terminal.
+ */
+export function riskReward(
+  entryCents: number | null | undefined,
+  targetCents: number | null | undefined,
+  stopCents: number | null | undefined,
+  side: Side,
+): number | null {
+  if (entryCents == null || targetCents == null || stopCents == null) return null;
+  const sign = side === "LONG" ? 1 : -1;
+  const reward = sign * (targetCents - entryCents);
+  const risk = sign * (entryCents - stopCents);
+  if (risk <= 0) return null;
+  return reward / risk;
+}
 
 export type TradeTotals = {
   /** Sum of opening-side executions (BUY for LONG, SELL for SHORT), priceCents × qty. */

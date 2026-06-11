@@ -12,6 +12,7 @@ import {
   type WeekBar,
 } from "@/lib/mock";
 import { setupsSeed, tradesSeed } from "@/lib/mockTrades";
+import { extractNoteTokens, type Note } from "@/lib/notes";
 import type { PricePoint } from "@/lib/priceHistory";
 import type { Trade, TradeSetup } from "@/lib/trades";
 import type { DateRangeKey } from "@/lib/dateRange";
@@ -118,6 +119,7 @@ type StoreState = {
   // Journal
   trades: Trade[];
   setups: TradeSetup[];
+  notes: Note[];
   journalRange: DateRangeKey;
   /** Calendar viewing month — first-of-month ISO date. */
   calendarMonth: string;
@@ -204,7 +206,12 @@ type StoreState = {
   updateTrade: (id: string, patch: Partial<Trade>) => void;
   deleteTrade: (id: string) => void;
   addSetup: (s: TradeSetup) => void;
+  updateSetup: (id: string, patch: Partial<TradeSetup>) => void;
   deleteSetup: (id: string) => void;
+  addNote: (n: Note) => void;
+  /** Body patches re-extract inline $symbols/#tags and stamp updatedAt. */
+  updateNote: (id: string, patch: Partial<Pick<Note, "body" | "accountId">>) => void;
+  deleteNote: (id: string) => void;
   setJournalRange: (key: DateRangeKey) => void;
   setCalendarMonth: (iso: string) => void;
   clearDemoTrades: () => void;
@@ -284,6 +291,41 @@ function firstOfThisMonthISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
+/**
+ * Merge a freshly parsed IBKR trade into its stored counterpart. Broker
+ * facts (executions, side, market) follow the fresh parse — this is how an
+ * open trade picks up its closing executions on a later sync. Journal fields
+ * the user added locally (notes, tags, confidence, target/stop) are kept.
+ */
+function mergeIbkrTrade(stored: Trade, parsed: Trade): Trade {
+  if (
+    stored.executions.length === parsed.executions.length &&
+    stored.side === parsed.side &&
+    stored.accountId === parsed.accountId
+  ) {
+    return stored; // unchanged — keep the reference, avoid re-renders
+  }
+  return {
+    ...stored,
+    accountId: parsed.accountId,
+    side: parsed.side,
+    market: parsed.market,
+    executions: parsed.executions,
+  };
+}
+
+/** Earliest execution timestamp across a parsed pull — the start of the
+ *  span the Flex window actually covers. null when the pull has no trades. */
+function pullWindowStart(trades: Trade[]): string | null {
+  let min: string | null = null;
+  for (const t of trades) {
+    for (const e of t.executions) {
+      if (min == null || e.at < min) min = e.at;
+    }
+  }
+  return min;
+}
+
 // Daily closes move once a day, but the *last* point is the live quote during
 // market hours — 15 min keeps the headline value honest without hammering Yahoo.
 const STALE_MS = 15 * 60 * 1000;
@@ -307,6 +349,7 @@ export const useStore = create<StoreState>()(
       selectedAccountId: ALL_ACCOUNTS,
       trades: tradesSeed,
       setups: setupsSeed,
+      notes: [],
       journalRange: "ALL",
       calendarMonth: firstOfThisMonthISO(),
       ibkrConnections: [],
@@ -583,6 +626,7 @@ export const useStore = create<StoreState>()(
           holdings: s.holdings.filter((h) => h.accountId !== id),
           trades: s.trades.filter((t) => t.accountId !== id),
           setups: s.setups.filter((sp) => sp.accountId !== id),
+          notes: s.notes.filter((n) => n.accountId !== id),
           navHistory: Object.fromEntries(
             Object.entries(s.navHistory).filter(([k]) => k !== id),
           ),
@@ -672,8 +716,29 @@ export const useStore = create<StoreState>()(
         set((s) => ({ trades: s.trades.filter((t) => t.id !== id) })),
 
       addSetup: (sp) => set((s) => ({ setups: [sp, ...s.setups] })),
+      updateSetup: (id, patch) =>
+        set((s) => ({
+          setups: s.setups.map((sp) => (sp.id === id ? { ...sp, ...patch } : sp)),
+        })),
       deleteSetup: (id) =>
         set((s) => ({ setups: s.setups.filter((sp) => sp.id !== id) })),
+
+      addNote: (n) => set((s) => ({ notes: [n, ...s.notes] })),
+      updateNote: (id, patch) =>
+        set((s) => ({
+          notes: s.notes.map((n) => {
+            if (n.id !== id) return n;
+            const next = { ...n, ...patch, updatedAt: new Date().toISOString() };
+            if (patch.body != null) {
+              const { symbols, tags } = extractNoteTokens(patch.body);
+              next.symbols = symbols;
+              next.tags = tags;
+            }
+            return next;
+          }),
+        })),
+      deleteNote: (id) =>
+        set((s) => ({ notes: s.notes.filter((n) => n.id !== id) })),
 
       setJournalRange: (key) => set({ journalRange: key }),
       setCalendarMonth: (iso) => set({ calendarMonth: iso }),
@@ -786,12 +851,12 @@ export const useStore = create<StoreState>()(
         if (stamped.length > 0) {
           set((s) => {
             const hadReal = s.trades.some((t) => t.source !== "demo");
-            // Upsert: re-stamp already-imported trades onto their resolved
-            // account (so re-importing into the right account *moves* them
-            // rather than no-op'ing on the dedupe), then prepend new ones.
+            // Upsert: refresh already-imported trades from the new parse —
+            // moves them onto the resolved account AND picks up executions
+            // that closed a previously-open position. Journal fields stay.
             let base = s.trades.map((t) => {
               const p = parsedById.get(t.id);
-              return p ? { ...t, accountId: p.accountId } : t;
+              return p ? mergeIbkrTrade(t, p) : t;
             });
             if (!hadReal) base = base.filter((t) => t.source !== "demo");
             return { trades: [...fresh, ...base] };
@@ -894,21 +959,43 @@ export const useStore = create<StoreState>()(
               source: "ibkr",
             });
           const stamped = result.trades.map((t) => ({ ...t, accountId }));
-          const existing = new Set(get().trades.map((t) => t.id));
-          const fresh = stamped.filter((t) => !existing.has(t.id));
+          const prevById = new Map(get().trades.map((t) => [t.id, t]));
+          const fresh = stamped.filter((t) => !prevById.has(t.id));
+          // Trades whose stored copy gains executions on this pull — typically
+          // an open position that has since been closed.
+          const updated = stamped.filter((t) => {
+            const prev = prevById.get(t.id);
+            return prev != null && prev.executions.length !== t.executions.length;
+          });
           if (stamped.length > 0) {
             set((s) => {
               const hadReal = s.trades.some((t) => t.source !== "demo");
-              // `replace` (resync): the fresh pull is authoritative — drop this
-              // account's existing IBKR trades, then add everything from the
-              // pull. This only runs AFTER a successful fetch+parse, so a failed
-              // resync never loses data. Plain sync just adds new trades.
+              // `replace` (resync): the fresh pull is authoritative for the
+              // span it covers — drop this account's IBKR trades inside that
+              // window and re-add from the pull. Trades older than the window
+              // (e.g. a month-to-date query) are KEPT: a narrow query must
+              // never erase longer history. Runs only after a successful
+              // fetch+parse, so a failed resync never loses data.
+              const windowStart = pullWindowStart(stamped);
               let base = replace
                 ? s.trades.filter(
-                    (t) => !(t.source === "ibkr" && t.accountId === accountId),
+                    (t) =>
+                      !(
+                        t.source === "ibkr" &&
+                        t.accountId === accountId &&
+                        windowStart != null &&
+                        t.executions.some((e) => e.at >= windowStart)
+                      ),
                   )
                 : s.trades;
               if (!hadReal) base = base.filter((t) => t.source !== "demo");
+              // Upsert: refresh broker fields on already-imported trades so an
+              // open trade picks up the closing executions a later pull brings.
+              const parsedById = new Map(stamped.map((t) => [t.id, t]));
+              base = base.map((t) => {
+                const p = t.source === "ibkr" ? parsedById.get(t.id) : undefined;
+                return p ? mergeIbkrTrade(t, p) : t;
+              });
               const baseIds = new Set(base.map((t) => t.id));
               const toAdd = stamped.filter((t) => !baseIds.has(t.id));
               return { trades: [...toAdd, ...base] };
@@ -939,7 +1026,7 @@ export const useStore = create<StoreState>()(
           }
           const summary = {
             added: fresh.length,
-            skipped: result.trades.length - fresh.length,
+            skipped: result.trades.length - fresh.length - updated.length,
             warnings: result.warnings,
             accountIds: result.accountIds,
           };
@@ -959,13 +1046,24 @@ export const useStore = create<StoreState>()(
           if (navDays > 0) posNote += ` ${navDays} days of NAV history.`;
           const join = (a: string | undefined, b: string) => (a ? `${a} ${b}` : b);
 
-          if (summary.added > 0) {
+          const updatedNote =
+            updated.length > 0
+              ? `${updated.length} updated with new executions.`
+              : undefined;
+          if (summary.added > 0 || updated.length > 0) {
+            const headline =
+              summary.added > 0
+                ? `synced ${summary.added} trade${summary.added === 1 ? "" : "s"}`
+                : `updated ${updated.length} trade${updated.length === 1 ? "" : "s"}`;
             pushToast({
               kind: "success",
-              title: `${conn.label}: synced ${summary.added} trade${summary.added === 1 ? "" : "s"}`,
+              title: `${conn.label}: ${headline}`,
               body: join(
-                summary.skipped > 0 ? `Skipped ${summary.skipped} already-imported.` : undefined,
-                posNote,
+                summary.added > 0 ? updatedNote : undefined,
+                join(
+                  summary.skipped > 0 ? `Skipped ${summary.skipped} already-imported.` : undefined,
+                  posNote,
+                ),
               ),
               duration: 6000,
             });
@@ -1022,6 +1120,9 @@ export const useStore = create<StoreState>()(
         holdings: s.holdings,
         trades: s.trades,
         setups: s.setups,
+        // Additive v7 key — zustand's default shallow merge fills `notes: []`
+        // for older persisted states, so no version bump/migration needed.
+        notes: s.notes,
         selectedAccountId: s.selectedAccountId,
         // A "loading" entry persisted mid-flight would rehydrate as a permanent
         // block (loadPrice early-returns on loading) — freeze the symbol's
