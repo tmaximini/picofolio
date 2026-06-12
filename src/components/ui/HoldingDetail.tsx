@@ -118,9 +118,14 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
     else loadPrice(holding.symbol);
   }, [isOption, loadOptionPrice, loadPrice, holding.symbol]);
 
-  // Prefer the intraday series for short ranges; fall back to daily closes
-  // until it loads (or if the symbol has no intraday coverage), so the chart
-  // is never empty and progressively sharpens.
+  // Prefer the intraday series for short ranges. While it's in flight we
+  // show a quiet loading state rather than the daily closes — the entrance
+  // sweep animating over a coarse curve that then snaps to the fine one
+  // reads as a glitch. Daily is only the fallback when intraday is
+  // definitively unavailable (error / no coverage for the symbol).
+  const intradayLoading =
+    wantsIntraday && (intraEntry == null || intraEntry.status === "loading");
+
   const { data, intradayActive } = useMemo(() => {
     if (wantsIntraday && intraEntry?.points && intraEntry.points.length > 0) {
       const days = range === "1W" ? 7 : 31;
@@ -157,8 +162,10 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
           <ChartFallback>Couldn't fetch pricing for this contract</ChartFallback>
         ) : status === "error" ? (
           <ChartFallback>Couldn't load price data</ChartFallback>
+        ) : intradayLoading || (data.length === 0 && status !== "ready") ? (
+          <ChartLoading height={260} />
         ) : data.length === 0 ? (
-          <ChartFallback>Loading…</ChartFallback>
+          <ChartFallback>No price data for this range</ChartFallback>
         ) : (
           <PriceChart
             data={data}
@@ -237,6 +244,17 @@ function pctTone(n: number | null): "gain" | "loss" | "neutral" {
 
 function ChartFallback({ children }: { children: React.ReactNode }) {
   return <div className="priceChart priceChart--fallback">{children}</div>;
+}
+
+/** Quiet placeholder while the high-fidelity series loads — a breathing
+ *  flatline where the chart is about to draw. The real chart mounts fresh
+ *  afterwards, so the entrance sweep plays exactly once, on the fine data. */
+function ChartLoading({ height }: { height: number }) {
+  return (
+    <div className="chartLoading" style={{ height }} aria-label="Loading chart">
+      <span className="chartLoading__line" />
+    </div>
+  );
 }
 
 /** Calm, informational (not an error): one line, one action. Shown only for an

@@ -9,9 +9,11 @@ import { ALL_ACCOUNTS } from "@/store";
 import {
   useAccounts,
   useAddSetup,
+  usePushToast,
   useSelectedAccountId,
   useUpdateSetup,
 } from "@/store/selectors";
+import { SetupChart } from "./SetupChart";
 
 type NewSetupModalProps = {
   onClose: () => void;
@@ -37,6 +39,18 @@ export function NewSetupModal({ onClose, setup }: NewSetupModalProps) {
   const rr = riskReward(parsed.entryCents, parsed.targetCents, parsed.stopCents, parsed.side);
   const hasInput = input.trim().length > 0;
   const canSave = hasInput && parsed.missing.length === 0;
+  const pushToast = usePushToast();
+
+  // The chart fetches per symbol — debounce so half-typed tickers don't
+  // hammer the price feed.
+  const [chartSymbol, setChartSymbol] = useState<string | null>(() =>
+    setup ? setup.symbol : null,
+  );
+  useEffect(() => {
+    if (parsed.symbol === chartSymbol) return;
+    const t = window.setTimeout(() => setChartSymbol(parsed.symbol), 500);
+    return () => window.clearTimeout(t);
+  }, [parsed.symbol, chartSymbol]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -64,6 +78,7 @@ export function NewSetupModal({ onClose, setup }: NewSetupModalProps) {
     if (setup) {
       // Keep id, account, createdAt and status — only the plan changes.
       updateSetup(setup.id, fields);
+      pushToast({ kind: "success", title: "Setup updated", duration: 2500 });
     } else {
       addSetup({
         id: `sp-${Math.random().toString(36).slice(2, 10)}`,
@@ -72,6 +87,12 @@ export function NewSetupModal({ onClose, setup }: NewSetupModalProps) {
         createdAt: new Date().toISOString(),
         status: "PLANNED",
         ...fields,
+      });
+      pushToast({
+        kind: "success",
+        title: `${fields.symbol} setup saved`,
+        body: "It's pinned on Activity — g a to jump there.",
+        duration: 4000,
       });
     }
     onClose();
@@ -115,6 +136,15 @@ export function NewSetupModal({ onClose, setup }: NewSetupModalProps) {
           long / short · symbol · @entry · t target · s stop — the rest becomes
           notes · use $T for tickers named like keywords
         </div>
+
+        {chartSymbol && (
+          <SetupChart
+            symbol={chartSymbol}
+            entryCents={parsed.entryCents}
+            targetCents={parsed.targetCents}
+            stopCents={parsed.stopCents}
+          />
+        )}
 
         <div className="setupTerminal__preview">
           {hasInput ? (

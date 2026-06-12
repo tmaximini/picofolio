@@ -1,6 +1,7 @@
 import { Pencil, RefreshCw, X } from "lucide-react";
 import type { TradeSetup } from "@/lib/trades";
 import { formatCents } from "@/lib/money";
+import { riskReward } from "@/lib/tradeMath";
 import { useDeleteSetup } from "@/store/selectors";
 
 export function TradeSetupRow({
@@ -13,6 +14,7 @@ export function TradeSetupRow({
   onEdit?: () => void;
 }) {
   const deleteSetup = useDeleteSetup();
+  const rr = riskReward(setup.entryCents, setup.targetCents, setup.stopCents, setup.side);
   const dateLabel = new Date(setup.createdAt).toLocaleDateString("en-US", {
     month: "numeric",
     day: "numeric",
@@ -41,6 +43,20 @@ export function TradeSetupRow({
         <span className="setupRow__chip setupRow__chip--stop">
           S: {formatCents(setup.stopCents)}
         </span>
+        {rr != null && (
+          <>
+            <span className="setupRow__sep" />
+            <span
+              className={
+                rr >= 2
+                  ? "setupRow__chip setupRow__chip--target"
+                  : "setupRow__chip"
+              }
+            >
+              R:R {rr.toFixed(1)}
+            </span>
+          </>
+        )}
         {setup.notes && <span className="setupRow__notes">{setup.notes}</span>}
       </div>
       <div className="setupRow__actions">

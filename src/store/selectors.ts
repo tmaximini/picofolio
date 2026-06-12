@@ -918,6 +918,7 @@ export type JournalStats = {
 };
 
 export type TradeExtreme = {
+  tradeId: string;
   symbol: string;
   returnCents: number;
   returnPct: number | null;
@@ -954,10 +955,10 @@ function computeStats(trades: Trade[]): JournalStats {
     entryCapitalCents += tot.entryTotalCents;
     closed.push({ at: tradeDateKey(t), returnCents: tot.returnCents });
     if (tot.returnCents > 0 && (best == null || tot.returnCents > best.returnCents)) {
-      best = { symbol: t.symbol, returnCents: tot.returnCents, returnPct: tot.returnPct };
+      best = { tradeId: t.id, symbol: t.symbol, returnCents: tot.returnCents, returnPct: tot.returnPct };
     }
     if (tot.returnCents < 0 && (worst == null || tot.returnCents < worst.returnCents)) {
-      worst = { symbol: t.symbol, returnCents: tot.returnCents, returnPct: tot.returnPct };
+      worst = { tradeId: t.id, symbol: t.symbol, returnCents: tot.returnCents, returnPct: tot.returnPct };
     }
     if (status === "WIN") {
       wins++;
