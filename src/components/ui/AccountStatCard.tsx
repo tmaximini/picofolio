@@ -39,7 +39,7 @@ export function AccountStatCard({ accountId, onClick }: AccountStatCardProps) {
   }
 
   // Headline delta = rate-of-return vs. net contributions (NOT Σ realized trades).
-  const tone = ret == null ? "neutral" : toneOf(ret.gainCents);
+  const tone = ret?.gainCents == null ? "neutral" : toneOf(ret.gainCents);
   const share =
     portfolioCents != null && portfolioCents > 0 ? valueCents / portfolioCents : null;
 

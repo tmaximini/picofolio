@@ -1,4 +1,5 @@
 export { AccountFormModal } from "./AccountFormModal";
+export { BreakdownBars, type BreakdownBar } from "./BreakdownBars";
 export { AccountStatCard } from "./AccountStatCard";
 export { AccountSwitcher } from "./AccountSwitcher";
 export { CommandPalette } from "./CommandPalette";

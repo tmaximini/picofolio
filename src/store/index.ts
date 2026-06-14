@@ -15,7 +15,7 @@ import { setupsSeed, tradesSeed } from "@/lib/mockTrades";
 import { extractNoteTokens, type Note } from "@/lib/notes";
 import type { PricePoint } from "@/lib/priceHistory";
 import type { Trade, TradeSetup } from "@/lib/trades";
-import type { DateRangeKey } from "@/lib/dateRange";
+import { DEFAULT_DATE_RANGE, type DateRangeKey } from "@/lib/dateRange";
 import {
   fetchYahooDaily,
   fetchYahooIntraday,
@@ -93,6 +93,7 @@ export type NewAccountInput = {
   cashCents?: number;
   netContributionsCents?: number;
   flexConnectionId?: string;
+  primaryUse?: Account["primaryUse"];
   source?: "demo" | "manual" | "ibkr";
 };
 
@@ -176,7 +177,12 @@ type StoreState = {
     patch: Partial<
       Pick<
         Account,
-        "name" | "color" | "cashCents" | "netContributionsCents" | "flexConnectionId"
+        | "name"
+        | "color"
+        | "cashCents"
+        | "netContributionsCents"
+        | "flexConnectionId"
+        | "primaryUse"
       >
     >,
   ) => void;
@@ -350,7 +356,7 @@ export const useStore = create<StoreState>()(
       trades: tradesSeed,
       setups: setupsSeed,
       notes: [],
-      journalRange: "ALL",
+      journalRange: DEFAULT_DATE_RANGE,
       calendarMonth: firstOfThisMonthISO(),
       ibkrConnections: [],
       toasts: [],
@@ -572,6 +578,7 @@ export const useStore = create<StoreState>()(
               cashCents: input.cashCents ?? 0,
               netContributionsCents: input.netContributionsCents ?? 0,
               flexConnectionId: input.flexConnectionId,
+              primaryUse: input.primaryUse,
               createdAt: now,
               updatedAt: now,
               source: input.source ?? "manual",
@@ -598,6 +605,7 @@ export const useStore = create<StoreState>()(
                   ...("flexConnectionId" in patch
                     ? { flexConnectionId: patch.flexConnectionId }
                     : {}),
+                  ...("primaryUse" in patch ? { primaryUse: patch.primaryUse } : {}),
                   updatedAt: new Date().toISOString(),
                 }
               : a,

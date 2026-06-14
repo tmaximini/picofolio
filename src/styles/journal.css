@@ -147,7 +147,7 @@
 }
 .journalStats__chartHead {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
 }
 .journalStats__chartLabel {
@@ -156,6 +156,32 @@
   letter-spacing: var(--tracking-caps);
   color: var(--text-tertiary);
   font-weight: 500;
+}
+.journalStats__chartHeadRight {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+/* Show / hide empty (non-trading) days — a quiet icon toggle. */
+.journalStats__iconToggle {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-base);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.journalStats__iconToggle:hover {
+  color: var(--text-secondary);
+}
+.journalStats__iconToggle--active {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  box-shadow: var(--highlight-top);
 }
 .journalStats__chartCount {
   font-family: var(--font-mono);

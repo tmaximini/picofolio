@@ -3,7 +3,9 @@ import {
   BaselineSeries,
   ColorType,
   CrosshairMode,
+  HistogramSeries,
   LineStyle,
+  LineType,
   TickMarkType,
   createChart,
   type IChartApi,
@@ -12,7 +14,14 @@ import {
 } from "lightweight-charts";
 import { formatCents } from "@/lib/money";
 
-export type PerfPoint = { time: string | number; value: number; valueCents?: number };
+export type PerfPoint = {
+  time: string | number;
+  value: number;
+  valueCents?: number;
+  /** Optional per-item breakdown shown under the headline (e.g. each trade
+   *  closed that day). */
+  breakdown?: { label: string; valueCents: number }[];
+};
 
 type PerformanceChartProps = {
   data: PerfPoint[];
@@ -21,6 +30,13 @@ type PerformanceChartProps = {
   format?: "percent" | "currency";
   /** Show HH:MM on the time axis (intraday). Default daily. */
   timeVisible?: boolean;
+  /** "line" = baseline equity curve (default); "bars" = per-point histogram
+   *  coloured green/red by sign (daily P&L). */
+  kind?: "line" | "bars";
+  /** Line mode only: draw as a staircase (flat between points, stepping on
+   *  each event) so an equity curve with sparse trade-days reads honestly
+   *  instead of interpolating diagonally across days with no activity. */
+  step?: boolean;
 };
 
 const tokens = {
@@ -91,6 +107,8 @@ function formatTipDate(t: string | number): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+type TipLine = { label: string; value: string; tone: "gain" | "loss" | "neutral" };
+
 type Tip = {
   x: number;
   date: string;
@@ -98,6 +116,8 @@ type Tip = {
   headline: string;
   /** Optional secondary line (absolute value on that day). */
   sub?: string;
+  /** Optional per-item rows (e.g. each trade on a day). */
+  lines?: TipLine[];
   tone: "gain" | "loss" | "neutral";
 };
 
@@ -112,10 +132,12 @@ export function PerformanceChart({
   height = 300,
   format = "percent",
   timeVisible = false,
+  kind = "line",
+  step = false,
 }: PerformanceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<"Baseline"> | null>(null);
+  const seriesRef = useRef<ISeriesApi<"Baseline"> | ISeriesApi<"Histogram"> | null>(null);
   // Lookup by date for the hover popover — kept in a ref so the (once-only)
   // crosshair subscription always reads the latest data.
   const byTimeRef = useRef<Map<string, PerfPoint>>(new Map());
@@ -192,25 +214,35 @@ export function PerformanceChart({
       },
     });
 
-    const series = chart.addSeries(BaselineSeries, {
-      baseValue: { type: "price", price: 0 },
-      topLineColor: tokens.gain,
-      topFillColor1: tokens.gainTop,
-      topFillColor2: tokens.gainBottom,
-      bottomLineColor: tokens.loss,
-      bottomFillColor1: tokens.lossTop,
-      bottomFillColor2: tokens.lossBottom,
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      priceFormat: {
-        type: "custom",
-        formatter: format === "percent" ? percentFormatter : currencyFormatter,
-        minMove: format === "percent" ? 0.01 : 1,
-      },
-      crosshairMarkerBorderColor: "#14161B",
-      crosshairMarkerRadius: 4,
-    });
+    const priceFormat = {
+      type: "custom" as const,
+      formatter: format === "percent" ? percentFormatter : currencyFormatter,
+      minMove: format === "percent" ? 0.01 : 1,
+    };
+    const series: ISeriesApi<"Baseline"> | ISeriesApi<"Histogram"> =
+      kind === "bars"
+        ? chart.addSeries(HistogramSeries, {
+            base: 0,
+            priceFormat,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          })
+        : chart.addSeries(BaselineSeries, {
+            baseValue: { type: "price", price: 0 },
+            topLineColor: tokens.gain,
+            topFillColor1: tokens.gainTop,
+            topFillColor2: tokens.gainBottom,
+            bottomLineColor: tokens.loss,
+            bottomFillColor1: tokens.lossTop,
+            bottomFillColor2: tokens.lossBottom,
+            lineWidth: 2,
+            lineType: step ? LineType.WithSteps : LineType.Simple,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            priceFormat,
+            crosshairMarkerBorderColor: "#14161B",
+            crosshairMarkerRadius: 4,
+          });
     series.createPriceLine({
       price: 0,
       color: tokens.zero,
@@ -231,12 +263,18 @@ export function PerformanceChart({
       }
       const tone =
         point.value > 0 ? "gain" : point.value < 0 ? "loss" : "neutral";
+      const lines: TipLine[] | undefined = point.breakdown?.map((b) => ({
+        label: b.label,
+        value: formatCents(b.valueCents, true),
+        tone: b.valueCents > 0 ? "gain" : b.valueCents < 0 ? "loss" : "neutral",
+      }));
       if (format === "percent") {
         setTip({
           x: param.point.x,
           date: formatTipDate(point.time),
           headline: percentFormatter(point.value),
           sub: point.valueCents != null ? formatCents(point.valueCents) : undefined,
+          lines,
           tone,
         });
       } else {
@@ -244,6 +282,7 @@ export function PerformanceChart({
           x: param.point.x,
           date: formatTipDate(point.time),
           headline: formatCents(Math.round(point.value * 100)),
+          lines,
           tone,
         });
       }
@@ -263,7 +302,7 @@ export function PerformanceChart({
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [height, format, timeVisible]);
+  }, [height, format, timeVisible, kind, step]);
 
   useEffect(() => {
     const series = seriesRef.current;
@@ -272,9 +311,18 @@ export function PerformanceChart({
     const map = new Map<string, PerfPoint>();
     for (const p of data) map.set(String(p.time), p);
     byTimeRef.current = map;
-    series.setData(data as { time: Time; value: number }[]);
+    // Bars colour each point by sign; the line series carries no per-point color.
+    const rows =
+      kind === "bars"
+        ? data.map((p) => ({
+            time: p.time,
+            value: p.value,
+            color: p.value >= 0 ? tokens.gain : tokens.loss,
+          }))
+        : data;
+    series.setData(rows as { time: Time; value: number }[]);
     chart.timeScale().fitContent();
-  }, [data]);
+  }, [data, kind]);
 
   // Clamp the popover within the chart width.
   const width = containerRef.current?.clientWidth ?? 0;
@@ -290,6 +338,18 @@ export function PerformanceChart({
             {tip.headline}
           </div>
           {tip.sub && <div className="perfTip__sub">{tip.sub}</div>}
+          {tip.lines && tip.lines.length > 0 && (
+            <div className="perfTip__lines">
+              {tip.lines.map((l, i) => (
+                <div className="perfTip__line" key={`${l.label}-${i}`}>
+                  <span className="perfTip__lineLabel">{l.label}</span>
+                  <span className={`perfTip__lineValue perfTip__lineValue--${l.tone}`}>
+                    {l.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -238,6 +238,10 @@
   color: var(--text-tertiary);
   font-weight: 500;
 }
+/* First section sits right under the account switcher — no large top gap. */
+.nav > .nav__section:first-child {
+  margin-top: var(--space-2);
+}
 .nav__divider {
   height: 1px;
   margin: var(--space-3) var(--space-3);
@@ -579,6 +583,34 @@
   color: var(--text-secondary);
   margin-top: 2px;
 }
+/* Per-trade rows under the headline (daily P&L hover summary). */
+.perfTip__lines {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.perfTip__line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.perfTip__lineLabel {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.perfTip__lineValue {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+}
+.perfTip__lineValue--gain { color: var(--gain); }
+.perfTip__lineValue--loss { color: var(--loss); }
+.perfTip__lineValue--neutral { color: var(--text-secondary); }
 
 /* Account cards row beneath the performance hero */
 .accountRow {
@@ -786,6 +818,31 @@
   font-weight: 500;
   letter-spacing: var(--tracking-tight);
   margin: 0;
+}
+/* Right-aligned action link in a section header (e.g. "View journal →"). */
+.sectionHead__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.sectionHead__link:hover {
+  color: var(--text-primary);
+}
+.sectionHead__link svg {
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.sectionHead__link:hover svg {
+  transform: translateX(2px);
+}
+/* One-line collapsed lens (no positions / no trades yet). */
+.overviewLensEmpty {
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  padding: var(--space-1) 0;
 }
 
 .cardHead {
@@ -1033,4 +1090,85 @@
   font-size: var(--text-sm);
   font-weight: 500;
   color: var(--text-primary);
+}
+
+/* ---------- PERFORMANCE ---------- */
+
+/* Stat grid — dense, responsive. Hero variant sits beneath the equity curve. */
+.perfGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-5) var(--space-6);
+}
+.perfGrid--hero {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+}
+.perfHero__chartLabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-tertiary);
+  font-weight: 500;
+  margin-bottom: var(--space-3);
+}
+
+/* Horizontal breakdown bars (P&L by setup/symbol/…, R-multiple distribution). */
+.breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.breakdownRow {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  align-items: center;
+  gap: var(--space-4);
+}
+.breakdownRow__label {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.breakdownRow__track {
+  position: relative;
+  height: 8px;
+  background: var(--surface-base);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+.breakdownRow__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  min-width: 2px;
+  transition: width var(--duration-base) var(--ease-out);
+}
+.breakdownRow__fill--gain { background: var(--gain); }
+.breakdownRow__fill--loss { background: var(--loss); }
+.breakdownRow__fill--neutral { background: var(--text-tertiary); }
+.breakdownRow__value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.2;
+}
+.breakdownRow__amount {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.breakdownRow__amount--gain { color: var(--gain); }
+.breakdownRow__amount--loss { color: var(--loss); }
+.breakdownRow__amount--neutral { color: var(--text-primary); }
+.breakdownRow__sub {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  color: var(--text-tertiary);
 }

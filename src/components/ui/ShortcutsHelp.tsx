@@ -16,7 +16,7 @@ const GROUPS: ShortcutGroup[] = [
     title: "Navigate",
     rows: [
       { keys: ["g", "o"], label: "Overview" },
-      { keys: ["g", "a"], label: "Activity" },
+      { keys: ["g", "a"], label: "Journal" },
       { keys: ["g", "c"], label: "Calendar" },
       { keys: ["g", "h"], label: "Holdings" },
       { keys: ["g", "s"], label: "Settings" },
