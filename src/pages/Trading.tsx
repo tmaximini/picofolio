@@ -110,7 +110,7 @@ export function Trading() {
 
       <DateRangePills value={range} onChange={setRange} />
 
-      <JournalStats scope={scope} />
+      <JournalStats scope={scope} onOpenTrade={setViewTradeId} />
 
       {setups.length > 0 && (
         <div className="journalSetups">

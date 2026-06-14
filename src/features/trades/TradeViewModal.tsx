@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ExternalLink, Pencil, X } from "lucide-react";
+import { ExternalLink, Pencil, Share2, X } from "lucide-react";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
 import { contractMultiplier, formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import { coalesceExecutions, deriveTotals, formatHold } from "@/lib/tradeMath";
@@ -19,6 +19,7 @@ import {
 } from "@/store/selectors";
 import { TradeForm } from "./TradeForm";
 import { TradeChart } from "./TradeChart";
+import { ShareTradeModal } from "./ShareTradeModal";
 
 type TradeViewModalProps = {
   tradeId: string;
@@ -30,6 +31,7 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
   const updateTrade = useUpdateTrade();
   const deleteTrade = useDeleteTrade();
   const [isEditing, setIsEditing] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [tvEmbedded, setTvEmbedded] = useState(false);
   const latest = useLatestPrice(trade?.symbol ?? "");
   const loadPrice = useLoadPrice();
@@ -126,7 +128,7 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
 
   return createPortal(
     <div className="modalBackdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div className="modal modal--tradeView" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="modal__head">
           <div className="modal__title">Trade View</div>
           <button className="modal__close" onClick={onClose} aria-label="Close">
@@ -232,7 +234,18 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
         </div>
 
         <div className="modal__foot">
-          <span />
+          {tot.status !== "OPEN" ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setShareOpen(true)}
+            >
+              <Share2 size={13} strokeWidth={1.75} />
+              <span>Share</span>
+            </button>
+          ) : (
+            <span />
+          )}
           <button
             type="button"
             className="btn"
@@ -243,6 +256,10 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
           </button>
         </div>
       </div>
+
+      {shareOpen && (
+        <ShareTradeModal trade={trade} onClose={() => setShareOpen(false)} />
+      )}
     </div>,
     document.body,
   );
@@ -359,7 +376,7 @@ function TradingViewEmbed({ trade }: { trade: import("@/lib/trades").Trade }) {
     <div
       className="tvEmbed"
       style={{
-        height: 380,
+        height: "clamp(420px, 62vh, 820px)",
         background: "var(--surface-base)",
         border: "1px solid var(--border-subtle)",
         borderRadius: "var(--radius-md)",

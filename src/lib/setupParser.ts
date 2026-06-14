@@ -10,8 +10,8 @@
  *           alpha token that isn't a keyword (bare "t"/"s" are reserved
  *           for target/stop — use "$T" / "$S" for those tickers)
  *   entry   "@142" or "@ 142"
- *   target  "t160" / "t:160" / "t 160"
- *   stop    "s135" / "s:135" / "s 135"
+ *   target  "t160" / "t:160" / "t 160" / "target 160" / "tgt 160"
+ *   stop    "s135" / "s:135" / "s 135" / "stop 135" / "sl 135"
  *   numbers support thousands commas and decimals ("1,234.50")
  *   positional fallback: leftover bare numbers fill entry → target → stop
  *   notes   everything unconsumed, in original order
@@ -98,10 +98,10 @@ export function parseSetupCommand(input: string): ParsedSetup {
       }
     }
 
-    // "t160" / "t:160" / "s135" / "s:135"
-    const prefixed = tok.match(/^([ts]):?(.+)$/i);
+    // "t160" / "t:160" / "tgt160" / "target160" — same family for stop.
+    const prefixed = tok.match(/^(t|tgt|target|s|sl|stop):?(\d.*)$/i);
     if (prefixed && NUM.test(prefixed[2])) {
-      const isTarget = prefixed[1].toLowerCase() === "t";
+      const isTarget = /^t/i.test(prefixed[1]);
       if (isTarget && targetCents == null) {
         targetCents = toCents(prefixed[2]);
         consumed[i] = true;
@@ -114,14 +114,16 @@ export function parseSetupCommand(input: string): ParsedSetup {
       }
     }
 
-    // bare "t 160" / "s 135"
-    if ((lower === "t" || lower === "s") && next && NUM.test(next)) {
-      if (lower === "t" && targetCents == null) {
+    // word + number: "t 160" / "target 160" / "tgt 160" / "s 135" / "stop 135" / "sl 135"
+    const isTargetWord = lower === "t" || lower === "tgt" || lower === "target";
+    const isStopWord = lower === "s" || lower === "sl" || lower === "stop";
+    if ((isTargetWord || isStopWord) && next && NUM.test(next)) {
+      if (isTargetWord && targetCents == null) {
         targetCents = toCents(next);
         consumed[i] = consumed[i + 1] = true;
         continue;
       }
-      if (lower === "s" && stopCents == null) {
+      if (isStopWord && stopCents == null) {
         stopCents = toCents(next);
         consumed[i] = consumed[i + 1] = true;
         continue;
@@ -129,13 +131,14 @@ export function parseSetupCommand(input: string): ParsedSetup {
     }
   }
 
-  // Symbol fallback: first unconsumed bare alpha token. Bare "t"/"s" stay
-  // reserved (dangling prefixes read as notes, real tickers use "$T").
+  // Symbol fallback: first unconsumed bare alpha token. Keyword tokens stay
+  // reserved (dangling prefixes read as notes, real tickers use "$T"/"$SL").
+  const RESERVED = new Set(["t", "tgt", "target", "s", "sl", "stop", "at", "entry"]);
   if (symbol == null) {
     for (let i = 0; i < tokens.length; i++) {
       if (consumed[i]) continue;
       const lower = tokens[i].toLowerCase();
-      if (lower === "t" || lower === "s") continue;
+      if (RESERVED.has(lower)) continue;
       if (TICKER.test(tokens[i])) {
         symbol = tokens[i].toUpperCase();
         consumed[i] = true;

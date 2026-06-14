@@ -109,6 +109,10 @@ The design system is the heart of the project. Single source of truth: [`src/sty
 
 The full design & engineering contract is in [`CLAUDE.md`](CLAUDE.md): color and typography rules, the chiaroscuro lighting approach, motion/easing, density philosophy, and the locked product scope.
 
+## 🗺️ Roadmap notes
+
+- **TradingView Advanced Charts** — embedded charts currently use the free TradingView widget, which renders all same-type moving averages in one color (no per-MA styling via URL/config). Per-MA colors require TradingView's licensed, self-hosted [Charting Library](https://www.tradingview.com/advanced-charts/) (`createStudy(..., { "plot.color": ... })`). Access is free but approval-gated and needs a public, working deployment to point at — so **once we have a hosted version online, apply for the Advanced Charts license** and wire in a datafeed adapter (our existing price feed). Until then, colored MAs would live on our own `lightweight-charts` chart.
+
 ## 🤝 Contributing
 
 Issues and PRs welcome! Before contributing UI, read [`CLAUDE.md`](CLAUDE.md) — it defines the bar (tokens-only, tabular numerics, custom components, designed error states). Code conventions: TypeScript strict (no `any`), functional components, money stored as integer cents, dates as ISO-8601 UTC.

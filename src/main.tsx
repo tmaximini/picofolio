@@ -6,6 +6,7 @@ import "./styles/primitives.css";
 import "./styles/app.css";
 import "./styles/journal.css";
 import "./styles/capture.css";
+import "./styles/share.css";
 import "./styles/settings.css";
 import "./styles/cmdk.css";
 import "./styles/toast.css";

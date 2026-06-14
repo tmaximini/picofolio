@@ -1,4 +1,4 @@
-import { Bookmark, ChevronLeft, ChevronRight, Terminal } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Topbar } from "@/components/layout";
 import { NoteRow, TradeSetupRow } from "@/components/ui";
@@ -418,15 +418,13 @@ function DayCell({
       {(noteCount > 0 || setupCount > 0) && (
         <span className="calendarDay__marks">
           {setupCount > 0 && (
-            <span className="calendarDay__mark" title={`${setupCount} setup${setupCount === 1 ? "" : "s"}`}>
-              <Terminal size={10} strokeWidth={1.75} />
-              {setupCount > 1 && setupCount}
+            <span className="calendarDay__mark">
+              {setupCount} {setupCount === 1 ? "setup" : "setups"}
             </span>
           )}
           {noteCount > 0 && (
-            <span className="calendarDay__mark" title={`${noteCount} note${noteCount === 1 ? "" : "s"}`}>
-              <Bookmark size={10} strokeWidth={1.75} />
-              {noteCount > 1 && noteCount}
+            <span className="calendarDay__mark">
+              {noteCount} {noteCount === 1 ? "note" : "notes"}
             </span>
           )}
         </span>

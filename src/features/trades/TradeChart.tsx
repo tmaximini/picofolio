@@ -1,14 +1,8 @@
 /**
- * Trade-context price chart.
+ * Trade-context price chart (interactive — crosshair, zoom, pan).
  *
- * Two modes:
- *
- *  - **Intraday** (hold duration < 24h): fetches 1m/5m bars for the trade's
- *    day and shows just that session, so day-traders see the actual price
- *    path around their fills.
- *  - **Daily** (hold >= 24h): shows daily closes from a few days before the
- *    first execution to a few days after the last. Window is proportional
- *    to hold duration, capped on both ends.
+ * Data plumbing (intraday-vs-daily windowing, fetching, series resolution)
+ * lives in useTradeChartData — shared with the static share-card chart.
  *
  * Markers are positioned `belowBar` for buys and `aboveBar` for sells so
  * same-bar executions never overlay each other. Target/stop are rendered
@@ -18,7 +12,7 @@
  * coverage for the symbol or date.
  */
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import {
   AreaSeries,
   BaselineSeries,
@@ -34,20 +28,14 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { Link } from "react-router-dom";
-import {
-  useIntradayEntry,
-  useLoadIntraday,
-  useLoadOptionPrice,
-  useLoadPrice,
-  useOptionPriceError,
-  useOptionPricePoints,
-  useOptionPriceStatus,
-  usePricePoints,
-  usePriceStatus,
-} from "@/store/selectors";
 import { coalesceExecutions, deriveTotals } from "@/lib/tradeMath";
-import { parseOccSymbol } from "@/lib/optionSymbol";
 import type { Trade } from "@/lib/trades";
+import {
+  colorByOutcome,
+  compareTime,
+  nearestByTime,
+  useTradeChartData,
+} from "./useTradeChartData";
 
 const tokens = {
   gain: "#6BCB97",
@@ -62,148 +50,31 @@ const tokens = {
   crosshair: "rgba(232, 232, 234, 0.25)",
 };
 
-/** Cap so a multi-month hold doesn't render quarter-on-quarter context. */
-const MAX_PRE_DAYS = 30;
-const MAX_POST_DAYS = 14;
-
-/** Threshold for choosing intraday range vs daily — short spans look like
- *  meaningless straight lines in daily mode, intraday bars give real detail. */
-const INTRADAY_MAX_DAYS = 7;
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 type TradeChartProps = {
   trade: Trade;
   height?: number;
 };
-
-function localDateKey(iso: string): string {
-  const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 
 export function TradeChart({ trade, height = 240 }: TradeChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Area"> | ISeriesApi<"Baseline"> | null>(null);
 
-  // Decide chart mode based on calendar-day span. Intraday is used not
-  // just for same-day trades but for short multi-day spans too — daily
-  // resolution with only a handful of points (e.g. a 2-day trade) looks
-  // like meaningless straight lines. Open trades extend to "now".
-  //
-  //  - Span ≤ INTRADAY_MAX_DAYS → intraday range (1m bars within 7d,
-  //    5m bars within 60d via Yahoo retention)
-  //  - Longer → daily with adaptive window
-  const { isIntraday, intraStartKey, intraEndKey, windowStart, windowEnd, isOption, isOpen } =
-    useMemo(() => {
-      const isOption = parseOccSymbol(trade.symbol) != null;
-      const empty = {
-        isIntraday: false,
-        intraStartKey: "",
-        intraEndKey: "",
-        windowStart: "",
-        windowEnd: "",
-        isOption,
-        isOpen: false,
-      };
-      if (trade.executions.length === 0) return empty;
-
-      const sorted = [...trade.executions].sort((a, b) => a.at.localeCompare(b.at));
-      const tot = deriveTotals(trade);
-      const isOpen = tot.positionQty > 0;
-
-      const entryKey = localDateKey(sorted[0]!.at);
-      const lastKey = localDateKey(sorted[sorted.length - 1]!.at);
-      const todayKey = localDateKey(new Date().toISOString());
-
-      // For open trades the effective "end" is today, not last execution.
-      const effectiveEndKey = isOpen ? todayKey : lastKey;
-      const spanDays = daysBetween(entryKey, effectiveEndKey);
-
-      const dailyWindow = () => {
-        const pre = Math.min(MAX_PRE_DAYS, Math.max(1, Math.round(spanDays * 0.6) + 1));
-        const post = isOpen
-          ? 0
-          : Math.min(MAX_POST_DAYS, Math.max(1, Math.round(spanDays * 0.4) + 1));
-        return {
-          isIntraday: false as const,
-          intraStartKey: "",
-          intraEndKey: "",
-          windowStart: shiftIsoDate(entryKey, -pre),
-          windowEnd: isOpen ? todayKey : shiftIsoDate(lastKey, post),
-          isOption,
-          isOpen,
-        };
-      };
-
-      // Options price off MarketData.app EOD history — daily flow only (no
-      // intraday option feed in scope). Equities can use intraday for short spans.
-      if (isOption) return dailyWindow();
-
-      if (spanDays <= INTRADAY_MAX_DAYS) {
-        return {
-          isIntraday: true,
-          intraStartKey: entryKey,
-          intraEndKey: effectiveEndKey,
-          windowStart: "",
-          windowEnd: "",
-          isOption,
-          isOpen,
-        };
-      }
-
-      return dailyWindow();
-    }, [trade]);
-
-  // Closed option trades are valued from IBKR fills — never an external call.
-  const closedOption = isOption && !isOpen;
-
-  // ---- Intraday flow ----
-  const loadIntraday = useLoadIntraday();
-  const intraEntry = useIntradayEntry(trade.symbol, intraStartKey, intraEndKey);
-
-  useEffect(() => {
-    if (isIntraday && intraStartKey && intraEndKey) {
-      loadIntraday(trade.symbol, intraStartKey, intraEndKey);
-    }
-  }, [isIntraday, intraStartKey, intraEndKey, trade.symbol, loadIntraday]);
-
-  // ---- Daily flow (equities via Yahoo, open options via MarketData.app) ----
-  const loadPrice = useLoadPrice();
-  const loadOptionPrice = useLoadOptionPrice();
-  const eqStatus = usePriceStatus(trade.symbol);
-  const eqPoints = usePricePoints(trade.symbol);
-  const optStatus = useOptionPriceStatus(trade.symbol);
-  const optPoints = useOptionPricePoints(trade.symbol);
-  const optErrorKind = useOptionPriceError(trade.symbol);
-
-  const dailyStatus = isOption ? optStatus : eqStatus;
-  const dailyPoints = isOption ? optPoints : eqPoints;
-
-  useEffect(() => {
-    if (isOption) {
-      // Only OPEN option positions are marked from MarketData. Closed option
-      // trades render from IBKR fills and make no external call.
-      if (isOpen) loadOptionPrice(trade.symbol);
-    } else if (!isIntraday) {
-      loadPrice(trade.symbol);
-    }
-  }, [isOption, isOpen, isIntraday, trade.symbol, loadOptionPrice, loadPrice]);
-
-  // Hand the chart the *full* daily history we have (2y). The visible
-  // range gets focused to the trade window via setVisibleRange below —
-  // zoom-out reveals the rest. Previously we sliced here, which made
-  // zoom merely rescale the existing slice (no new data).
-  const dailySeries = useMemo(() => {
-    if (isIntraday) return null;
-    if (closedOption) return null; // valued from fills, no price series
-    if (!dailyPoints || dailyPoints.length === 0) return null;
-    return dailyPoints;
-  }, [isIntraday, closedOption, dailyPoints]);
+  const {
+    isIntraday,
+    intraStartKey,
+    intraEndKey,
+    windowStart,
+    windowEnd,
+    isOption,
+    isOpen,
+    closedOption,
+    points,
+    loading,
+    error,
+    noData,
+    optErrorKind,
+  } = useTradeChartData(trade);
 
   // Init / teardown chart instance.
   useEffect(() => {
@@ -238,10 +109,11 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
         borderVisible: false,
         timeVisible: isIntraday,
         secondsVisible: false,
-        // Right edge pinned to the latest data — zoom-out reveals more on
-        // the left, never empty space on the right. Left edge stays free
-        // so users can pan/zoom into earlier history.
-        fixLeftEdge: false,
+        // Both edges pinned to the data: zoom-out bottoms out at "all
+        // history visible" instead of compressing a short series (fresh
+        // IPOs have only weeks of bars) into a sliver in the corner.
+        // Panning/zooming INTO earlier history still works freely.
+        fixLeftEdge: true,
         fixRightEdge: true,
         rightOffset: 2,
       },
@@ -290,17 +162,7 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
     const chart = chartRef.current;
     if (!chart) return;
 
-    const data: { time: Time; value: number }[] | null = isIntraday
-      ? intraEntry?.points
-        ? intraEntry.points.map((p) => ({
-            time: p.time as UTCTimestamp,
-            value: p.value,
-          }))
-        : null
-      : dailySeries
-        ? dailySeries.map((p) => ({ time: p.time as Time, value: p.value }))
-        : null;
-
+    const data = points;
     if (!data || data.length === 0) return;
 
     if (seriesRef.current) {
@@ -313,11 +175,11 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
     // underwater position reads as underwater at a glance. Closed trades keep
     // the single outcome color (whole line green for a win, red for a loss).
     const totals = deriveTotals(trade);
-    const isOpen = totals.positionQty > 0;
+    const isOpenNow = totals.positionQty > 0;
     const entryPrice = totals.avgEntryCents != null ? totals.avgEntryCents / 100 : null;
 
     let series: ISeriesApi<"Area"> | ISeriesApi<"Baseline">;
-    if (isOpen && entryPrice != null) {
+    if (isOpenNow && entryPrice != null) {
       series = chart.addSeries(BaselineSeries, {
         baseValue: { type: "price", price: entryPrice },
         topLineColor: tokens.gain,
@@ -397,7 +259,10 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
     // on the daily close — an arrow anchored to the bar floats off the entry
     // and reads as pointing at the "wrong" line. The dotted fill-price line
     // below + the execution list carry entry/exit for options instead.
-    if (!isOption) createSeriesMarkers(series, markers);
+    // autoScale: false — the marker plugin would otherwise expand the price
+    // range to fit arrows in *pixels*, which blows the scale wide open on
+    // tight-range series (e.g. a $21–42 fresh IPO rendering as 0–400).
+    if (!isOption) createSeriesMarkers(series, markers, { autoScale: false });
 
     // Horizontal dotted price line at every (coalesced) execution price.
     // Differentiates from target/stop (dashed) and reinforces where the
@@ -463,20 +328,7 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
     } else {
       ts.fitContent();
     }
-  }, [isIntraday, intraEntry, dailySeries, trade, intraStartKey, intraEndKey, windowStart, windowEnd]);
-
-  const loading = isIntraday
-    ? intraEntry?.status === "loading" || intraEntry == null
-    : dailyStatus === "loading" && !dailySeries;
-
-  const error = isIntraday
-    ? intraEntry?.status === "error"
-    : dailyStatus === "error";
-
-  const noData = isIntraday
-    ? intraEntry?.status === "ready" &&
-      (intraEntry.points == null || intraEntry.points.length === 0)
-    : dailySeries != null && dailySeries.length === 0;
+  }, [isIntraday, points, trade, isOption, intraStartKey, intraEndKey, windowStart, windowEnd]);
 
   // Render the chart container UNCONDITIONALLY so the ref attaches on first
   // mount — the init effect needs it. Loading / no-data states are overlays
@@ -551,59 +403,4 @@ export function TradeChart({ trade, height = 240 }: TradeChartProps) {
       )}
     </div>
   );
-}
-
-function shiftIsoDate(iso: string, days: number): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-function daysBetween(startKey: string, endKey: string): number {
-  const s = new Date(`${startKey}T00:00:00Z`).getTime();
-  const e = new Date(`${endKey}T00:00:00Z`).getTime();
-  return Math.max(0, Math.round((e - s) / DAY_MS));
-}
-
-function nearestByTime(
-  data: { time: Time; value: number }[],
-  tSec: number,
-): { time: Time; value: number } | null {
-  if (data.length === 0) return null;
-  // data is sorted ascending; binary-ish linear is fine for ~400 pts.
-  let best = data[0]!;
-  let bestDelta = Math.abs(Number(best.time) - tSec);
-  for (const p of data) {
-    const d = Math.abs(Number(p.time) - tSec);
-    if (d < bestDelta) {
-      bestDelta = d;
-      best = p;
-    }
-  }
-  return best;
-}
-
-function compareTime(a: Time, b: Time): number {
-  return String(a).localeCompare(String(b));
-}
-
-function colorByOutcome(trade: Trade): "gain" | "loss" {
-  let buyNotional = 0;
-  let buyQty = 0;
-  let sellNotional = 0;
-  let sellQty = 0;
-  for (const ex of trade.executions) {
-    if (ex.action === "BUY") {
-      buyNotional += ex.qty * ex.priceCents;
-      buyQty += ex.qty;
-    } else {
-      sellNotional += ex.qty * ex.priceCents;
-      sellQty += ex.qty;
-    }
-  }
-  if (buyQty === 0 || sellQty === 0) return "gain";
-  const avgBuy = buyNotional / buyQty;
-  const avgSell = sellNotional / sellQty;
-  if (trade.side === "LONG") return avgSell >= avgBuy ? "gain" : "loss";
-  return avgBuy >= avgSell ? "gain" : "loss";
 }

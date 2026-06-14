@@ -956,6 +956,33 @@
   50%      { background-position: 100% 50%; }
 }
 
+/* Pre-chart loading state: a single breathing flatline where the series
+   is about to draw. Deliberately quieter than the fallback shimmer — it
+   should read as anticipation, not as an error or skeleton screen. */
+.chartLoading {
+  display: grid;
+  place-items: center;
+}
+.chartLoading__line {
+  width: 90%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--border-default) 35%,
+    rgba(232, 232, 234, 0.35) 50%,
+    var(--border-default) 65%,
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: chartLoadingSweep 1600ms var(--ease-in-out) infinite;
+}
+@keyframes chartLoadingSweep {
+  0%   { background-position: 130% 0; opacity: 0.45; }
+  50%  { opacity: 1; }
+  100% { background-position: -130% 0; opacity: 0.45; }
+}
+
 /* Spinning refresh icon */
 .spin {
   animation: spin 900ms linear infinite;

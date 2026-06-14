@@ -164,35 +164,84 @@
   color: var(--text-tertiary);
 }
 
-/* Horizontal stat strip beneath the curve — one consistent treatment per
-   stat, no rings, no boxes-within-boxes. Whitespace does the work. */
-.journalStrip {
+/* Stat cards beneath the curve — 3×2 grid with hierarchy: the tinted P&L
+   card carries, aggregates stay quiet, Best/Worst are clickable (the only
+   cards with a hover state — they're the only interactive ones). */
+.journalCards {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: var(--space-4);
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
   padding-top: var(--space-4);
   border-top: 1px solid var(--border-subtle);
 }
-@media (max-width: 1100px) {
-  .journalStrip {
-    grid-template-columns: repeat(4, 1fr);
-    row-gap: var(--space-5);
+@media (max-width: 900px) {
+  .journalCards {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
-.journalStat {
+.journalCard {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--glass-thin);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
   min-width: 0;
+  text-align: left;
 }
-.journalStat__label {
+.journalCard--clickable {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+.journalCard--clickable:hover {
+  background: var(--glass-medium);
+  border-color: var(--border-default);
+  transform: translateY(-1px);
+}
+.journalCard--clickable:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.journalCard__chevron {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  color: var(--text-tertiary);
+  opacity: 0.5;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.journalCard--clickable:hover .journalCard__chevron {
+  opacity: 1;
+  color: var(--text-secondary);
+}
+
+/* The P&L card is the headline — a quiet toned wash, not a shout. */
+.journalCard--pnl.journalCard--gain {
+  background: linear-gradient(135deg, var(--gain-muted), transparent 70%);
+  border-color: rgba(107, 203, 151, 0.18);
+}
+.journalCard--pnl.journalCard--loss {
+  background: linear-gradient(135deg, var(--loss-muted), transparent 70%);
+  border-color: rgba(229, 116, 107, 0.18);
+}
+
+.journalCard__label {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: var(--tracking-caps);
   color: var(--text-tertiary);
   font-weight: 500;
 }
-.journalStat__value {
+.journalCard__value {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--text-lg);
@@ -201,23 +250,35 @@
   color: var(--text-primary);
   line-height: 1;
 }
-.journalStat__value--gain { color: var(--gain); }
-.journalStat__value--loss { color: var(--loss); }
+.journalCard__value--gain { color: var(--gain); }
+.journalCard__value--loss { color: var(--loss); }
+.journalCard__value--hero { font-size: var(--text-2xl); }
 
-/* PnL is the headline — visually dominant. */
-.journalStat__value--hero {
-  font-size: var(--text-2xl);
-}
-.journalStat__sub {
+.journalCard__sub {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--text-xs);
   font-weight: 500;
   letter-spacing: var(--tracking-tight);
 }
-.journalStat__sub--gain    { color: var(--gain); }
-.journalStat__sub--loss    { color: var(--loss); }
-.journalStat__sub--neutral { color: var(--text-tertiary); }
+.journalCard__sub--gain    { color: var(--gain); }
+.journalCard__sub--loss    { color: var(--loss); }
+.journalCard__sub--neutral { color: var(--text-tertiary); }
+
+/* Avg win / loss — two values sharing one card. */
+.journalCard__pair {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+.journalCard__pairItem--gain { color: var(--gain); }
+.journalCard__pairItem--loss { color: var(--loss); }
+.journalCard__pairSep {
+  width: 1px;
+  height: 14px;
+  align-self: center;
+  background: var(--border-default);
+}
 
 /* Cumulative P/L equity curve — the journal's hero */
 .journalSpark__wrap {
@@ -892,6 +953,13 @@
 /* Trade form modal — wide enough for the executions table. */
 .modal--trade {
   width: min(840px, 100%);
+}
+
+/* Trade View — fills most of the viewport so the chart has room to breathe. */
+.modal--tradeView {
+  width: min(1280px, 100%);
+  height: 92vh;
+  max-height: 92vh;
 }
 
 @keyframes modalRise {
