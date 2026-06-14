@@ -25,6 +25,12 @@ export function tradingViewChartUrl(symbol: string): string {
   return `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`;
 }
 
+/** Default overlay studies: 10/20/50 simple moving averages. */
+const DEFAULT_MA_STUDIES = [10, 20, 50].map((length) => ({
+  id: "MASimple@tv-basicstudies",
+  inputs: { length },
+}));
+
 /** Embeddable widget URL (advanced-chart). Dark theme, day interval default. */
 export function tradingViewEmbedUrl(
   symbol: string,
@@ -41,7 +47,7 @@ export function tradingViewEmbedUrl(
     allow_symbol_change: "0",
     save_image: "1",
     withdateranges: "1",
-    studies: "[]",
+    studies: JSON.stringify(DEFAULT_MA_STUDIES),
   });
   return `https://s.tradingview.com/widgetembed/?${params.toString()}`;
 }

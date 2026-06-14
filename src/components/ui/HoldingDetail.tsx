@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Pencil, Trash2 } from "lucide-react";
+import { LineChart, Pencil, Trash2 } from "lucide-react";
 import { Button, Tabs } from "@/components/primitives";
 import type { Holding } from "@/lib/mock";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
@@ -22,6 +22,7 @@ import {
   useRemoveHolding,
   useUnrealizedCents,
 } from "@/store/selectors";
+import { HoldingChartModal } from "./HoldingChartModal";
 import { HoldingFormModal } from "./HoldingFormModal";
 import { PriceChart } from "./PriceChart";
 
@@ -57,6 +58,7 @@ function loadStoredRange(): Range {
 export function HoldingDetail({ holding }: HoldingDetailProps) {
   const [range, setRange] = useState<Range>(loadStoredRange);
   const [editing, setEditing] = useState(false);
+  const [charting, setCharting] = useState(false);
 
   // Persist the choice so the next holding (and the next session) opens on it.
   const selectRange = (r: Range) => {
@@ -201,6 +203,15 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
           <Button
             onClick={(e) => {
               e.stopPropagation();
+              setCharting(true);
+            }}
+          >
+            <LineChart size={13} strokeWidth={1.75} />
+            <span>Chart</span>
+          </Button>
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
               setEditing(true);
             }}
           >
@@ -228,6 +239,10 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
           holding={holding}
           onClose={() => setEditing(false)}
         />
+      )}
+
+      {charting && (
+        <HoldingChartModal holding={holding} onClose={() => setCharting(false)} />
       )}
     </div>
   );

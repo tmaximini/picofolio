@@ -128,7 +128,7 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
 
   return createPortal(
     <div className="modalBackdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div className="modal modal--tradeView" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="modal__head">
           <div className="modal__title">Trade View</div>
           <button className="modal__close" onClick={onClose} aria-label="Close">
@@ -376,7 +376,7 @@ function TradingViewEmbed({ trade }: { trade: import("@/lib/trades").Trade }) {
     <div
       className="tvEmbed"
       style={{
-        height: 380,
+        height: "clamp(420px, 62vh, 820px)",
         background: "var(--surface-base)",
         border: "1px solid var(--border-subtle)",
         borderRadius: "var(--radius-md)",

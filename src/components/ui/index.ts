@@ -4,6 +4,7 @@ export { AccountSwitcher } from "./AccountSwitcher";
 export { CommandPalette } from "./CommandPalette";
 export { DateRangePills } from "./DateRangePills";
 export { HeroValueCard } from "./HeroValueCard";
+export { HoldingChartModal } from "./HoldingChartModal";
 export { HoldingDetail } from "./HoldingDetail";
 export { HoldingFormModal } from "./HoldingFormModal";
 export { HoldingsTable } from "./HoldingsTable";
