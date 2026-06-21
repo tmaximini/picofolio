@@ -23,7 +23,11 @@
   gap: var(--space-3);
   width: min(360px, calc(100vw - 2 * var(--space-5)));
   padding: var(--space-3) var(--space-4);
-  background: var(--surface-overlay);
+  /* Translucent glass — lighter on the eye; text stays fully opaque. Hover
+     (which also pauses the dismiss timer) solidifies it for easy reading. */
+  background: color-mix(in srgb, var(--surface-overlay) 72%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   box-shadow: var(--highlight-top), var(--shadow-lg);
@@ -39,7 +43,7 @@
 }
 
 .toast:hover {
-  background: var(--surface-hover);
+  background: color-mix(in srgb, var(--surface-hover) 94%, transparent);
   border-color: var(--border-strong);
 }
 

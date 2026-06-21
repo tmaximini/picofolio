@@ -1,5 +1,6 @@
-import { ArrowDownRight, ArrowUpRight, MoreHorizontal, Tag } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { ArrowDownRight, ArrowUpRight, MessageSquareText, MoreHorizontal, Tag } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { Market, Trade } from "@/lib/trades";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
@@ -159,7 +160,10 @@ function TradeRow({
         <td className="tradeTable__muted">{accountName}</td>
       )}
       <td>
-        <span className={statusClass}>{tot.status}</span>
+        <span className="tradeTable__statusCell">
+          <span className={statusClass}>{tot.status}</span>
+          {trade.notes?.trim() && <NoteHover note={trade.notes.trim()} />}
+        </span>
       </td>
       <td>
         <span className={sideArrowClass} title={trade.side}>
@@ -288,4 +292,44 @@ function Dash() {
 /** Open position with no live price yet — reads as "in progress", not broken. */
 function OpenTag() {
   return <span className="tradeTable__live">live</span>;
+}
+
+/**
+ * A note marker that reveals the trade's note in a popover on hover. The
+ * popover is portaled to <body> and positioned from the icon's rect so the
+ * table's horizontal scroll (overflow) can't clip it.
+ */
+function NoteHover({ note }: { note: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+
+  const show = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (r) setPos({ x: r.left + r.width / 2, y: r.top });
+  };
+  const hide = () => setPos(null);
+
+  return (
+    <span
+      ref={ref}
+      className="tradeTable__noteIcon"
+      onMouseEnter={show}
+      onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
+      onClick={(e) => e.stopPropagation()}
+      tabIndex={0}
+      role="note"
+      aria-label="Trade note"
+    >
+      <MessageSquareText size={13} strokeWidth={1.75} />
+      {pos &&
+        createPortal(
+          <div className="notePopover" style={{ left: pos.x, top: pos.y }}>
+            {note}
+          </div>,
+          document.body,
+        )}
+    </span>
+  );
 }

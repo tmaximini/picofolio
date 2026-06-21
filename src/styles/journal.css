@@ -569,6 +569,50 @@
 .tradeTable__status--win::before   { background: var(--gain); }
 .tradeTable__status--loss  { color: var(--loss); background: var(--loss-muted); }
 .tradeTable__status--loss::before  { background: var(--loss); }
+
+/* Status cell + the note marker that sits between status and side. */
+.tradeTable__statusCell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.tradeTable__noteIcon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-tertiary);
+  cursor: help;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.tradeTable__noteIcon:hover,
+.tradeTable__noteIcon:focus-visible {
+  color: var(--text-secondary);
+  outline: none;
+}
+/* Portaled to <body>; anchored above the icon via its rect. */
+.notePopover {
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 8px));
+  max-width: 280px;
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in srgb, var(--surface-overlay) 92%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--highlight-top), var(--shadow-lg);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  pointer-events: none;
+  z-index: var(--z-overlay);
+  animation: notePopoverIn var(--duration-fast) var(--ease-out);
+}
+@keyframes notePopoverIn {
+  from { opacity: 0; transform: translate(-50%, calc(-100% - 4px)); }
+  to   { opacity: 1; transform: translate(-50%, calc(-100% - 8px)); }
+}
 .tradeTable__rowActions {
   display: inline-flex;
   gap: 2px;

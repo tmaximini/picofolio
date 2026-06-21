@@ -1029,7 +1029,10 @@ export const useDayTrades = (
 export type DaySummary = {
   dateKey: string;
   pnlCents: number;
+  /** Closed trades (wins + losses) — drives realized P&L and the return %. */
   count: number;
+  /** Open trades active that day. Counted for the day's total, excluded from P&L. */
+  open: number;
   wins: number;
   losses: number;
   returnPct: number;
@@ -1115,21 +1118,26 @@ export const useTradesByDay = (
       const key = tradeDateKey(t);
       if (key === "") continue;
       const tot = deriveTotals(t);
-      if (tot.status === "OPEN") continue;
       const cur = out.get(key) ?? {
         dateKey: key,
         pnlCents: 0,
         count: 0,
+        open: 0,
         wins: 0,
         losses: 0,
         returnPct: 0,
       };
-      cur.pnlCents += tot.returnCents;
-      cur.count += 1;
-      if (tot.status === "WIN") cur.wins += 1;
-      else cur.losses += 1;
-      if (tot.returnPct != null) {
-        cur.returnPct = cur.returnPct + tot.returnPct;
+      if (tot.status === "OPEN") {
+        // Open trades count toward the day's total but carry no realized P&L.
+        cur.open += 1;
+      } else {
+        cur.pnlCents += tot.returnCents;
+        cur.count += 1;
+        if (tot.status === "WIN") cur.wins += 1;
+        else cur.losses += 1;
+        if (tot.returnPct != null) {
+          cur.returnPct = cur.returnPct + tot.returnPct;
+        }
       }
       out.set(key, cur);
     }

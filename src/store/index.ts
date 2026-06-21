@@ -1073,7 +1073,7 @@ export const useStore = create<StoreState>()(
                   posNote,
                 ),
               ),
-              duration: 6000,
+              duration: 10000,
             });
           } else {
             pushToast({
@@ -1085,7 +1085,7 @@ export const useStore = create<StoreState>()(
                   : "No new trades in the Flex window.",
                 posNote,
               ),
-              duration: 6000,
+              duration: 10000,
             });
           }
         } catch (err) {

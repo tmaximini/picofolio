@@ -58,11 +58,19 @@
   border-right: 1px solid var(--border-subtle);
   padding: var(--space-5);
   background: var(--surface-base);
-  position: sticky;
-  top: 0;
-  height: 100vh;
   display: flex;
   flex-direction: column;
+}
+/* Desktop only: sticky in-flow column. Scoped to min-width so this can't
+   override the ≤900px drawer's `position: fixed` (equal specificity, and the
+   base rule sits later in source order — it would otherwise win and leave the
+   sidebar in-flow off-canvas, pushing main down a full viewport). */
+@media (min-width: 901px) {
+  .sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
 }
 
 .sidebar__top {
@@ -1065,10 +1073,7 @@
   display: flex;
   gap: var(--space-2);
   margin-top: var(--space-2);
-}
-.holdingDetail__actions .btn {
-  flex: 1;
-  justify-content: center;
+  justify-content: flex-end;
 }
 
 .holdingDetail__row {

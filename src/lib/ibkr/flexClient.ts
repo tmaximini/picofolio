@@ -43,6 +43,42 @@ const TRANSIENT_CODES = new Set([
 const SEND_MAX_ATTEMPTS = 4;
 const SEND_INITIAL_BACKOFF_MS = 5_000;
 
+// Network-layer resilience (separate from IBKR's own transient error codes).
+// A flaky DNS lookup / proxy hiccup surfaces as a thrown fetch or a 5xx; one
+// blip shouldn't abort the whole sync, so retry those a few times fast.
+const NET_MAX_ATTEMPTS = 3;
+const NET_BACKOFF_MS = 1_000;
+
+/**
+ * fetch() that retries transient network failures (thrown errors) and 5xx
+ * responses with short backoff. 4xx and 2xx return immediately; an aborted
+ * signal never retries. The final attempt's response (even a 5xx) is returned
+ * so the caller's own status handling still runs.
+ */
+async function fetchWithRetry(
+  url: string,
+  opts: FlexClientOptions,
+  label: string,
+): Promise<Response> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < NET_MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, { signal: opts.signal });
+      if (res.status >= 500 && attempt < NET_MAX_ATTEMPTS - 1) {
+        lastError = new Error(`IBKR ${label} HTTP ${res.status}`);
+      } else {
+        return res;
+      }
+    } catch (err) {
+      // An intentional cancel is not a transient failure — never retry it.
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+    await delay(NET_BACKOFF_MS * 2 ** attempt, opts.signal);
+  }
+  throw lastError ?? new Error(`IBKR ${label} network failure`);
+}
+
 export type FlexClientOptions = {
   /** Total poll budget in ms. Default 60s. */
   pollTimeoutMs?: number;
@@ -74,7 +110,7 @@ export async function sendFlexRequest(
 
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < SEND_MAX_ATTEMPTS; attempt++) {
-    const res = await fetch(url, { signal: opts.signal });
+    const res = await fetchWithRetry(url, opts, "SendRequest");
     if (!res.ok) {
       throw new Error(`IBKR SendRequest HTTP ${res.status}`);
     }
@@ -113,7 +149,7 @@ export async function pollFlexStatement(
 
   while (true) {
     const url = `${GET_PATH}?t=${encodeURIComponent(token)}&q=${encodeURIComponent(referenceCode)}&v=3`;
-    const res = await fetch(url, { signal: opts.signal });
+    const res = await fetchWithRetry(url, opts, "GetStatement");
     if (!res.ok) {
       throw new Error(`IBKR GetStatement HTTP ${res.status}`);
     }
