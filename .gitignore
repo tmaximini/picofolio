@@ -8,6 +8,9 @@ dist-ssr/
 build/
 out/
 
+# Cloudflare Wrangler local cache
+.wrangler/
+
 # TypeScript incremental build
 *.tsbuildinfo
 

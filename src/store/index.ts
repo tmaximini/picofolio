@@ -154,6 +154,13 @@ type StoreState = {
   lastSyncAt: number | null;
   syncing: boolean;
 
+  /** First-run gate. False until the user picks a path in the welcome screen
+   *  (demo data or empty). Persisted so it only shows once. */
+  onboarded: boolean;
+  /** Transient (not persisted): the welcome screen was re-opened via "About"
+   *  after onboarding. The screen is visible when `!onboarded || welcomeOpen`. */
+  welcomeOpen: boolean;
+
   // Price actions
   loadPrice: (symbol: string, opts?: { force?: boolean }) => Promise<void>;
   /** Fetch + cache intraday for [startKey, endKey] (single-day when endKey omitted). */
@@ -226,6 +233,19 @@ type StoreState = {
   clearDemoForAccount: (accountId: string) => void;
   clearDemoPortfolio: () => void;
   restoreDemoPortfolio: () => void;
+  /** Load the full demo seed (accounts, holdings, trades, setups, weekly P&L)
+   *  on demand — wired to the welcome screen's "Start with Demo Data" CTA.
+   *  Merges by id so it's idempotent and never clobbers real entries. */
+  seedDemoData: () => void;
+
+  // Onboarding / welcome
+  completeOnboarding: () => void;
+  openWelcome: () => void;
+  dismissWelcome: () => void;
+  /** Wipe every local slice (accounts, trades, notes, connections, prices,
+   *  tokens, settings) back to the fresh first-run state. Persisted storage is
+   *  overwritten with the empty state, so the welcome screen shows again. */
+  clearAllData: () => void;
 
   // IBKR actions — per-connection
   addIbkrConnection: (label: string) => string;
@@ -349,12 +369,15 @@ function isFresh(entry: PriceEntry | undefined): boolean {
 export const useStore = create<StoreState>()(
   persist(
     (set, get) => ({
-      accounts: accountsSeed,
-      holdings: holdingsSeed,
-      weeklyPnl: weeklyPnlSeed,
+      // Start empty: a brand-new user lands on the welcome screen and chooses
+      // demo data or an empty portfolio. Demo seeds load on demand via
+      // seedDemoData(); existing users keep their data (migrate sets onboarded).
+      accounts: [],
+      holdings: [],
+      weeklyPnl: [],
       selectedAccountId: ALL_ACCOUNTS,
-      trades: tradesSeed,
-      setups: setupsSeed,
+      trades: [],
+      setups: [],
       notes: [],
       journalRange: DEFAULT_DATE_RANGE,
       calendarMonth: firstOfThisMonthISO(),
@@ -367,6 +390,8 @@ export const useStore = create<StoreState>()(
       marketDataToken: null,
       lastSyncAt: null,
       syncing: false,
+      onboarded: false,
+      welcomeOpen: false,
 
       loadPrice: async (symbol, opts) => {
         // Option (OCC) symbols have no Yahoo daily history — they'd just 404.
@@ -792,6 +817,61 @@ export const useStore = create<StoreState>()(
           };
         }),
 
+      seedDemoData: () =>
+        set((s) => {
+          const accountIds = new Set(s.accounts.map((a) => a.id));
+          const holdingKeys = new Set(
+            s.holdings.map((h) => `${h.accountId}|${h.symbol}`),
+          );
+          const tradeIds = new Set(s.trades.map((t) => t.id));
+          const setupIds = new Set(s.setups.map((x) => x.id));
+          return {
+            accounts: [
+              ...s.accounts,
+              ...accountsSeed.filter((a) => !accountIds.has(a.id)),
+            ],
+            holdings: [
+              ...s.holdings,
+              ...holdingsSeed.filter(
+                (h) => !holdingKeys.has(`${h.accountId}|${h.symbol}`),
+              ),
+            ],
+            trades: [...s.trades, ...tradesSeed.filter((t) => !tradeIds.has(t.id))],
+            setups: [...s.setups, ...setupsSeed.filter((x) => !setupIds.has(x.id))],
+            weeklyPnl: s.weeklyPnl.length ? s.weeklyPnl : weeklyPnlSeed,
+            onboarded: true,
+            welcomeOpen: false,
+          };
+        }),
+
+      completeOnboarding: () => set({ onboarded: true, welcomeOpen: false }),
+      openWelcome: () => set({ welcomeOpen: true }),
+      dismissWelcome: () => set({ welcomeOpen: false }),
+
+      clearAllData: () =>
+        set({
+          accounts: [],
+          holdings: [],
+          weeklyPnl: [],
+          selectedAccountId: ALL_ACCOUNTS,
+          trades: [],
+          setups: [],
+          notes: [],
+          journalRange: DEFAULT_DATE_RANGE,
+          calendarMonth: firstOfThisMonthISO(),
+          ibkrConnections: [],
+          prices: {},
+          intraday: {},
+          optionPrices: {},
+          navHistory: {},
+          marketDataToken: null,
+          lastSyncAt: null,
+          syncing: false,
+          // Drop straight back to the first-run welcome.
+          onboarded: false,
+          welcomeOpen: false,
+        }),
+
       // ---------- IBKR (multi-connection) ----------
 
       addIbkrConnection: (label) => {
@@ -1152,6 +1232,7 @@ export const useStore = create<StoreState>()(
         marketDataToken: s.marketDataToken,
         navHistory: s.navHistory,
         lastSyncAt: s.lastSyncAt,
+        onboarded: s.onboarded,
         // Never persist transient sync status/error — a sync in flight when
         // the page closes would otherwise rehydrate as a permanent "polling"
         // that blocks all future syncs (the action guards on status).
@@ -1161,7 +1242,7 @@ export const useStore = create<StoreState>()(
           error: null,
         })),
       }),
-      version: 7,
+      version: 8,
       // Belt-and-suspenders: scrub any transient status that an older build
       // already wrote to storage, so existing stuck "polling" rows recover.
       onRehydrateStorage: () => (state) => {
@@ -1331,6 +1412,13 @@ export const useStore = create<StoreState>()(
 
           old.accounts = accounts;
           old.selectedAccountId = ALL_ACCOUNTS;
+        }
+        // → v8: the welcome/first-run screen ships. Anyone with a persisted
+        // state is already a returning user — mark them onboarded so the
+        // screen never interrupts them. (New users start from empty initial
+        // state with onboarded:false and see it once.)
+        if (version < 8 && persistedState && typeof persistedState === "object") {
+          (persistedState as Record<string, unknown>).onboarded = true;
         }
         return persistedState as StoreState;
       },

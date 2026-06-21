@@ -85,38 +85,45 @@ export function Performance() {
     <>
       <Topbar title="Performance" subtitle={subtitle} />
 
-      {/* Hero: all-time equity curve + the headline edge/risk figures. */}
+      {/* Hero: all-time equity curve + the headline edge/risk figures. Net P&L
+          is the one number that matters most — it leads at display scale; the
+          rest support it a tier down. */}
       <Card>
         <div className="perfHero__chartLabel">Equity curve</div>
         <PerformanceChart data={equitySeries} height={220} format="currency" step />
-        <div className="perfGrid perfGrid--hero">
-          <Stat
-            label="Net P&L"
-            value={<span style={colorFor(s.netCents)}>{formatCents(s.netCents, true)}</span>}
-          />
-          <Stat
-            label="Max Drawdown"
-            value={<span style={colorFor(-1)}>−{formatCents(s.maxDrawdownCents)}</span>}
-            delta={
-              s.maxDrawdownPct != null
-                ? { value: formatPct(s.maxDrawdownPct), tone: "loss" }
-                : undefined
-            }
-          />
-          <Stat
-            label="Win Rate"
-            value={`${Math.round(s.winRate * 100)}%`}
-            delta={{ value: `${s.wins}W · ${s.losses}L`, tone: "neutral" }}
-          />
-          <Stat
-            label="Expectancy"
-            value={
-              <span style={colorFor(s.expectancyCents)}>
-                {formatCents(s.expectancyCents, true)}
-              </span>
-            }
-            delta={{ value: "per trade", tone: "neutral" }}
-          />
+        <div className="perfHero__stats">
+          <div className="perfHero__primary">
+            <span className="stat__label">Net P&L</span>
+            <span className="perfHero__primaryValue" style={colorFor(s.netCents)}>
+              {formatCents(s.netCents, true)}
+            </span>
+            <span className="perfHero__primaryMeta">all-time realized</span>
+          </div>
+          <div className="perfHero__secondary">
+            <Stat
+              label="Max Drawdown"
+              value={<span style={colorFor(-1)}>−{formatCents(s.maxDrawdownCents)}</span>}
+              delta={
+                s.maxDrawdownPct != null
+                  ? { value: formatPct(s.maxDrawdownPct), tone: "loss" }
+                  : undefined
+              }
+            />
+            <Stat
+              label="Win Rate"
+              value={`${Math.round(s.winRate * 100)}%`}
+              delta={{ value: `${s.wins}W · ${s.losses}L`, tone: "neutral" }}
+            />
+            <Stat
+              label="Expectancy"
+              value={
+                <span style={colorFor(s.expectancyCents)}>
+                  {formatCents(s.expectancyCents, true)}
+                </span>
+              }
+              delta={{ value: "per trade", tone: "neutral" }}
+            />
+          </div>
         </div>
       </Card>
 
@@ -125,7 +132,7 @@ export function Performance() {
         <h2 className="sectionTitle">Edge</h2>
       </div>
       <Card>
-        <div className="perfGrid">
+        <div className="perfGrid perfGrid--detail">
           <Stat
             label="Profit Factor"
             value={
@@ -169,7 +176,7 @@ export function Performance() {
         <h2 className="sectionTitle">Consistency</h2>
       </div>
       <Card>
-        <div className="perfGrid">
+        <div className="perfGrid perfGrid--detail">
           <Stat
             label="Current Streak"
             value={

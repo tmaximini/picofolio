@@ -105,6 +105,7 @@ function generateClosedTrade(
   rng: () => number,
   windowStart: Date,
   windowEnd: Date,
+  now: Date,
   forceLoss?: boolean,
 ): Trade {
   const symbol = ACTIVE_POOL[pickActiveIdx(rng)]!;
@@ -161,7 +162,11 @@ function generateClosedTrade(
   const openingAction: ExecutionAction = side === "LONG" ? "BUY" : "SELL";
   const closingAction: ExecutionAction = side === "LONG" ? "SELL" : "BUY";
 
-  const closedAt = new Date(openedAt.getTime() + holdMin * 60_000);
+  // Never let a demo trade close in the future — clamp to `now` so the
+  // calendar/journal never show a trade dated tomorrow.
+  const closedAt = new Date(
+    Math.min(openedAt.getTime() + holdMin * 60_000, now.getTime()),
+  );
 
   const executions: TradeExecution[] = [
     {
@@ -280,33 +285,89 @@ type DerivedHolding = {
   source: "demo";
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** One week's realized P&L bucket — structurally the WeekBar shape in mock.ts. */
+type WeeklyBar = {
+  weekOf: string;
+  pnlCents: number;
+  trades: number;
+  winRate: number;
+};
+
+/** ISO date (YYYY-MM-DD) of the Sunday that starts `d`'s week, in UTC. */
+function weekStartKey(d: Date): string {
+  const sun = new Date(d);
+  sun.setUTCDate(d.getUTCDate() - d.getUTCDay());
+  sun.setUTCHours(0, 0, 0, 0);
+  return sun.toISOString().slice(0, 10);
+}
+
+/**
+ * Weekly realized-P&L bars derived from the generated closed trades, so the
+ * Weekly P&L sparkline ties out to the same journal the calendar/stats use
+ * (and moves with "now" like everything else). Only balanced round-trips
+ * (a BUY and a SELL) count — the single-leg opening BUYs are still open.
+ */
+function buildWeeklyPnl(trades: Trade[]): WeeklyBar[] {
+  const byWeek = new Map<string, { pnlCents: number; trades: number; wins: number }>();
+  for (const t of trades) {
+    const buys = t.executions.filter((e) => e.action === "BUY");
+    const sells = t.executions.filter((e) => e.action === "SELL");
+    if (buys.length === 0 || sells.length === 0) continue; // still open
+    let pnl = 0;
+    let closeAt = "";
+    for (const e of t.executions) {
+      pnl += (e.action === "SELL" ? 1 : -1) * e.qty * e.priceCents - e.feeCents;
+      if (e.at > closeAt) closeAt = e.at;
+    }
+    const key = weekStartKey(new Date(closeAt));
+    const cur = byWeek.get(key) ?? { pnlCents: 0, trades: 0, wins: 0 };
+    cur.pnlCents += pnl;
+    cur.trades += 1;
+    if (pnl > 0) cur.wins += 1;
+    byWeek.set(key, cur);
+  }
+  return [...byWeek.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([weekOf, v]) => ({
+      weekOf,
+      pnlCents: v.pnlCents,
+      trades: v.trades,
+      winRate: v.trades > 0 ? v.wins / v.trades : 0,
+    }));
+}
+
 function generate(): {
   trades: Trade[];
   tradingHoldings: DerivedHolding[];
   cashCents: number;
+  weeklyPnl: WeeklyBar[];
 } {
   const rng = makeRng(0xC4_45_36);
   const trades: Trade[] = [];
 
-  // 14 weeks of closed trades ending mid-May 2026.
-  const closedEnd = new Date("2026-05-22T20:00:00Z");
-  const closedStart = new Date(closedEnd.getTime() - 14 * 7 * 24 * 60 * 60 * 1000);
+  // Anchor to "now" so the demo always covers the current month plus the
+  // prior ~3 months — the journal/calendar/performance never look stale.
+  const now = new Date();
+  const closedEnd = now;
+  const closedStart = new Date(closedEnd.getTime() - 14 * 7 * DAY_MS);
 
   let cursor = new Date(closedStart);
-  while (cursor.getTime() < closedEnd.getTime() - 24 * 60 * 60 * 1000) {
+  while (cursor.getTime() < closedEnd.getTime() - DAY_MS) {
     const weekEnd = new Date(
-      Math.min(cursor.getTime() + 7 * 24 * 60 * 60 * 1000, closedEnd.getTime()),
+      Math.min(cursor.getTime() + 7 * DAY_MS, closedEnd.getTime()),
     );
     const count = 2 + Math.floor(rng() * 3);
     for (let i = 0; i < count; i++) {
-      trades.push(generateClosedTrade(rng, cursor, weekEnd));
+      trades.push(generateClosedTrade(rng, cursor, weekEnd, now));
     }
     cursor = weekEnd;
   }
 
   // Opening BUYs for current holdings — spread across the last ~4 weeks.
-  const openStart = new Date("2026-05-04T14:30:00Z");
-  const openEnd = new Date("2026-05-28T20:00:00Z");
+  const openStart = new Date(now.getTime() - 28 * DAY_MS);
+  const openEnd = now;
   const tradingHoldings: DerivedHolding[] = [];
   for (const pos of OPEN_POSITIONS) {
     const { trade, holding } = generateOpeningTrade(rng, pos, openStart, openEnd);
@@ -325,7 +386,7 @@ function generate(): {
     }
   }
 
-  return { trades, tradingHoldings, cashCents };
+  return { trades, tradingHoldings, cashCents, weeklyPnl: buildWeeklyPnl(trades) };
 }
 
 const generated = generate();
@@ -333,8 +394,12 @@ const generated = generate();
 export const tradesSeed: Trade[] = generated.trades;
 export const tradingHoldingsSeed = generated.tradingHoldings;
 export const tradingCashCents = generated.cashCents;
+export const weeklyPnlSeed = generated.weeklyPnl;
 
-/** Pre-trade plan shown above the journal list. */
+/** Pre-trade plan shown above the journal list. Dated a few days back so it
+ *  stays "recent" relative to now, like the rest of the demo data. */
+const setupCreatedAt = new Date(Date.now() - 3 * DAY_MS).toISOString();
+
 export const setupsSeed: TradeSetup[] = [
   {
     id: "setup-001",
@@ -346,7 +411,7 @@ export const setupsSeed: TradeSetup[] = [
     targetCents: 163_10,
     stopCents: 165_10,
     notes: "Key level at 164 — if it breaks, take the short.",
-    createdAt: "2026-05-27T13:30:00Z",
+    createdAt: setupCreatedAt,
     status: "ACTIVE",
   },
 ];

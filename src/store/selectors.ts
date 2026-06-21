@@ -810,6 +810,20 @@ export const useClearDemoForAccount = () => useStore((s) => s.clearDemoForAccoun
 export const useRestoreDemoTrades = () => useStore((s) => s.restoreDemoTrades);
 export const useClearDemoPortfolio = () => useStore((s) => s.clearDemoPortfolio);
 export const useRestoreDemoPortfolio = () => useStore((s) => s.restoreDemoPortfolio);
+export const useSeedDemoData = () => useStore((s) => s.seedDemoData);
+
+// ---------- onboarding / welcome ----------
+
+/** The welcome screen is visible on first run, or when re-opened via "About". */
+export const useWelcomeVisible = (): boolean =>
+  useStore((s) => !s.onboarded || s.welcomeOpen);
+/** True only on genuine first run (no path chosen yet) — drives whether the
+ *  welcome screen shows a dismiss affordance vs. forcing a choice. */
+export const useIsFirstRun = (): boolean => useStore((s) => !s.onboarded);
+export const useCompleteOnboarding = () => useStore((s) => s.completeOnboarding);
+export const useOpenWelcome = () => useStore((s) => s.openWelcome);
+export const useDismissWelcome = () => useStore((s) => s.dismissWelcome);
+export const useClearAllData = () => useStore((s) => s.clearAllData);
 
 export const useDemoCounts = (): { demo: number; real: number } => {
   const trades = useStore((s) => s.trades);

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Bookmark, CircleHelp, Plus, Terminal } from "lucide-react";
+import { Bookmark, CircleHelp, Info, Plus, Terminal } from "lucide-react";
 import {
   BrowserRouter,
   Navigate,
@@ -24,6 +24,7 @@ import {
   CommandPalette,
   ShortcutsHelp,
   Toaster,
+  Welcome,
 } from "@/components/ui";
 import { Overview } from "@/pages/Overview";
 import { Trading } from "@/pages/Trading";
@@ -36,7 +37,7 @@ import { NewSetupModal } from "@/features/setups";
 import { NewNoteModal } from "@/features/notes";
 import { useHotkeys } from "@/lib/hotkeys";
 import type { Note } from "@/lib/notes";
-import { useRefreshAll } from "@/store/selectors";
+import { useOpenWelcome, useRefreshAll, useWelcomeVisible } from "@/store/selectors";
 
 // Nav grouped into lenses, not a flat list. Trading and Investing are two
 // viewpoints over the same account's data (the switcher narrows the scope);
@@ -102,6 +103,8 @@ function AppInner() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [newTradeSymbol, setNewTradeSymbol] = useState<string | undefined>(undefined);
   const refreshAll = useRefreshAll();
+  const welcomeVisible = useWelcomeVisible();
+  const openWelcome = useOpenWelcome();
   // undefined = closed; { editId?: string } = open (create when editId absent).
   const [accountModal, setAccountModal] = useState<{ editId?: string } | null>(null);
   // Sidebar visibility — open on desktop, collapsed (drawer) on small screens.
@@ -207,6 +210,14 @@ function AppInner() {
                 <span>Shortcuts</span>
                 <Kbd>?</Kbd>
               </button>
+              <button
+                type="button"
+                className="sidebarCta sidebarCta--ghost"
+                onClick={openWelcome}
+              >
+                <Info size={13} strokeWidth={1.75} />
+                <span>About</span>
+              </button>
             </div>
           }
         />
@@ -254,6 +265,7 @@ function AppInner() {
         />
       )}
       <Toaster />
+      {welcomeVisible && <Welcome />}
     </Shell>
   );
 }
