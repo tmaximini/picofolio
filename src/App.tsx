@@ -29,6 +29,7 @@ import { Overview } from "@/pages/Overview";
 import { Trading } from "@/pages/Trading";
 import { Holdings } from "@/pages/Holdings";
 import { Calendar } from "@/pages/Calendar";
+import { Performance } from "@/pages/Performance";
 import { Settings } from "@/pages/Settings";
 import { NewTradeModal } from "@/features/trades";
 import { NewSetupModal } from "@/features/setups";
@@ -37,20 +38,32 @@ import { useHotkeys } from "@/lib/hotkeys";
 import type { Note } from "@/lib/notes";
 import { useRefreshAll } from "@/store/selectors";
 
-// Account-scoped views — the switcher narrows what these show. Glyphs are
-// hand-drawn (components/layout/nav-glyphs), each with a hover animation;
-// every row also reveals its g-chord on hover.
-const PRIMARY = [
-  { id: "/", label: "Overview", icon: <GlyphOverview />, shortcut: "g o" },
-  { id: "/activity", label: "Activity", icon: <GlyphActivity />, shortcut: "g a" },
-  { id: "/holdings", label: "Holdings", icon: <GlyphHoldings />, shortcut: "g h" },
-  { id: "/calendar", label: "Calendar", icon: <GlyphCalendar />, shortcut: "g c" },
-];
-
-// Global, account-independent views.
-const SECONDARY = [
-  { id: "/performance", label: "Performance", icon: <GlyphPerformance />, shortcut: "g p" },
-  { id: "/settings", label: "Settings", icon: <GlyphSettings />, shortcut: "g s" },
+// Nav grouped into lenses, not a flat list. Trading and Investing are two
+// viewpoints over the same account's data (the switcher narrows the scope);
+// the grouping makes that separation legible without partitioning accounts.
+// Glyphs are hand-drawn (components/layout/nav-glyphs), each with a hover
+// animation; every row also reveals its g-chord on hover.
+const NAV_SECTIONS = [
+  {
+    label: "Portfolio",
+    items: [{ id: "/", label: "Overview", icon: <GlyphOverview />, shortcut: "g o" }],
+  },
+  {
+    label: "Investing",
+    items: [{ id: "/holdings", label: "Holdings", icon: <GlyphHoldings />, shortcut: "g h" }],
+  },
+  {
+    label: "Trading",
+    items: [
+      { id: "/activity", label: "Journal", icon: <GlyphActivity />, shortcut: "g a" },
+      { id: "/calendar", label: "Calendar", icon: <GlyphCalendar />, shortcut: "g c" },
+      { id: "/performance", label: "Performance", icon: <GlyphPerformance />, shortcut: "g p" },
+    ],
+  },
+  // Trailing, unlabeled group — rendered after a divider.
+  {
+    items: [{ id: "/settings", label: "Settings", icon: <GlyphSettings />, shortcut: "g s" }],
+  },
 ];
 
 /**
@@ -105,7 +118,7 @@ function AppInner() {
   };
 
   const allNavIds = useMemo(
-    () => [...PRIMARY.map((p) => p.id), ...SECONDARY.map((p) => p.id)],
+    () => NAV_SECTIONS.flatMap((s) => s.items.map((i) => i.id)),
     [],
   );
   const normalizedActive = activeIdFor(location.pathname, allNavIds) ?? "/";
@@ -148,8 +161,7 @@ function AppInner() {
         <Sidebar
           active={normalizedActive}
           onSelect={onNavSelect}
-          primary={PRIMARY}
-          secondary={SECONDARY}
+          sections={NAV_SECTIONS}
           onToggleNav={() => setNavOpen((v) => !v)}
           header={
             <AccountSwitcher
@@ -205,7 +217,7 @@ function AppInner() {
         <Route path="/activity" element={<Trading />} />
         <Route path="/calendar" element={<Calendar />} />
         <Route path="/holdings" element={<Holdings />} />
-        <Route path="/performance" element={<Placeholder name="Performance" />} />
+        <Route path="/performance" element={<Performance />} />
         <Route path="/settings" element={<Settings />} />
         {/* Legacy paths → new IA */}
         <Route path="/trading" element={<Navigate to="/activity" replace />} />
@@ -243,23 +255,5 @@ function AppInner() {
       )}
       <Toaster />
     </Shell>
-  );
-}
-
-function Placeholder({ name }: { name: string }) {
-  return (
-    <div
-      style={{
-        height: "60vh",
-        display: "grid",
-        placeItems: "center",
-        color: "var(--text-tertiary)",
-        fontFamily: "var(--font-display)",
-        fontSize: "var(--text-2xl)",
-        letterSpacing: "var(--tracking-tight)",
-      }}
-    >
-      {name} — coming soon
-    </div>
   );
 }

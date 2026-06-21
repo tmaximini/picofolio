@@ -18,6 +18,7 @@ import type { Trade, TradeSetup, TradeStatus } from "@/lib/trades";
 import { deriveTotals, tradeDateKey } from "@/lib/tradeMath";
 import { contractMultiplier, parseOccSymbol } from "@/lib/optionSymbol";
 import { inRange, rangeFor, type DateRangeKey } from "@/lib/dateRange";
+import { computePerformance, type Performance } from "@/lib/performance";
 import type { PctPoint, PerfRange } from "@/lib/perf";
 
 export type DeltaPeriod = "1D" | "1W" | "1M" | "YTD" | "1Y";
@@ -304,7 +305,7 @@ export const useAccountDeltaCents = (
  * Returns null until the account's value is fully priced. This — NOT the
  * sum of realized closed trades — is the account's headline number.
  */
-export type ReturnStat = { gainCents: number; returnPct: number | null };
+export type ReturnStat = { gainCents: number | null; returnPct: number | null };
 
 // NOTE: build the return object via useMemo over primitive selectors — never
 // inside a useStore selector. Returning a fresh object from the store selector
@@ -315,9 +316,13 @@ export const useAccountReturn = (accountId: string): ReturnStat | null => {
   return useMemo(() => {
     if (account == null || value == null) return null;
     const contrib = account.netContributionsCents;
+    // No contributions on record = unknown cost basis. `value − 0` would render
+    // the entire account value as "return" (e.g. a $1M paper balance reads as a
+    // $1M gain). Treat it as not-yet-computable instead.
+    if (contrib <= 0) return { gainCents: null, returnPct: null };
     return {
       gainCents: value - contrib,
-      returnPct: contrib > 0 ? (value - contrib) / contrib : null,
+      returnPct: (value - contrib) / contrib,
     };
   }, [value, account]);
 };
@@ -350,9 +355,10 @@ export const usePortfolioReturn = (): ReturnStat | null => {
   const contrib = usePortfolioContributionsCents();
   return useMemo(() => {
     if (value == null) return null;
+    if (contrib <= 0) return { gainCents: null, returnPct: null };
     return {
       gainCents: value - contrib,
-      returnPct: contrib > 0 ? (value - contrib) / contrib : null,
+      returnPct: (value - contrib) / contrib,
     };
   }, [value, contrib]);
 };
@@ -911,6 +917,8 @@ export type JournalStats = {
   returnPct: number;
   /** P/L series, one bucket per trade (for sparkline). */
   cumulativeSeries: { at: string; cumulativeCents: number }[];
+  /** Closed trades with their day + symbol — powers the per-day hover summary. */
+  closedTrades: { at: string; symbol: string; returnCents: number }[];
   /** Highest-return winning trade in range; null when nothing closed green. */
   best: TradeExtreme;
   /** Lowest-return losing trade in range; null when nothing closed red. */
@@ -929,6 +937,13 @@ export const useTradeStats = (scope: string = ALL_ACCOUNTS): JournalStats => {
   return useMemo(() => computeStats(trades), [trades]);
 };
 
+/** All-time trading-edge analytics for the Performance page. Range-independent
+ *  on purpose — it's the standing edge, not a windowed snapshot like the Journal. */
+export const usePerformanceStats = (scope: string = ALL_ACCOUNTS): Performance => {
+  const trades = useStore((s) => s.trades);
+  return useMemo(() => computePerformance(scopeTrades(trades, scope)), [trades, scope]);
+};
+
 function computeStats(trades: Trade[]): JournalStats {
   let wins = 0;
   let losses = 0;
@@ -940,7 +955,7 @@ function computeStats(trades: Trade[]): JournalStats {
   let pnlCents = 0;
   let entryCapitalCents = 0;
 
-  const closed: { at: string; returnCents: number }[] = [];
+  const closed: { at: string; symbol: string; returnCents: number }[] = [];
   let best: TradeExtreme = null;
   let worst: TradeExtreme = null;
 
@@ -953,7 +968,7 @@ function computeStats(trades: Trade[]): JournalStats {
     }
     pnlCents += tot.returnCents;
     entryCapitalCents += tot.entryTotalCents;
-    closed.push({ at: tradeDateKey(t), returnCents: tot.returnCents });
+    closed.push({ at: tradeDateKey(t), symbol: t.symbol, returnCents: tot.returnCents });
     if (tot.returnCents > 0 && (best == null || tot.returnCents > best.returnCents)) {
       best = { tradeId: t.id, symbol: t.symbol, returnCents: tot.returnCents, returnPct: tot.returnPct };
     }
@@ -991,6 +1006,7 @@ function computeStats(trades: Trade[]): JournalStats {
     winRate: totalClosed > 0 ? wins / totalClosed : 0,
     returnPct: entryCapitalCents > 0 ? pnlCents / entryCapitalCents : 0,
     cumulativeSeries,
+    closedTrades: closed,
     best,
     worst,
   };
@@ -1013,7 +1029,10 @@ export const useDayTrades = (
 export type DaySummary = {
   dateKey: string;
   pnlCents: number;
+  /** Closed trades (wins + losses) — drives realized P&L and the return %. */
   count: number;
+  /** Open trades active that day. Counted for the day's total, excluded from P&L. */
+  open: number;
   wins: number;
   losses: number;
   returnPct: number;
@@ -1099,21 +1118,26 @@ export const useTradesByDay = (
       const key = tradeDateKey(t);
       if (key === "") continue;
       const tot = deriveTotals(t);
-      if (tot.status === "OPEN") continue;
       const cur = out.get(key) ?? {
         dateKey: key,
         pnlCents: 0,
         count: 0,
+        open: 0,
         wins: 0,
         losses: 0,
         returnPct: 0,
       };
-      cur.pnlCents += tot.returnCents;
-      cur.count += 1;
-      if (tot.status === "WIN") cur.wins += 1;
-      else cur.losses += 1;
-      if (tot.returnPct != null) {
-        cur.returnPct = cur.returnPct + tot.returnPct;
+      if (tot.status === "OPEN") {
+        // Open trades count toward the day's total but carry no realized P&L.
+        cur.open += 1;
+      } else {
+        cur.pnlCents += tot.returnCents;
+        cur.count += 1;
+        if (tot.status === "WIN") cur.wins += 1;
+        else cur.losses += 1;
+        if (tot.returnPct != null) {
+          cur.returnPct = cur.returnPct + tot.returnPct;
+        }
       }
       out.set(key, cur);
     }

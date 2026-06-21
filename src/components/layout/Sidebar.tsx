@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { Menu } from "lucide-react";
 
 type NavItem = {
@@ -8,13 +8,18 @@ type NavItem = {
   shortcut?: string;
 };
 
+/** A labeled group of nav items. A section with no `label` renders after a
+ *  divider (used for the trailing Settings group). */
+type NavSection = {
+  label?: string;
+  items: ReadonlyArray<NavItem>;
+};
+
 type SidebarProps = {
   active: string;
   onSelect: (id: string) => void;
-  /** Account-scoped views (Overview, Activity, Holdings, Calendar). */
-  primary: ReadonlyArray<NavItem>;
-  /** Global, account-independent views (Performance, Settings). */
-  secondary: ReadonlyArray<NavItem>;
+  /** Nav grouped into labeled sections (Portfolio / Investing / Trading / …). */
+  sections: ReadonlyArray<NavSection>;
   /** Persistent header below the brand — the account switcher. */
   header?: ReactNode;
   /** Collapse the sidebar (a floating button reopens it). */
@@ -25,8 +30,7 @@ type SidebarProps = {
 export function Sidebar({
   active,
   onSelect,
-  primary,
-  secondary,
+  sections,
   header,
   onToggleNav,
   footer,
@@ -53,14 +57,17 @@ export function Sidebar({
       {header && <div className="sidebar__header">{header}</div>}
 
       <nav className="nav">
-        {primary.map((item) => (
-          <NavButton key={item.id} item={item} active={active} onSelect={onSelect} />
-        ))}
-
-        <div className="nav__divider" />
-
-        {secondary.map((item) => (
-          <NavButton key={item.id} item={item} active={active} onSelect={onSelect} />
+        {sections.map((section, i) => (
+          <Fragment key={section.label ?? `section-${i}`}>
+            {section.label ? (
+              <div className="nav__section">{section.label}</div>
+            ) : (
+              i > 0 && <div className="nav__divider" />
+            )}
+            {section.items.map((item) => (
+              <NavButton key={item.id} item={item} active={active} onSelect={onSelect} />
+            ))}
+          </Fragment>
         ))}
       </nav>
 

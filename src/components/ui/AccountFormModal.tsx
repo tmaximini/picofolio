@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
 import { Button, Modal } from "@/components/primitives";
-import { ACCOUNT_COLORS } from "@/lib/mock";
+import { ACCOUNT_COLORS, defaultColorForUse, type AccountUse } from "@/lib/mock";
 import {
   useAccountById,
   useAccounts,
@@ -51,6 +51,20 @@ export function AccountFormModal({ accountId, onClose }: AccountFormModalProps) 
     centsToDollars(editing?.netContributionsCents ?? 0),
   );
   const [connId, setConnId] = useState(editing?.flexConnectionId ?? "");
+  const [primaryUse, setPrimaryUse] = useState<AccountUse>(
+    editing?.primaryUse ?? "mixed",
+  );
+  // An existing account already has a deliberate color; a fresh one doesn't.
+  // While untouched, picking a primary use seeds the matching identity color.
+  const [colorTouched, setColorTouched] = useState(isEdit);
+
+  const pickUse = (use: AccountUse) => {
+    setPrimaryUse(use);
+    if (!colorTouched) {
+      const c = defaultColorForUse(use);
+      if (c) setColor(c);
+    }
+  };
 
   // A connection is selectable if it isn't already feeding another account.
   const available = connections.filter(
@@ -72,6 +86,7 @@ export function AccountFormModal({ accountId, onClose }: AccountFormModalProps) 
         cashCents,
         netContributionsCents,
         flexConnectionId,
+        primaryUse,
       });
       pushToast({ kind: "success", title: `${name.trim()} updated`, duration: 2500 });
     } else {
@@ -81,6 +96,7 @@ export function AccountFormModal({ accountId, onClose }: AccountFormModalProps) 
         cashCents,
         netContributionsCents,
         flexConnectionId,
+        primaryUse,
       });
       setSelected(id);
       pushToast({ kind: "success", title: `${name.trim()} created`, duration: 2500 });
@@ -155,9 +171,33 @@ export function AccountFormModal({ accountId, onClose }: AccountFormModalProps) 
               style={{ background: c }}
               aria-label={`Color ${c}`}
               aria-pressed={c === color}
-              onClick={() => setColor(c)}
+              onClick={() => {
+                setColor(c);
+                setColorTouched(true);
+              }}
             />
           ))}
+        </div>
+      </div>
+
+      <div className="tradeForm__field">
+        <label className="tradeForm__label">Primary use</label>
+        <div className="accountForm__useSeg" role="group" aria-label="Primary use">
+          {(["trading", "investing", "mixed"] as const).map((u) => (
+            <button
+              key={u}
+              type="button"
+              aria-pressed={primaryUse === u}
+              className={`accountForm__useSegBtn${primaryUse === u ? " accountForm__useSegBtn--active" : ""}`}
+              onClick={() => pickUse(u)}
+            >
+              {u}
+            </button>
+          ))}
+        </div>
+        <div className="accountForm__hint">
+          A soft hint — sets the default color and which lens leads on the
+          Overview. Both lenses stay available regardless.
         </div>
       </div>
 

@@ -5,7 +5,7 @@ import { Button, Tabs } from "@/components/primitives";
 import type { Holding } from "@/lib/mock";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
 import { sliceRange, type Range } from "@/lib/priceHistory";
-import { formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
+import { contractMultiplier, formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import {
   useHoldingDelta,
   useHoldingValueCents,
@@ -141,6 +141,12 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
 
   const unrealizedTone = unrealizedCents == null ? "neutral" : toneOf(unrealizedCents);
 
+  // Total cost basis = qty × avg unit cost × contract multiplier (×100 for
+  // options). Mirrors how Mkt Value scales, so Mkt Value − Cost Basis = Unrealized.
+  const costBasisCents = Math.round(
+    holding.qty * holding.avgCostCents * contractMultiplier(holding.symbol),
+  );
+
   return (
     <div className="holdingDetail">
       <div className="holdingDetail__chart">
@@ -180,6 +186,7 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
 
       <div className="holdingDetail__side">
         <StatLine label="Avg Cost" value={formatCents(holding.avgCostCents)} />
+        <StatLine label="Cost Basis" value={formatCents(costBasisCents)} />
         <StatLine
           label="Mkt Value"
           value={valueCents != null ? formatCents(valueCents) : "—"}
@@ -201,25 +208,32 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
         <div className="holdingDetail__divider" />
         <div className="holdingDetail__actions">
           <Button
+            icon
+            title="Open chart"
+            aria-label="Open chart"
             onClick={(e) => {
               e.stopPropagation();
               setCharting(true);
             }}
           >
-            <LineChart size={13} strokeWidth={1.75} />
-            <span>Chart</span>
+            <LineChart size={14} strokeWidth={1.75} />
           </Button>
           <Button
+            icon
+            title="Edit holding"
+            aria-label="Edit holding"
             onClick={(e) => {
               e.stopPropagation();
               setEditing(true);
             }}
           >
-            <Pencil size={13} strokeWidth={1.75} />
-            <span>Edit</span>
+            <Pencil size={14} strokeWidth={1.75} />
           </Button>
           <Button
+            icon
             className="btn--danger"
+            title="Remove holding"
+            aria-label="Remove holding"
             onClick={(e) => {
               e.stopPropagation();
               if (!confirm(`Remove ${holding.symbol} from this account?`)) return;
@@ -227,8 +241,7 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
               pushToast({ kind: "info", title: `${holding.symbol} removed`, duration: 2500 });
             }}
           >
-            <Trash2 size={13} strokeWidth={1.75} />
-            <span>Remove</span>
+            <Trash2 size={14} strokeWidth={1.75} />
           </Button>
         </div>
       </div>

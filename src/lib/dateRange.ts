@@ -11,12 +11,16 @@ export type DateRangeKey =
   | "YESTERDAY"
   | "THIS_WEEK"
   | "LAST_WEEK"
+  | "LAST_30_DAYS"
   | "THIS_MONTH"
   | "LAST_MONTH"
   | "LAST_3_MONTHS"
   | "THIS_YEAR"
   | "LAST_YEAR"
   | "ALL";
+
+/** Default journal range — a rolling 30-day window. */
+export const DEFAULT_DATE_RANGE: DateRangeKey = "LAST_30_DAYS";
 
 export type DateRange = {
   /** ISO date key (YYYY-MM-DD), inclusive. null = no lower bound. */
@@ -65,6 +69,9 @@ export function rangeFor(key: DateRangeKey, now = new Date()): DateRange {
       const lastSun = addDays(startOfWeekSun(today), -7);
       return { fromKey: isoDateKey(lastSun), toKey: isoDateKey(addDays(lastSun, 6)) };
     }
+    case "LAST_30_DAYS":
+      // Rolling window: today and the 29 days before it (30 days inclusive).
+      return { fromKey: isoDateKey(addDays(today, -29)), toKey: isoDateKey(today) };
     case "THIS_MONTH": {
       const first = new Date(today.getFullYear(), today.getMonth(), 1);
       const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
@@ -95,6 +102,23 @@ export function rangeFor(key: DateRangeKey, now = new Date()): DateRange {
   }
 }
 
+/** Today's local date key (YYYY-MM-DD). */
+export function todayKey(): string {
+  return isoDateKey(new Date());
+}
+
+/** Every local date key in [fromKey, toKey] inclusive. Empty if inverted. */
+export function eachDayKey(fromKey: string, toKey: string): string[] {
+  const out: string[] = [];
+  let d = new Date(`${fromKey}T00:00:00`);
+  const end = new Date(`${toKey}T00:00:00`);
+  while (d <= end) {
+    out.push(isoDateKey(d));
+    d = addDays(d, 1);
+  }
+  return out;
+}
+
 export function inRange(dateKey: string, range: DateRange): boolean {
   if (range.fromKey && dateKey < range.fromKey) return false;
   if (range.toKey && dateKey > range.toKey) return false;
@@ -106,6 +130,7 @@ export const DATE_RANGE_OPTIONS: ReadonlyArray<{ key: DateRangeKey; label: strin
   { key: "YESTERDAY",     label: "Yesterday"  },
   { key: "THIS_WEEK",     label: "This wk."   },
   { key: "LAST_WEEK",     label: "Last wk."   },
+  { key: "LAST_30_DAYS",  label: "30 days"    },
   { key: "THIS_MONTH",    label: "This mo."   },
   { key: "LAST_MONTH",    label: "Last mo."   },
   { key: "LAST_3_MONTHS", label: "Last 3 mo." },
@@ -116,4 +141,16 @@ export const DATE_RANGE_OPTIONS: ReadonlyArray<{ key: DateRangeKey; label: strin
 
 export function labelForRange(key: DateRangeKey): string {
   return DATE_RANGE_OPTIONS.find((o) => o.key === key)?.label ?? key;
+}
+
+/** URL-param encoding for a range key, e.g. "LAST_30_DAYS" ⇄ "last-30-days". */
+export function rangeKeyToParam(key: DateRangeKey): string {
+  return key.toLowerCase().replace(/_/g, "-");
+}
+
+/** Parse a `?range=` param back to a known key, or null if absent/invalid. */
+export function paramToRangeKey(param: string | null): DateRangeKey | null {
+  if (!param) return null;
+  const key = param.toUpperCase().replace(/-/g, "_") as DateRangeKey;
+  return DATE_RANGE_OPTIONS.some((o) => o.key === key) ? key : null;
 }

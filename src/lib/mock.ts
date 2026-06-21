@@ -27,9 +27,16 @@ export type Account = {
   /** ISO 8601 UTC. */
   createdAt: string;
   updatedAt: string;
+  /** Soft hint for which lens leads — sets the default dot color and orders
+   *  the Overview panels. NEVER hides data: "mixed" (or absent) shows both
+   *  the Investing and Trading lenses fully. */
+  primaryUse?: AccountUse;
   /** Provenance — lets us distinguish seeded demo data from real entries. */
   source?: "demo" | "manual" | "ibkr";
 };
+
+/** Which lens an account leads with. Advisory only — see `Account.primaryUse`. */
+export type AccountUse = "trading" | "investing" | "mixed";
 
 export type Holding = {
   symbol: string;
@@ -73,6 +80,15 @@ export const ACCOUNT_COLORS = [
   "#5FB8A8", // teal
 ] as const;
 
+/** Default identity color for a primary-use hint: amber for trading, violet
+ *  for long-term/investing. Returns null for "mixed" (or absent) so callers
+ *  keep their existing color / first-free pick. */
+export function defaultColorForUse(use: AccountUse | undefined): string | null {
+  if (use === "trading") return ACCOUNT_TRADING_COLOR;
+  if (use === "investing") return ACCOUNT_LONG_TERM_COLOR;
+  return null;
+}
+
 const SEED_TS = "2026-01-01T00:00:00Z";
 
 // Long-Term sized to ~65% of the portfolio against a Trading account
@@ -105,6 +121,7 @@ export const accountsSeed: Account[] = [
     color: ACCOUNT_TRADING_COLOR,
     cashCents: tradingCashCents,
     netContributionsCents: STARTING_CASH_CENTS,
+    primaryUse: "trading",
     createdAt: SEED_TS,
     updatedAt: SEED_TS,
     source: "demo",
@@ -115,6 +132,7 @@ export const accountsSeed: Account[] = [
     color: ACCOUNT_LONG_TERM_COLOR,
     cashCents: LONG_TERM_CASH_CENTS,
     netContributionsCents: longTermBasisCents + LONG_TERM_CASH_CENTS,
+    primaryUse: "investing",
     createdAt: SEED_TS,
     updatedAt: SEED_TS,
     source: "demo",

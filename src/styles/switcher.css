@@ -227,6 +227,40 @@
 .accountForm__swatch--active {
   border-color: var(--text-primary);
 }
+/* Primary-use — segmented Trading / Investing / Mixed control. A soft hint
+   (default lens + color), never a hard filter. Same shape as the trade
+   form's side toggle. */
+.accountForm__useSeg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  height: 32px;
+  padding: 2px;
+  gap: 2px;
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.accountForm__useSegBtn {
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.accountForm__useSegBtn:hover {
+  color: var(--text-secondary);
+}
+.accountForm__useSegBtn--active {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--highlight-top);
+}
 .accountForm__hint {
   margin-top: var(--space-2);
   font-size: var(--text-xs);

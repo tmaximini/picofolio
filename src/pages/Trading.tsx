@@ -1,5 +1,6 @@
 import { Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Topbar } from "@/components/layout";
 import { Button, Kbd } from "@/components/primitives";
 import {
@@ -12,7 +13,13 @@ import {
 import { NewNoteModal } from "@/features/notes";
 import { NewSetupModal } from "@/features/setups";
 import type { Note } from "@/lib/notes";
-import { labelForRange } from "@/lib/dateRange";
+import {
+  DEFAULT_DATE_RANGE,
+  labelForRange,
+  paramToRangeKey,
+  rangeKeyToParam,
+  type DateRangeKey,
+} from "@/lib/dateRange";
 import { deriveTotals } from "@/lib/tradeMath";
 import type { TradeSetup, TradeStatus } from "@/lib/trades";
 import { TradeViewModal } from "@/features/trades/TradeViewModal";
@@ -24,7 +31,6 @@ import {
   useDeleteSetup,
   useFilteredTrades,
   useFilteredNotes,
-  useJournalRange,
   usePushToast,
   useSelectedAccountId,
   useSetJournalRange,
@@ -49,8 +55,27 @@ export function Trading() {
   const isAll = scope === ALL_ACCOUNTS;
   const account = useAccountById(isAll ? undefined : scope);
   const accounts = useAccounts();
-  const range = useJournalRange();
-  const setRange = useSetJournalRange();
+
+  // The selected range lives in the URL (`?range=last-30-days`) so it's
+  // shareable and survives reload; default is a rolling 30-day window. The
+  // store's journalRange is what the trade/note selectors filter by, so we
+  // mirror the URL into it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const setStoreRange = useSetJournalRange();
+  const range = paramToRangeKey(searchParams.get("range")) ?? DEFAULT_DATE_RANGE;
+  useEffect(() => {
+    setStoreRange(range);
+  }, [range, setStoreRange]);
+  const setRange = (key: DateRangeKey) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("range", rangeKeyToParam(key));
+        return next;
+      },
+      { replace: true },
+    );
+
   const trades = useFilteredTrades(scope);
   const allSetups = useSetups();
   const setups = isAll ? allSetups : allSetups.filter((s) => s.accountId === scope);
@@ -94,7 +119,7 @@ export function Trading() {
   return (
     <>
       <Topbar
-        title="Activity"
+        title="Journal"
         subtitle={`${isAll ? "All accounts" : account?.name ?? "Account"} · ${labelForRange(range)}`}
         actions={
           <Button

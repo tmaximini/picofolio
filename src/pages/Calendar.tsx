@@ -18,7 +18,7 @@ import {
 import { NewNoteModal } from "@/features/notes";
 import { NewSetupModal } from "@/features/setups";
 import { TradeViewModal } from "@/features/trades";
-import type { Trade, TradeSetup } from "@/lib/trades";
+import type { Trade, TradeSetup, TradeStatus } from "@/lib/trades";
 import { deriveTotals } from "@/lib/tradeMath";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
@@ -405,13 +405,16 @@ function DayCell({
       style={clickable && !summary ? { cursor: "pointer" } : undefined}
     >
       <span className="calendarDay__num">{date.getDate()}</span>
-      {summary && (
+      {summary && summary.count + summary.open > 0 && (
         <>
-          <span className={`calendarDay__pnl calendarDay__pnl--${tone ?? "gain"}`}>
-            {formatCents(summary.pnlCents, true)}
-          </span>
+          {summary.count > 0 && (
+            <span className={`calendarDay__pnl calendarDay__pnl--${tone ?? "gain"}`}>
+              {formatCents(summary.pnlCents, true)}
+            </span>
+          )}
           <span className="calendarDay__count">
-            {summary.count} {summary.count === 1 ? "Trade" : "Trades"}
+            {summary.count + summary.open}{" "}
+            {summary.count + summary.open === 1 ? "Trade" : "Trades"}
           </span>
         </>
       )}
@@ -432,6 +435,13 @@ function DayCell({
     </div>
   );
 }
+
+/** Day-panel groups, in display order. Variants map to the list-view badges. */
+const DAY_STATUS_GROUPS: { key: TradeStatus; label: string; variant: string }[] = [
+  { key: "OPEN", label: "OPEN", variant: "open" },
+  { key: "WIN", label: "WIN", variant: "win" },
+  { key: "LOSS", label: "LOSS", variant: "loss" },
+];
 
 function DayPanel({ dateKey, onClose }: { dateKey: string; onClose: () => void }) {
   const scope = useSelectedAccountId();
@@ -460,15 +470,16 @@ function DayPanel({ dateKey, onClose }: { dateKey: string; onClose: () => void }
     year: "numeric",
   });
 
+  // Group the day's trades by status so the panel reads Open / Win / Loss.
+  const groups: Record<TradeStatus, Trade[]> = { OPEN: [], WIN: [], LOSS: [] };
   let pnlCents = 0;
-  let wins = 0;
-  let losses = 0;
   for (const t of trades) {
     const tot = deriveTotals(t);
-    if (tot.status === "WIN") wins++;
-    else if (tot.status === "LOSS") losses++;
-    pnlCents += tot.status === "OPEN" ? 0 : tot.returnCents;
+    groups[tot.status].push(t);
+    if (tot.status !== "OPEN") pnlCents += tot.returnCents;
   }
+  const wins = groups.WIN.length;
+  const losses = groups.LOSS.length;
   const tone = pnlCents > 0 ? "gain" : pnlCents < 0 ? "loss" : null;
 
   return (
@@ -497,9 +508,23 @@ function DayPanel({ dateKey, onClose }: { dateKey: string; onClose: () => void }
         </div>
 
         <div className="dayPanel__body">
-          {trades.map((t) => (
-            <DayTradeCard key={t.id} trade={t} onClick={() => setViewTradeId(t.id)} />
-          ))}
+          {DAY_STATUS_GROUPS.map((g) => {
+            const list = groups[g.key];
+            if (list.length === 0) return null;
+            return (
+              <div className="dayPanel__group" key={g.key}>
+                <div className="dayPanel__groupHead">
+                  <span className={`tradeTable__status tradeTable__status--${g.variant}`}>
+                    {g.label}
+                  </span>
+                  <span className="dayPanel__groupCount">{list.length}</span>
+                </div>
+                {list.map((t) => (
+                  <DayTradeCard key={t.id} trade={t} onClick={() => setViewTradeId(t.id)} />
+                ))}
+              </div>
+            );
+          })}
 
           {daySetups.length > 0 && (
             <>
@@ -580,7 +605,7 @@ function DayTradeCard({ trade, onClick }: { trade: Trade; onClick: () => void })
       </span>
       <span style={{ color: "var(--text-tertiary)", fontSize: "var(--text-xs)" }}>
         {opt ? `${formatOptionLabel(opt, { includeType: false })} · ` : ""}
-        {trade.side} · {tot.status}
+        {trade.side}
       </span>
       <span
         className="num"

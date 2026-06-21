@@ -1,5 +1,5 @@
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Toast, ToastKind } from "@/store/index";
 import { useDismissToast, useToasts } from "@/store/selectors";
@@ -8,7 +8,8 @@ import { useDismissToast, useToasts } from "@/store/selectors";
  * Global toast layer. Mount once at the App root; reads from the toasts
  * store slice and renders a stack in the bottom-right. Toasts with a
  * `duration` auto-dismiss after that many ms; toasts without a duration
- * (typically errors) stay until clicked.
+ * (typically errors) stay until clicked. Hovering or focusing a toast
+ * pauses its dismiss timer so it can be read in full.
  */
 export function Toaster() {
   const toasts = useToasts();
@@ -27,18 +28,30 @@ export function Toaster() {
 
 function ToastItem({ toast }: { toast: Toast }) {
   const dismiss = useDismissToast();
+  // Pause the countdown while hovered/focused. `remaining` carries the unused
+  // time across pauses so resuming doesn't restart the full duration.
+  const [paused, setPaused] = useState(false);
+  const remainingRef = useRef(toast.duration ?? Infinity);
 
   useEffect(() => {
-    if (toast.duration == null) return;
-    const t = window.setTimeout(() => dismiss(toast.id), toast.duration);
-    return () => window.clearTimeout(t);
-  }, [toast.id, toast.duration, dismiss]);
+    if (toast.duration == null || paused) return;
+    const start = Date.now();
+    const t = window.setTimeout(() => dismiss(toast.id), remainingRef.current);
+    return () => {
+      window.clearTimeout(t);
+      remainingRef.current -= Date.now() - start;
+    };
+  }, [toast.id, toast.duration, dismiss, paused]);
 
   return (
     <button
       type="button"
       className={`toast toast--${toast.kind}`}
       onClick={() => dismiss(toast.id)}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
       title="Dismiss"
     >
       <span className="toast__icon">{iconFor(toast.kind)}</span>

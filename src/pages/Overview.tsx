@@ -1,13 +1,17 @@
-import { RefreshCw } from "lucide-react";
+import { ArrowRight, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Topbar } from "@/components/layout";
 import { Badge, Button, Card, Kbd, Stat } from "@/components/primitives";
 import {
   AccountStatCard,
   HoldingsTable,
+  JournalStats,
   PerformanceCard,
   PortfolioPerformanceCard,
 } from "@/components/ui";
+import { TradeViewModal } from "@/features/trades/TradeViewModal";
+import type { AccountUse } from "@/lib/mock";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
 import { ALL_ACCOUNTS } from "@/store";
 import {
@@ -103,7 +107,6 @@ export function Overview() {
 
 function ConsolidatedOverview() {
   const accounts = useAccounts();
-  const holdings = useHoldings();
   const setSelected = useSetSelectedAccount();
 
   return (
@@ -122,14 +125,9 @@ function ConsolidatedOverview() {
         ))}
       </div>
 
-      <div className="sectionHead">
-        <h2 className="sectionTitle">Holdings</h2>
-        <Badge>{holdings.length} positions</Badge>
-      </div>
-
-      <Card flush>
-        <HoldingsTable />
-      </Card>
+      {/* Combined: Investing leads (no single account's primaryUse to honor). */}
+      <InvestingPanel />
+      <TradingPanel scope={ALL_ACCOUNTS} />
     </>
   );
 }
@@ -187,17 +185,100 @@ function AccountOverview({ accountId }: { accountId: string }) {
             </div>
           </Card>
 
-          <div className="sectionHead">
-            <h2 className="sectionTitle">Holdings</h2>
-            <Badge>{positions} positions</Badge>
-          </div>
-
-          <Card flush>
-            <HoldingsTable accountId={accountId} cashCents={account.cashCents} />
-          </Card>
+          {/* Two lenses on the same account. Order follows the soft primaryUse
+              hint; neither is ever hidden — an empty lens collapses to a line. */}
+          {lensOrder(account.primaryUse).map((lens) =>
+            lens === "investing" ? (
+              <InvestingPanel
+                key="investing"
+                accountId={accountId}
+                cashCents={account.cashCents}
+              />
+            ) : (
+              <TradingPanel key="trading" scope={accountId} />
+            ),
+          )}
         </>
       )}
     </>
+  );
+}
+
+/** Panel order from the account's soft lens hint: trading-led accounts show
+ *  the Trading panel first; everything else leads with Investing. */
+function lensOrder(use: AccountUse | undefined): ("investing" | "trading")[] {
+  return use === "trading" ? ["trading", "investing"] : ["investing", "trading"];
+}
+
+// ---------- Lenses ----------
+
+/** Investing lens — the holdings table. Combined when no accountId is given. */
+function InvestingPanel({
+  accountId,
+  cashCents,
+}: {
+  accountId?: string;
+  cashCents?: number;
+}) {
+  const holdings = useHoldings();
+  const positions = accountId
+    ? holdings.filter((h) => h.accountId === accountId).length
+    : holdings.length;
+
+  return (
+    <section>
+      <div className="sectionHead">
+        <h2 className="sectionTitle">Investing</h2>
+        <Badge>{positions} positions</Badge>
+      </div>
+      {positions === 0 ? (
+        <LensEmpty>No positions yet</LensEmpty>
+      ) : (
+        <Card flush>
+          <HoldingsTable accountId={accountId} cashCents={cashCents} />
+        </Card>
+      )}
+    </section>
+  );
+}
+
+/** Trading lens — the journal summary. Empty (no trades in scope) collapses. */
+function TradingPanel({ scope }: { scope: string }) {
+  const trades = useTrades();
+  const count =
+    scope === ALL_ACCOUNTS
+      ? trades.length
+      : trades.filter((t) => t.accountId === scope).length;
+  const [viewTradeId, setViewTradeId] = useState<string | null>(null);
+
+  return (
+    <section style={{ marginTop: "var(--space-5)" }}>
+      <div className="sectionHead">
+        <h2 className="sectionTitle">Trading</h2>
+        <Link to="/activity" className="sectionHead__link">
+          View journal
+          <ArrowRight size={13} strokeWidth={1.75} />
+        </Link>
+      </div>
+      {count === 0 ? (
+        <LensEmpty>No trades logged yet</LensEmpty>
+      ) : (
+        <JournalStats scope={scope} onOpenTrade={setViewTradeId} />
+      )}
+      {viewTradeId && (
+        <TradeViewModal tradeId={viewTradeId} onClose={() => setViewTradeId(null)} />
+      )}
+    </section>
+  );
+}
+
+/** One-line collapsed state for a lens with no data — keeps the two-panel
+ *  rhythm consistent instead of vanishing. */
+function LensEmpty({ children }: { children: React.ReactNode }) {
+  return (
+    <Card>
+      <div className="overviewLensEmpty">{children}</div>
+    </Card>
   );
 }
 
