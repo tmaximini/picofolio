@@ -6,7 +6,6 @@ It combines a **trading journal** 📓 and a **long-term portfolio overview** �
 
 > 🎯 Design north stars: Fey (aesthetic), Linear (keyboard-first speed), Raycast (command palette), Bloomberg (numeric density). The bias is always toward restraint — darker, calmer, more typographic.
 
-<!-- Hero screenshot — drop a wide shot of the Overview page at docs/screenshots/overview.png -->
 ![Picofolio — portfolio overview](docs/screenshots/overview.png)
 
 ---
@@ -25,17 +24,12 @@ Everything persists locally (browser storage today); no account, no server, no t
 
 ## 📸 Screenshots
 
-<!--
-Drop PNGs into docs/screenshots/ with these names and they'll render here.
-~1600px wide, dark UI. See docs/screenshots/README.txt.
--->
-
 |  |  |
 | --- | --- |
 | **Overview** — combined value, deltas, allocation | **Holdings** — sortable table + expandable charts |
 | ![Overview](docs/screenshots/overview.png) | ![Holdings](docs/screenshots/holdings.png) |
 | **Trading journal** — weekly P&L + trade table | **Calendar** — realized P&L by day |
-| ![Trading journal](docs/screenshots/trading.png) | ![Calendar](docs/screenshots/calendar.png) |
+| ![Trading journal](docs/screenshots/trading-journal.png) | ![Calendar](docs/screenshots/trading-calendar.png) |
 
 > 💡 No screenshots yet? Run `pnpm dev` — the app ships with demo data, so every view is alive on first launch.
 
@@ -57,7 +51,7 @@ Picofolio talks to two external services, and you supply the credentials for bot
 | Equity prices & history | Public market feed | — | No |
 | Open-option live mark & history | MarketData.app | Free API token | Only for live option marking |
 
-Tokens are stored locally and sent only to the service they belong to. Add them in **Settings**. (Note: the current build stores secrets in browser local storage — fine for local use; the Tauri desktop build will move them to the OS keychain.)
+Tokens are stored locally and sent only to the service they belong to. Add them in **Settings**. (Secrets currently live in browser local storage — fine for local use; see [Planned](#-planned) for hardening.)
 
 ## 🧱 Stack
 
@@ -67,7 +61,7 @@ Tokens are stored locally and sent only to the service they belong to. Add them 
 - 🧭 **react-router**, **lucide-react** (icons)
 - 🎨 Hand-written CSS driven by design tokens — **no component library** (shadcn/Material/etc.). Custom components are the whole point.
 
-> 🖥️ **Desktop packaging (Tauri) is planned, not yet scaffolded.** Today Picofolio runs as a local-first web app via Vite; the external calls (IBKR, MarketData.app, equity prices) go through the Vite dev proxy. When Tauri lands, those move to typed Rust commands and secrets move to the OS keychain.
+Today Picofolio runs as a local-first web app via Vite; external calls (IBKR, MarketData.app, equity prices) go through the Vite dev proxy.
 
 ## 🚀 Getting started
 
@@ -107,7 +101,13 @@ The app ships with demo data so the UI is alive immediately. To use real data, o
 
 The design system is the heart of the project. Single source of truth: [`src/styles/tokens.css`](src/styles/tokens.css) and [`src/styles/primitives.css`](src/styles/primitives.css). A static reference page lives at [`docs/showcase.html`](docs/showcase.html) — open it in a browser to see the tokens composed into the actual UI.
 
-The full design & engineering contract is in [`CLAUDE.md`](CLAUDE.md): color and typography rules, the chiaroscuro lighting approach, motion/easing, density philosophy, and the locked product scope.
+The full design & engineering contract is in [`AGENTS.md`](AGENTS.md): color and typography rules, the chiaroscuro lighting approach, motion/easing, density philosophy, and the product scope.
+
+## 🔭 Planned
+
+Not yet implemented — on the radar, roughly in priority order:
+
+- 🖥️ **Desktop packaging (Tauri)** — ship Picofolio as a native desktop app. The external calls (IBKR, MarketData.app, equity prices) would move from the Vite dev proxy to typed Rust commands, and secrets would move from browser local storage to the OS keychain. Deprioritized for now; the web app is the supported way to run today.
 
 ## 🗺️ Roadmap notes
 
@@ -115,8 +115,8 @@ The full design & engineering contract is in [`CLAUDE.md`](CLAUDE.md): color and
 
 ## 🤝 Contributing
 
-Issues and PRs welcome! Before contributing UI, read [`CLAUDE.md`](CLAUDE.md) — it defines the bar (tokens-only, tabular numerics, custom components, designed error states). Code conventions: TypeScript strict (no `any`), functional components, money stored as integer cents, dates as ISO-8601 UTC.
+Issues and PRs welcome! Before contributing UI, read [`AGENTS.md`](AGENTS.md) — it defines the bar (tokens-only, tabular numerics, custom components, designed error states). Code conventions: TypeScript strict (no `any`), functional components, money stored as integer cents, dates as ISO-8601 UTC.
 
 ## 📄 License
 
-[GNU AGPL-3.0](LICENSE). You may use, study, modify, and self-host Picofolio freely. If you run a modified version as a network service, you must make your source available under the same license. © 2026 Picofolio contributors.
+[MIT](LICENSE). Use, modify, and distribute freely. © 2026 Thomas Maximini.
