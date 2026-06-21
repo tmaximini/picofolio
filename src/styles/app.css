@@ -811,6 +811,13 @@
   line-height: 1.6;
   color: var(--text-secondary);
 }
+.emptyState__action {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
 
 /* ---------- SECTION HEAD ---------- */
 
@@ -1099,16 +1106,19 @@
 
 /* ---------- PERFORMANCE ---------- */
 
-/* Stat grid — dense, responsive. Hero variant sits beneath the equity curve. */
+/* Stat grid — dense, responsive. */
 .perfGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: var(--space-5) var(--space-6);
 }
-.perfGrid--hero {
-  margin-top: var(--space-5);
-  padding-top: var(--space-5);
-  border-top: 1px solid var(--border-subtle);
+/* Detail tier (Edge, Consistency) — deliberately a step down from the hero so
+   the eye lands on Net P&L first. Smaller values, tighter rhythm. */
+.perfGrid--detail {
+  gap: var(--space-4) var(--space-5);
+}
+.perfGrid--detail .stat__value {
+  font-size: var(--text-xl);
 }
 .perfHero__chartLabel {
   font-size: 10px;
@@ -1119,17 +1129,70 @@
   margin-bottom: var(--space-3);
 }
 
-/* Horizontal breakdown bars (P&L by setup/symbol/…, R-multiple distribution). */
+/* Hero stats — a featured primary (Net P&L) beside the supporting trio. */
+.perfHero__stats {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+  display: grid;
+  grid-template-columns: minmax(180px, 0.9fr) 2fr;
+  gap: var(--space-6);
+  align-items: center;
+}
+.perfHero__primary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.perfHero__primaryValue {
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-tight);
+  font-feature-settings: "tnum" 1;
+}
+.perfHero__primaryMeta {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+.perfHero__secondary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-5) var(--space-6);
+  padding-left: var(--space-6);
+  border-left: 1px solid var(--border-subtle);
+}
+@media (max-width: 720px) {
+  .perfHero__stats {
+    grid-template-columns: 1fr;
+    gap: var(--space-5);
+  }
+  .perfHero__secondary {
+    padding-left: 0;
+    border-left: none;
+  }
+}
+
+/* Diverging breakdown bars (P&L by setup/symbol/…, R-multiple distribution).
+   Gains extend right of a center axis, losses left — width ∝ |amount|. */
 .breakdown {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-1);
 }
 .breakdownRow {
   display: grid;
-  grid-template-columns: 110px 1fr auto;
+  grid-template-columns: 104px 1fr auto;
   align-items: center;
   gap: var(--space-4);
+  padding: var(--space-2) var(--space-2);
+  margin: 0 calc(-1 * var(--space-2));
+  border-radius: var(--radius-sm);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.breakdownRow:hover {
+  background: var(--glass-thin);
 }
 .breakdownRow__label {
   font-family: var(--font-ui);
@@ -1141,21 +1204,47 @@
 }
 .breakdownRow__track {
   position: relative;
-  height: 8px;
-  background: var(--surface-base);
-  border-radius: var(--radius-full);
-  overflow: hidden;
+  height: 16px;
+  /* A whisper of a rail so empty space still reads as a chart, not a void. */
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--surface-base) 12%,
+    var(--surface-base) 88%,
+    transparent
+  );
+  border-radius: var(--radius-sm);
+}
+/* Center axis — the zero line both sides diverge from. */
+.breakdownRow__axis {
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--border-default);
+  transform: translateX(-0.5px);
 }
 .breakdownRow__fill {
-  display: block;
-  height: 100%;
-  border-radius: var(--radius-full);
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
   min-width: 2px;
+  border-radius: var(--radius-sm);
   transition: width var(--duration-base) var(--ease-out);
 }
-.breakdownRow__fill--gain { background: var(--gain); }
-.breakdownRow__fill--loss { background: var(--loss); }
-.breakdownRow__fill--neutral { background: var(--text-tertiary); }
+/* Brighter toward the tip — gains brighten rightward, losses leftward. */
+.breakdownRow__fill--gain {
+  background: linear-gradient(90deg, var(--gain-muted), var(--gain));
+  box-shadow: 0 0 12px -2px var(--gain-muted);
+}
+.breakdownRow__fill--loss {
+  background: linear-gradient(270deg, var(--loss-muted), var(--loss));
+  box-shadow: 0 0 12px -2px var(--loss-muted);
+}
+.breakdownRow__fill--neutral {
+  background: var(--text-tertiary);
+}
 .breakdownRow__value {
   display: flex;
   flex-direction: column;

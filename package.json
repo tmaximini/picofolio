@@ -26,7 +26,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "preview:cf": "pnpm build && wrangler dev",
+    "deploy:cf": "pnpm build && wrangler deploy"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",
@@ -39,10 +41,12 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260621.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.6.3",
-    "vite": "^6.0.3"
+    "vite": "^6.0.3",
+    "wrangler": "^4.103.0"
   }
 }

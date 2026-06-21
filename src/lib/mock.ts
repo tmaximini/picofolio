@@ -59,8 +59,14 @@ export type WeekBar = {
 };
 
 // Trading positions + cash are *derived* from mockTrades so the journal,
-// holdings, and cash all tie out to the same set of executions.
-import { STARTING_CASH_CENTS, tradingCashCents, tradingHoldingsSeed } from "./mockTrades";
+// holdings, and cash all tie out to the same set of executions. weeklyPnlSeed
+// is likewise derived from those trades and re-exported below.
+import {
+  STARTING_CASH_CENTS,
+  tradingCashCents,
+  tradingHoldingsSeed,
+  weeklyPnlSeed as weeklyPnlDerived,
+} from "./mockTrades";
 
 /** Seeded account identity colors. Deliberately NOT gain-green / loss-red —
  *  those belong to the P&L language. Amber = the active trading sleeve,
@@ -139,19 +145,6 @@ export const accountsSeed: Account[] = [
   },
 ];
 
-export const weeklyPnlSeed: WeekBar[] = [
-  { weekOf: "2026-02-09", pnlCents:    412_00, trades:  8, winRate: 0.50 },
-  { weekOf: "2026-02-16", pnlCents:   -188_22, trades:  5, winRate: 0.40 },
-  { weekOf: "2026-02-23", pnlCents:    821_11, trades: 12, winRate: 0.58 },
-  { weekOf: "2026-03-02", pnlCents:  1_204_00, trades: 14, winRate: 0.64 },
-  { weekOf: "2026-03-09", pnlCents:   -322_50, trades:  9, winRate: 0.33 },
-  { weekOf: "2026-03-16", pnlCents:    612_77, trades: 11, winRate: 0.55 },
-  { weekOf: "2026-03-23", pnlCents:  1_088_42, trades: 10, winRate: 0.60 },
-  { weekOf: "2026-03-30", pnlCents:    920_18, trades: 13, winRate: 0.62 },
-  { weekOf: "2026-04-06", pnlCents:   -440_00, trades:  7, winRate: 0.29 },
-  { weekOf: "2026-04-13", pnlCents:  1_804_22, trades: 15, winRate: 0.67 },
-  { weekOf: "2026-04-20", pnlCents:  2_188_00, trades: 18, winRate: 0.72 },
-  { weekOf: "2026-04-27", pnlCents:   -612_44, trades:  8, winRate: 0.25 },
-  { weekOf: "2026-05-04", pnlCents:  1_412_00, trades: 12, winRate: 0.58 },
-  { weekOf: "2026-05-11", pnlCents:  3_215_88, trades: 20, winRate: 0.75 },
-];
+// Derived from the generated demo trades (now-relative) so the Weekly P&L
+// sparkline ties out to the journal/calendar and never goes stale.
+export const weeklyPnlSeed: WeekBar[] = weeklyPnlDerived;

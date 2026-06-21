@@ -1,0 +1,19 @@
+{
+  // Picofolio — Cloudflare Worker that serves the built SPA (static assets)
+  // and proxies the app's /api/* calls to Yahoo / MarketData / IBKR Flex.
+  // Deploy: `pnpm deploy`. Local prod-parity: `pnpm preview:cf`.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "picofolio",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-06-01",
+  "assets": {
+    // Built SPA output. `single-page-application` serves index.html for any
+    // unmatched path so react-router BrowserRouter deep links resolve.
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+  },
+  "observability": {
+    "enabled": true,
+  },
+}

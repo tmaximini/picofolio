@@ -2,7 +2,7 @@ import { ArrowRight, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Topbar } from "@/components/layout";
-import { Badge, Button, Card, Kbd, Stat } from "@/components/primitives";
+import { Badge, Button, Card, EmptyState, Kbd, Stat } from "@/components/primitives";
 import {
   AccountStatCard,
   HoldingsTable,
@@ -24,6 +24,7 @@ import {
   useHoldings,
   usePushToast,
   useRefreshAll,
+  useSeedDemoData,
   useSelectedAccountId,
   useSetSelectedAccount,
   useSyncIbkrConnection,
@@ -108,6 +109,37 @@ export function Overview() {
 function ConsolidatedOverview() {
   const accounts = useAccounts();
   const setSelected = useSetSelectedAccount();
+  const seedDemo = useSeedDemoData();
+
+  // Post-"Start empty" state: no accounts at all. Offer the two ways forward
+  // rather than rendering a wall of zeroed-out cards.
+  if (accounts.length === 0) {
+    return (
+      <>
+        <Topbar title="Overview" subtitle="All accounts" />
+        <EmptyState
+          title="No accounts yet"
+          body="Connect an Interactive Brokers account to track real positions and trades, or load the demo data to explore Picofolio first."
+          action={
+            <>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  seedDemo();
+                  window.location.reload();
+                }}
+              >
+                Load demo data
+              </Button>
+              <Link to="/settings" className="btn">
+                Connect IBKR
+              </Link>
+            </>
+          }
+        />
+      </>
+    );
+  }
 
   return (
     <>
