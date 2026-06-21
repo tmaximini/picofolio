@@ -1,10 +1,9 @@
 # 📈 Picofolio
 
-A minimal, obsessively-designed desktop portfolio tracker for technical retail investors with an Interactive Brokers account.
+A minimal portfolio tracker and trading journal.
 
 It combines a **trading journal** 📓 and a **long-term portfolio overview** 🪙 into one calm, keyboard-first tool. Local-first: your data and your broker credentials never leave your browser. 🔒
-
-> 🎯 Design north stars: Fey (aesthetic), Linear (keyboard-first speed), Raycast (command palette), Bloomberg (numeric density). The bias is always toward restraint — darker, calmer, more typographic.
+Connects directly to your Interactive Brokers to import positions and trades.
 
 ![Picofolio — portfolio overview](docs/screenshots/overview.png)
 
@@ -24,11 +23,11 @@ Everything persists locally (browser storage today); no account, no server, no t
 
 ## 📸 Screenshots
 
-|  |  |
-| --- | --- |
-| **Overview** — combined value, deltas, allocation | **Holdings** — sortable table + expandable charts |
-| ![Overview](docs/screenshots/overview.png) | ![Holdings](docs/screenshots/holdings.png) |
-| **Trading journal** — weekly P&L + trade table | **Calendar** — realized P&L by day |
+|                                                          |                                                    |
+| -------------------------------------------------------- | -------------------------------------------------- |
+| **Overview** — combined value, deltas, allocation        | **Holdings** — sortable table + expandable charts  |
+| ![Overview](docs/screenshots/overview.png)               | ![Holdings](docs/screenshots/holdings.png)         |
+| **Trading journal** — weekly P&L + trade table           | **Calendar** — realized P&L by day                 |
 | ![Trading journal](docs/screenshots/trading-journal.png) | ![Calendar](docs/screenshots/trading-calendar.png) |
 
 > 💡 No screenshots yet? Run `pnpm dev` — the app ships with demo data, so every view is alive on first launch.
@@ -37,7 +36,7 @@ Everything persists locally (browser storage today); no account, no server, no t
 
 Picofolio has no backend, no account, and no telemetry. Everything — your positions, trades, journal entries, account setup, and broker credentials — lives entirely in your own browser's local storage. There is no Picofolio server to send it to, and nothing is ever phoned home.
 
-The only network calls the app makes are the ones *you* trigger to *your* data sources: IBKR (with your Flex token), MarketData.app (with your token), and the public equity price feed. Each request goes straight to that service and nowhere else. Tokens are sent only to the service they belong to.
+The only network calls the app makes are the ones _you_ trigger to _your_ data sources: IBKR (with your Flex token), MarketData.app (with your token), and the public equity price feed. Each request goes straight to that service and nowhere else. Tokens are sent only to the service they belong to.
 
 That's the whole point of the local-first design: no server means no incentive to monetize your data, and no data liability means there's nothing to breach. Your portfolio is yours alone. 🙌
 
@@ -45,11 +44,11 @@ That's the whole point of the local-first design: no server means no incentive t
 
 Picofolio talks to two external services, and you supply the credentials for both:
 
-| Data | Source | Token | Required? |
-| --- | --- | --- | --- |
-| Positions, cash, trade fills, realized P&L | IBKR Flex Query | Flex token + Query ID | For broker sync (manual entry works without it) |
-| Equity prices & history | Public market feed | — | No |
-| Open-option live mark & history | MarketData.app | Free API token | Only for live option marking |
+| Data                                       | Source             | Token                 | Required?                                       |
+| ------------------------------------------ | ------------------ | --------------------- | ----------------------------------------------- |
+| Positions, cash, trade fills, realized P&L | IBKR Flex Query    | Flex token + Query ID | For broker sync (manual entry works without it) |
+| Equity prices & history                    | Public market feed | —                     | No                                              |
+| Open-option live mark & history            | MarketData.app     | Free API token        | Only for live option marking                    |
 
 Tokens are stored locally and sent only to the service they belong to. Add them in **Settings**. (Secrets currently live in browser local storage — fine for local use; see [Planned](#-planned) for hardening.)
 
@@ -82,22 +81,24 @@ The app ships with demo data so the UI is alive immediately. To use real data, o
 
 ### 🔌 Getting the tokens
 
-- **IBKR Flex Query** — in IBKR Client Portal: *Performance & Reports → Flex Queries*. Create an Activity/Positions query, then generate a Flex Web Service token. You'll paste the token + the Query ID into Settings.
+- **IBKR Flex Query** — in IBKR Client Portal: _Performance & Reports → Flex Queries_. Create an Activity/Positions query, then generate a Flex Web Service token. You'll paste the token + the Query ID into Settings.
 - **MarketData.app** — sign up at [marketdata.app](https://www.marketdata.app/) (free tier, no card) and paste the token into Settings → Options pricing. Optional.
 
 ## ⌨️ Keyboard shortcuts
 
-| Key | Action |
-| --- | --- |
-| `⌘K` / `Ctrl K` | Command palette |
-| `n` | New trade |
-| `g o` | Overview |
-| `g a` | Activity (journal) |
-| `g c` | Calendar |
-| `g h` | Holdings |
-| `g s` | Settings |
+| Key             | Action             |
+| --------------- | ------------------ |
+| `⌘K` / `Ctrl K` | Command palette    |
+| `n`             | New trade          |
+| `g o`           | Overview           |
+| `g a`           | Activity (journal) |
+| `g c`           | Calendar           |
+| `g h`           | Holdings           |
+| `g s`           | Settings           |
 
 ## 🎨 Design system
+
+> 🎯 Design north stars: Fey (aesthetic), Linear (keyboard-first speed), Raycast (command palette), Bloomberg (numeric density). The bias is always toward restraint — darker, calmer, more typographic.
 
 The design system is the heart of the project. Single source of truth: [`src/styles/tokens.css`](src/styles/tokens.css) and [`src/styles/primitives.css`](src/styles/primitives.css). A static reference page lives at [`docs/showcase.html`](docs/showcase.html) — open it in a browser to see the tokens composed into the actual UI.
 
