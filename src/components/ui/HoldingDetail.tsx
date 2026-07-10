@@ -3,12 +3,14 @@ import { Link } from "react-router-dom";
 import { LineChart, Pencil, Trash2 } from "lucide-react";
 import { Button, Tabs } from "@/components/primitives";
 import type { Holding } from "@/lib/mock";
-import { formatCents, formatPct, toneOf } from "@/lib/money";
+import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import { sliceRange, type Range } from "@/lib/priceHistory";
 import { contractMultiplier, formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import {
+  useAccountBaseCurrency,
+  useHoldingCurrency,
   useHoldingDelta,
-  useHoldingValueCents,
+  useHoldingValueBaseCents,
   useIntradayEntry,
   useLoadIntraday,
   useLoadOptionPrice,
@@ -20,7 +22,7 @@ import {
   usePriceStatus,
   usePushToast,
   useRemoveHolding,
-  useUnrealizedCents,
+  useUnrealizedBaseCents,
 } from "@/store/selectors";
 import { HoldingChartModal } from "./HoldingChartModal";
 import { HoldingFormModal } from "./HoldingFormModal";
@@ -109,8 +111,12 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
     if (wantsIntraday) loadIntraday(holding.symbol, intraStartKey, todayKey);
   }, [wantsIntraday, holding.symbol, intraStartKey, todayKey, loadIntraday]);
 
-  const valueCents = useHoldingValueCents(holding.symbol);
-  const unrealizedCents = useUnrealizedCents(holding.symbol);
+  // Bloomberg-style split: per-share figures (avg cost, cost basis) stay in
+  // the listing currency; position value + P&L convert to the account base.
+  const currency = useHoldingCurrency(holding.symbol);
+  const baseCurrency = useAccountBaseCurrency(holding.accountId);
+  const valueCents = useHoldingValueBaseCents(holding.symbol);
+  const unrealizedCents = useUnrealizedBaseCents(holding.symbol);
   const r1m = useHoldingDelta(holding.symbol, "1M");
   const ytd = useHoldingDelta(holding.symbol, "YTD");
   const r1y = useHoldingDelta(holding.symbol, "1Y");
@@ -185,18 +191,18 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
       </div>
 
       <div className="holdingDetail__side">
-        <StatLine label="Avg Cost" value={formatCents(holding.avgCostCents)} />
-        <StatLine label="Cost Basis" value={formatCents(costBasisCents)} />
+        <StatLine label="Avg Cost" value={formatMoney(holding.avgCostCents, currency)} />
+        <StatLine label="Cost Basis" value={formatMoney(costBasisCents, currency)} />
         <StatLine
           label="Mkt Value"
-          value={valueCents != null ? formatCents(valueCents) : "—"}
+          value={valueCents != null ? formatMoney(valueCents, baseCurrency) : "—"}
         />
         <StatLine
           label="Unrealized"
           value={
             unrealizedCents == null
               ? "—"
-              : `${unrealizedCents >= 0 ? "+" : "−"}${formatCents(Math.abs(unrealizedCents))}`
+              : `${unrealizedCents >= 0 ? "+" : "−"}${formatMoney(Math.abs(unrealizedCents), baseCurrency)}`
           }
           tone={unrealizedTone}
         />

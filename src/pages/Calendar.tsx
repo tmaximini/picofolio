@@ -2,10 +2,11 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Topbar } from "@/components/layout";
 import { NoteRow, TradeSetupRow } from "@/components/ui";
-import { formatCents, formatPct, toneOf } from "@/lib/money";
+import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import type { Note } from "@/lib/notes";
 import { formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import {
+  useAccountBaseCurrency,
   useCalendarMonth,
   useDayTrades,
   useMonthStats,
@@ -186,6 +187,12 @@ export function Calendar() {
   );
 }
 
+/** Base currency of the active account scope — every aggregate figure on
+ *  this page (month P/L, week rails, day cells) reports in it. */
+function useScopeCurrency(): string {
+  return useAccountBaseCurrency(useSelectedAccountId());
+}
+
 /** Friendly symbol: options as "MSFT $480 Call", stocks plain. */
 function symLabel(symbol: string): string {
   const opt = parseOccSymbol(symbol);
@@ -217,6 +224,7 @@ function ExtremeCard({
   label: string;
   extreme: import("@/store/selectors").MonthExtreme;
 }) {
+  const currency = useScopeCurrency();
   if (!extreme) {
     return (
       <div className="monthExtreme">
@@ -231,7 +239,7 @@ function ExtremeCard({
       <span className="monthExtreme__label">{label}</span>
       <span className="monthExtreme__sym">{symLabel(extreme.symbol)}</span>
       <span className={`monthExtreme__value monthExtreme__value--${tone}`}>
-        {formatCents(extreme.returnCents)}
+        {formatMoney(extreme.returnCents, currency)}
         {extreme.returnPct != null && (
           <span className="monthExtreme__pct">{formatPct(extreme.returnPct)}</span>
         )}
@@ -241,6 +249,7 @@ function ExtremeCard({
 }
 
 function MonthSummary({ stats }: { stats: import("@/store/selectors").MonthStats }) {
+  const currency = useScopeCurrency();
   const pnlTone = toneOf(stats.pnlCents);
   const closed = stats.wins + stats.losses;
 
@@ -249,7 +258,7 @@ function MonthSummary({ stats }: { stats: import("@/store/selectors").MonthStats
       <div className="monthSummary__cell">
         <span className="monthSummary__label">Month P/L</span>
         <span className={`monthSummary__value monthSummary__value--${pnlTone}`}>
-          {stats.trades > 0 ? formatCents(stats.pnlCents) : "—"}
+          {stats.trades > 0 ? formatMoney(stats.pnlCents, currency) : "—"}
         </span>
       </div>
       <div className="monthSummary__cell">
@@ -297,6 +306,7 @@ function WeekRow({
   today: string;
   onDayClick: (key: string) => void;
 }) {
+  const currency = useScopeCurrency();
   let pnlCents = 0;
   let wins = 0;
   let losses = 0;
@@ -341,7 +351,7 @@ function WeekRow({
         {hasTrades && (
           <>
             <div className={`calendarWeekSummary__pnl calendarWeekSummary__pnl--${tone ?? "gain"}`}>
-              {formatCents(pnlCents, true)}
+              {formatMoney(pnlCents, currency, true)}
             </div>
             <div className="calendarWeekSummary__return">
               {countsWithPct > 0
@@ -378,6 +388,7 @@ function DayCell({
   setupCount: number;
   onClick: (key: string) => void;
 }) {
+  const currency = useScopeCurrency();
   const tone = summary
     ? summary.pnlCents > 0
       ? "gain"
@@ -409,7 +420,7 @@ function DayCell({
         <>
           {summary.count > 0 && (
             <span className={`calendarDay__pnl calendarDay__pnl--${tone ?? "gain"}`}>
-              {formatCents(summary.pnlCents, true)}
+              {formatMoney(summary.pnlCents, currency, true)}
             </span>
           )}
           <span className="calendarDay__count">
@@ -445,7 +456,9 @@ const DAY_STATUS_GROUPS: { key: TradeStatus; label: string; variant: string }[] 
 
 function DayPanel({ dateKey, onClose }: { dateKey: string; onClose: () => void }) {
   const scope = useSelectedAccountId();
+  const currency = useAccountBaseCurrency(scope);
   const trades = useDayTrades(dateKey, scope);
+  const daySummary = useTradesByDay(scope).get(dateKey);
   const dayNotes = useNotesByDay(scope).get(dateKey) ?? [];
   const daySetups = useSetupsByDay(scope).get(dateKey) ?? [];
   const [viewTradeId, setViewTradeId] = useState<string | null>(null);
@@ -471,13 +484,13 @@ function DayPanel({ dateKey, onClose }: { dateKey: string; onClose: () => void }
   });
 
   // Group the day's trades by status so the panel reads Open / Win / Loss.
+  // The headline P/L reuses the calendar's base-converted day summary so a
+  // KRW and a USD win never sum raw.
   const groups: Record<TradeStatus, Trade[]> = { OPEN: [], WIN: [], LOSS: [] };
-  let pnlCents = 0;
   for (const t of trades) {
-    const tot = deriveTotals(t);
-    groups[tot.status].push(t);
-    if (tot.status !== "OPEN") pnlCents += tot.returnCents;
+    groups[deriveTotals(t).status].push(t);
   }
+  const pnlCents = daySummary?.pnlCents ?? 0;
   const wins = groups.WIN.length;
   const losses = groups.LOSS.length;
   const tone = pnlCents > 0 ? "gain" : pnlCents < 0 ? "loss" : null;
@@ -498,7 +511,7 @@ function DayPanel({ dateKey, onClose }: { dateKey: string; onClose: () => void }
                   fontVariantNumeric: "tabular-nums",
                 }}
               >
-                {formatCents(pnlCents, true)}
+                {formatMoney(pnlCents, currency, true)}
               </span>
             </div>
           </div>
@@ -614,7 +627,7 @@ function DayTradeCard({ trade, onClick }: { trade: Trade; onClick: () => void })
           fontWeight: 500,
         }}
       >
-        {tot.status === "OPEN" ? "—" : formatCents(tot.returnCents)}
+        {tot.status === "OPEN" ? "—" : formatMoney(tot.returnCents, trade.currency ?? "USD")}
       </span>
     </button>
   );

@@ -11,7 +11,7 @@ import {
   type ISeriesApi,
   type Time,
 } from "lightweight-charts";
-import { formatCents } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 import { GradientBarsSeries } from "./perfBarsSeries";
 
 export type PerfPoint = {
@@ -37,6 +37,8 @@ type PerformanceChartProps = {
    *  each event) so an equity curve with sparse trade-days reads honestly
    *  instead of interpolating diagonally across days with no activity. */
   step?: boolean;
+  /** ISO 4217 code for currency-format axes/tooltips. Default USD. */
+  currency?: string;
 };
 
 const tokens = {
@@ -56,9 +58,11 @@ function percentFormatter(v: number): string {
   return `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}%`;
 }
 
-function currencyFormatter(v: number): string {
-  const sign = v < 0 ? "−" : "";
-  return `${sign}$${Math.abs(v).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+function currencyFormatterFor(currency: string): (v: number) => string {
+  return (v: number) => {
+    const sign = v < 0 ? "−" : "";
+    return `${sign}${formatMoney(Math.round(Math.abs(v) * 100), currency, true)}`;
+  };
 }
 
 /** Normalize a Lightweight-Charts Time to a YYYY-MM-DD key. */
@@ -134,6 +138,7 @@ export function PerformanceChart({
   timeVisible = false,
   kind = "line",
   step = false,
+  currency = "USD",
 }: PerformanceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -161,7 +166,8 @@ export function PerformanceChart({
         attributionLogo: false,
       },
       localization: {
-        priceFormatter: format === "percent" ? percentFormatter : currencyFormatter,
+        priceFormatter:
+          format === "percent" ? percentFormatter : currencyFormatterFor(currency),
         // Crosshair time label in local time (matches the hover popover).
         ...(timeVisible
           ? {
@@ -218,7 +224,8 @@ export function PerformanceChart({
 
     const priceFormat = {
       type: "custom" as const,
-      formatter: format === "percent" ? percentFormatter : currencyFormatter,
+      formatter:
+        format === "percent" ? percentFormatter : currencyFormatterFor(currency),
       minMove: format === "percent" ? 0.01 : 1,
     };
     const series: ISeriesApi<"Baseline"> | ISeriesApi<"Custom"> =
@@ -268,7 +275,7 @@ export function PerformanceChart({
         point.value > 0 ? "gain" : point.value < 0 ? "loss" : "neutral";
       const lines: TipLine[] | undefined = point.breakdown?.map((b) => ({
         label: b.label,
-        value: formatCents(b.valueCents, true),
+        value: formatMoney(b.valueCents, currency, true),
         tone: b.valueCents > 0 ? "gain" : b.valueCents < 0 ? "loss" : "neutral",
       }));
       if (format === "percent") {
@@ -276,7 +283,7 @@ export function PerformanceChart({
           x: param.point.x,
           date: formatTipDate(point.time),
           headline: percentFormatter(point.value),
-          sub: point.valueCents != null ? formatCents(point.valueCents) : undefined,
+          sub: point.valueCents != null ? formatMoney(point.valueCents, currency) : undefined,
           lines,
           tone,
         });
@@ -284,7 +291,7 @@ export function PerformanceChart({
         setTip({
           x: param.point.x,
           date: formatTipDate(point.time),
-          headline: formatCents(Math.round(point.value * 100)),
+          headline: formatMoney(Math.round(point.value * 100), currency),
           lines,
           tone,
         });
@@ -305,7 +312,7 @@ export function PerformanceChart({
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [height, format, timeVisible, kind, step]);
+  }, [height, format, timeVisible, kind, step, currency]);
 
   useEffect(() => {
     const series = seriesRef.current;

@@ -6,9 +6,10 @@
  */
 
 import { parseOccSymbol } from "./optionSymbol";
-import { deriveTotals } from "./tradeMath";
+import { deriveTotals, tradeFxRate } from "./tradeMath";
 import type { Market, Side, Trade } from "./trades";
 import { tradeDateKey } from "./tradeMath";
+import { convertCents, type FxSeriesSource } from "./fx";
 
 /** One closed trade, flattened to the fields the breakdowns slice on. */
 export type ClosedRow = {
@@ -94,18 +95,28 @@ const R_BINS: { label: string; lo: number; hi: number; positive: boolean }[] = [
   { label: "≥ 3R", lo: 3, hi: Infinity, positive: true },
 ];
 
-export function computePerformance(trades: Trade[]): Performance {
+export function computePerformance(
+  trades: Trade[],
+  /** When given, each trade's realized P/L converts into `base` at its
+   *  trade-date FX rate — one conversion here, everything downstream
+   *  (equity, streaks, breakdowns) inherits it. Omitted = native cents
+   *  (correct for all-USD data). */
+  fx?: { base: string; prices: FxSeriesSource },
+): Performance {
   const rows: ClosedRow[] = [];
   for (const t of trades) {
     const tot = deriveTotals(t);
     if (tot.status === "OPEN") continue;
+    const returnCents = fx
+      ? convertCents(tot.returnCents, tradeFxRate(t, fx.base, fx.prices))
+      : tot.returnCents;
     rows.push({
       id: t.id,
       symbol: displaySymbol(t.symbol),
       side: t.side,
       market: t.market,
       tags: t.tags,
-      returnCents: tot.returnCents,
+      returnCents,
       rMultiple: tot.rMultiple,
       holdMs: tot.holdMs,
       dateKey: tradeDateKey(t),

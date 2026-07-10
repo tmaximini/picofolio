@@ -15,13 +15,44 @@ import type { PricePoint } from "@/lib/priceHistory";
 import type { Account, Holding } from "@/lib/mock";
 import type { Note } from "@/lib/notes";
 import type { Trade, TradeSetup, TradeStatus } from "@/lib/trades";
-import { deriveTotals, tradeDateKey } from "@/lib/tradeMath";
+import { deriveTotals, tradeDateKey, tradeFxRate } from "@/lib/tradeMath";
+import {
+  convertCents,
+  fxPairSymbol,
+  holdingCurrencyOf,
+  latestFxRate,
+  portfolioBaseOf,
+} from "@/lib/fx";
 import { contractMultiplier, parseOccSymbol } from "@/lib/optionSymbol";
 import { inRange, rangeFor, type DateRangeKey } from "@/lib/dateRange";
 import { computePerformance, type Performance } from "@/lib/performance";
 import type { PctPoint, PerfRange } from "@/lib/perf";
 
 export type DeltaPeriod = "1D" | "1W" | "1M" | "YTD" | "1Y";
+
+/** Structural view of the prices map shared by the pure helpers below —
+ *  matches both PriceEntry and OptionPriceEntry. */
+type PriceMap = Record<
+  string,
+  { points?: PricePoint[]; currency?: string } | undefined
+>;
+
+// ---------- currency scope ----------
+
+/** Base currency of a scope: a specific account's base, or the portfolio
+ *  base (uniform across accounts, else USD) for ALL / no scope. */
+function scopeBaseOf(accounts: Account[], scope?: string): string {
+  if (scope && scope !== ALL_ACCOUNTS) {
+    return accounts.find((a) => a.id === scope)?.baseCurrency ?? "USD";
+  }
+  return portfolioBaseOf(accounts);
+}
+
+export const useAccountBaseCurrency = (accountId?: string): string =>
+  useStore((s) => scopeBaseOf(s.accounts, accountId));
+
+export const usePortfolioBaseCurrency = (): string =>
+  useStore((s) => portfolioBaseOf(s.accounts));
 
 // ---------- raw lookups ----------
 
@@ -34,32 +65,50 @@ export const useHoldings = () => useStore((s) => s.holdings);
  *  so the data table can sort by value / day / unrealized P&L. */
 export type HoldingMetrics = {
   holding: Holding;
-  /** Per-unit price in cents (live Yahoo, else broker mark). null = no price. */
+  /** Per-unit price in cents of the holding's NATIVE currency (live Yahoo,
+   *  else broker mark). null = no price. */
   priceCents: number | null;
+  /** Native (listing) currency of priceCents / avg cost. */
+  currency: string;
+  /** Base currency of the scope — valueCents/unrealCents are in this. */
+  baseCurrency: string;
+  /** Market value converted to the scope's base currency. null while the
+   *  price or the FX rate is still loading. */
   valueCents: number | null;
   dayPct: number | null;
+  /** Unrealized P&L in the scope's base currency. */
   unrealCents: number | null;
   unrealPct: number | null;
 };
 
 export const useHoldingsMetrics = (accountId?: string): HoldingMetrics[] => {
   const holdings = useStore((s) => s.holdings);
+  const accounts = useStore((s) => s.accounts);
   const prices = useStore((s) => s.prices);
   const optionPrices = useStore((s) => s.optionPrices);
   return useMemo(() => {
     const rows = accountId
       ? holdings.filter((h) => h.accountId === accountId)
       : holdings;
+    const base = scopeBaseOf(accounts, accountId);
     return rows.map((h) => {
       const priceCents = unitPriceCentsFor(h, prices, optionPrices);
-      const valueCents =
+      const currency = holdingCurrencyOf(h, prices);
+      const rate = latestFxRate(currency, base, prices);
+      const nativeValue =
         priceCents == null
           ? null
           : Math.round(h.qty * priceCents * contractMultiplier(h.symbol));
       const basis = holdingBasisCents(h);
-      const unrealCents = valueCents == null ? null : valueCents - basis;
+      // Basis converts at the same spot rate, so unrealPct stays the pure
+      // native price ratio — FX moves don't masquerade as position P&L here.
+      const nativeUnreal = nativeValue == null ? null : nativeValue - basis;
+      const valueCents =
+        nativeValue == null || rate == null ? null : convertCents(nativeValue, rate);
+      const unrealCents =
+        nativeUnreal == null || rate == null ? null : convertCents(nativeUnreal, rate);
       const unrealPct =
-        unrealCents != null && basis > 0 ? unrealCents / basis : null;
+        nativeUnreal != null && basis > 0 ? nativeUnreal / basis : null;
       // 1-day change from the daily series (options use the MarketData series;
       // null when history is too short).
       const pts = parseOccSymbol(h.symbol)
@@ -71,9 +120,18 @@ export const useHoldingsMetrics = (accountId?: string): HoldingMetrics[] => {
         const prev = pts[pts.length - 2]!.value;
         if (prev !== 0) dayPct = (last - prev) / prev;
       }
-      return { holding: h, priceCents, valueCents, dayPct, unrealCents, unrealPct };
+      return {
+        holding: h,
+        priceCents,
+        currency,
+        baseCurrency: base,
+        valueCents,
+        dayPct,
+        unrealCents,
+        unrealPct,
+      };
     });
-  }, [holdings, prices, optionPrices, accountId]);
+  }, [holdings, accounts, prices, optionPrices, accountId]);
 };
 export const useAccounts = () => useStore((s) => s.accounts);
 export const useAccountById = (id: string | undefined): Account | undefined =>
@@ -98,6 +156,11 @@ export const usePriceStatus = (symbol: string) =>
 
 export const usePricePoints = (symbol: string): PricePoint[] | null =>
   useStore((s) => s.prices[symbol]?.points ?? null);
+
+/** Quote currency of a symbol's loaded price series (major unit, GBp
+ *  already normalized to GBP). null until the series has been fetched. */
+export const usePriceCurrency = (symbol: string): string | null =>
+  useStore((s) => s.prices[symbol]?.currency ?? null);
 
 // ---------- option pricing (MarketData.app, open positions only) ----------
 
@@ -133,8 +196,8 @@ export const useLatestPrice = (symbol: string): number | null =>
  */
 function unitPriceCentsFor(
   h: Holding,
-  prices: Record<string, { points?: PricePoint[] }>,
-  optionPrices?: Record<string, { points?: PricePoint[] }>,
+  prices: PriceMap,
+  optionPrices?: PriceMap,
 ): number | null {
   if (parseOccSymbol(h.symbol)) {
     const opts = optionPrices?.[h.symbol]?.points;
@@ -152,12 +215,27 @@ function unitPriceCentsFor(
  *  (options settle ×100). null when the holding has no price yet. */
 function holdingValueCents(
   h: Holding,
-  prices: Record<string, { points?: PricePoint[] }>,
-  optionPrices?: Record<string, { points?: PricePoint[] }>,
+  prices: PriceMap,
+  optionPrices?: PriceMap,
 ): number | null {
   const unit = unitPriceCentsFor(h, prices, optionPrices);
   if (unit == null) return null;
   return Math.round(h.qty * unit * contractMultiplier(h.symbol));
+}
+
+/** Market value converted to `base` cents. null while the price or the
+ *  needed FX series is still loading (same "—" degradation as no price). */
+function holdingValueBaseCents(
+  h: Holding,
+  base: string,
+  prices: PriceMap,
+  optionPrices?: PriceMap,
+): number | null {
+  const native = holdingValueCents(h, prices, optionPrices);
+  if (native == null) return null;
+  const rate = latestFxRate(holdingCurrencyOf(h, prices), base, prices);
+  if (rate == null) return null;
+  return convertCents(native, rate);
 }
 
 /** Cost basis of a holding in cents: qty × avg cost × contract multiplier. */
@@ -218,19 +296,53 @@ export const useUnrealizedCents = (symbol: string): number | null =>
     return value - holdingBasisCents(h);
   });
 
+/** Native (listing) currency of a holding's prices. USD until known. */
+export const useHoldingCurrency = (symbol: string): string =>
+  useStore((s) => {
+    const h = s.holdings.find((x) => x.symbol === symbol);
+    return h ? holdingCurrencyOf(h, s.prices) : "USD";
+  });
+
+/** Market value converted to the holding's ACCOUNT base currency. null
+ *  while the price or FX rate is loading. */
+export const useHoldingValueBaseCents = (symbol: string): number | null =>
+  useStore((s) => {
+    const h = s.holdings.find((x) => x.symbol === symbol);
+    if (!h) return null;
+    const base =
+      s.accounts.find((a) => a.id === h.accountId)?.baseCurrency ?? "USD";
+    return holdingValueBaseCents(h, base, s.prices, s.optionPrices);
+  });
+
+/** Unrealized P&L converted to the holding's ACCOUNT base currency. */
+export const useUnrealizedBaseCents = (symbol: string): number | null =>
+  useStore((s) => {
+    const h = s.holdings.find((x) => x.symbol === symbol);
+    if (!h) return null;
+    const native = holdingValueCents(h, s.prices, s.optionPrices);
+    if (native == null) return null;
+    const base =
+      s.accounts.find((a) => a.id === h.accountId)?.baseCurrency ?? "USD";
+    const rate = latestFxRate(holdingCurrencyOf(h, s.prices), base, s.prices);
+    if (rate == null) return null;
+    return convertCents(native - holdingBasisCents(h), rate);
+  });
+
 // ---------- account aggregates ----------
 
-/** Cash + sum of holding values, or null while any holding lacks a price —
- *  we'd rather show "—" than a misleading partial total. */
+/** Cash + sum of holding values in the account's BASE currency, or null
+ *  while any holding lacks a price or FX rate — we'd rather show "—" than
+ *  a misleading partial total. Cash is already base (IBKR BASE_SUMMARY). */
 function accountValueCentsOf(
   account: Account,
   rows: Holding[],
-  prices: Record<string, { points?: PricePoint[] }>,
-  optionPrices: Record<string, { points?: PricePoint[] }>,
+  prices: PriceMap,
+  optionPrices: PriceMap,
 ): number | null {
+  const base = account.baseCurrency ?? "USD";
   let total = account.cashCents;
   for (const h of rows) {
-    const v = holdingValueCents(h, prices, optionPrices);
+    const v = holdingValueBaseCents(h, base, prices, optionPrices);
     if (v == null) return null;
     total += v;
   }
@@ -258,19 +370,24 @@ export const useAccountValueCents = (accountId: string): number | null =>
 function holdingsDeltaCents(
   rows: Holding[],
   period: DeltaPeriod,
-  prices: Record<string, { points?: PricePoint[] }>,
-  optionPrices: Record<string, { points?: PricePoint[] }>,
+  prices: PriceMap,
+  optionPrices: PriceMap,
+  targetBase: string,
 ): number | null {
   let total = 0;
   for (const h of rows) {
+    // Deltas convert at the LATEST rate (not historical) — the number answers
+    // "what did prices do", not "what did prices + FX do together".
+    const rate = latestFxRate(holdingCurrencyOf(h, prices), targetBase, prices);
     if (parseOccSymbol(h.symbol)) {
       const pts = optionPrices[h.symbol]?.points;
-      if (pts && pts.length >= 2) {
+      if (pts && pts.length >= 2 && rate != null) {
         const last = pts[pts.length - 1]!.value;
         const ref = refPriceFor(pts, period);
         if (ref != null) {
-          total += Math.round(
-            h.qty * (last - ref) * contractMultiplier(h.symbol) * 100,
+          total += convertCents(
+            Math.round(h.qty * (last - ref) * contractMultiplier(h.symbol) * 100),
+            rate,
           );
         }
       }
@@ -280,8 +397,8 @@ function holdingsDeltaCents(
     if (!pts || pts.length < 2) return null;
     const last = pts[pts.length - 1]!.value;
     const ref = refPriceFor(pts, period);
-    if (ref == null) return null;
-    total += Math.round(h.qty * (last - ref) * 100);
+    if (ref == null || rate == null) return null;
+    total += convertCents(Math.round(h.qty * (last - ref) * 100), rate);
   }
   return total;
 }
@@ -296,6 +413,7 @@ export const useAccountDeltaCents = (
       period,
       s.prices,
       s.optionPrices,
+      scopeBaseOf(s.accounts, accountId),
     ),
   );
 
@@ -331,18 +449,31 @@ export const useAccountReturn = (accountId: string): ReturnStat | null => {
 
 export const usePortfolioValueCents = (): number | null =>
   useStore((s) => {
+    // Per-account base totals, each converted to the portfolio base — cash
+    // rides the same account-level rate (it's already in the account base).
+    const base = portfolioBaseOf(s.accounts);
     let total = 0;
-    for (const a of s.accounts) total += a.cashCents;
-    for (const h of s.holdings) {
-      const v = holdingValueCents(h, s.prices, s.optionPrices);
+    for (const a of s.accounts) {
+      const rows = s.holdings.filter((h) => h.accountId === a.id);
+      const v = accountValueCentsOf(a, rows, s.prices, s.optionPrices);
       if (v == null) return null;
-      total += v;
+      const rate = latestFxRate(a.baseCurrency ?? "USD", base, s.prices);
+      if (rate == null) return null;
+      total += convertCents(v, rate);
     }
     return total;
   });
 
 export const usePortfolioDeltaCents = (period: DeltaPeriod): number | null =>
-  useStore((s) => holdingsDeltaCents(s.holdings, period, s.prices, s.optionPrices));
+  useStore((s) =>
+    holdingsDeltaCents(
+      s.holdings,
+      period,
+      s.prices,
+      s.optionPrices,
+      portfolioBaseOf(s.accounts),
+    ),
+  );
 
 /** Sum of every account's net contributions — the portfolio cost basis. */
 export const usePortfolioContributionsCents = (): number =>
@@ -380,15 +511,22 @@ export type ValuePoint = { time: string; valueCents: number };
 function buildValueSeries(
   rows: Holding[],
   cashCents: number,
-  prices: Record<string, { points?: PricePoint[] }>,
-  optionPrices?: Record<string, { points?: PricePoint[] }>,
+  prices: PriceMap,
+  optionPrices?: PriceMap,
+  targetBase = "USD",
 ): ValuePoint[] {
   if (rows.length === 0) return [];
-  const legs: { qty: number; times: string[]; values: number[] }[] = [];
+  const legs: {
+    qty: number;
+    times: string[];
+    values: number[];
+    currency: string;
+  }[] = [];
   // Holdings with no equity price history (options/futures) get a constant
   // contribution across the curve — we don't fold their series into the legs
   // (the leg sum has no contract multiplier). The constant uses the live
-  // option mark when available, else the broker mark.
+  // option mark when available, else the broker mark, converted at the
+  // latest rate (no historical series to walk for a flat contribution).
   let flatCents = 0;
   for (const h of rows) {
     const pts = prices[h.symbol]?.points;
@@ -397,15 +535,38 @@ function buildValueSeries(
         qty: h.qty,
         times: pts.map((p) => p.time),
         values: pts.map((p) => p.value),
+        currency: holdingCurrencyOf(h, prices),
       });
     } else {
       const unit = unitPriceCentsFor(h, prices, optionPrices);
       if (unit == null) return []; // still loading a price — wait for coverage
-      flatCents += Math.round(h.qty * unit * contractMultiplier(h.symbol));
+      const rate = latestFxRate(holdingCurrencyOf(h, prices), targetBase, prices);
+      if (rate == null) return []; // FX still loading — wait for coverage
+      flatCents += convertCents(
+        Math.round(h.qty * unit * contractMultiplier(h.symbol)),
+        rate,
+      );
     }
   }
   // No history at all (e.g. an options-only account) — no date axis to draw on.
   if (legs.length === 0) return [];
+  // Historical FX legs: one daily series per distinct non-base currency,
+  // walked with the same carry-forward cursor as the price legs so each
+  // date converts at that day's rate. Absent series = still loading.
+  const fxLegs = new Map<
+    string,
+    { times: string[]; values: number[]; cursor: number }
+  >();
+  for (const leg of legs) {
+    if (leg.currency === targetBase || fxLegs.has(leg.currency)) continue;
+    const pts = prices[fxPairSymbol(leg.currency, targetBase)]?.points;
+    if (!pts || pts.length === 0) return []; // FX still loading — wait
+    fxLegs.set(leg.currency, {
+      times: pts.map((p) => p.time),
+      values: pts.map((p) => p.value),
+      cursor: 0,
+    });
+  }
   // Start where the shortest history begins so the total never jumps when
   // one symbol's series starts mid-window.
   let start = legs[0]!.times[0]!;
@@ -417,17 +578,26 @@ function buildValueSeries(
   // Walk all legs in lockstep with per-leg cursors (dates are ascending).
   const cursors = legs.map(() => 0);
   return dates.map((date) => {
-    let dollars = 0;
+    // Advance each FX cursor to the last rate on or before this date. A
+    // date before the FX series starts clamps to its first point.
+    for (const fx of fxLegs.values()) {
+      while (fx.cursor + 1 < fx.times.length && fx.times[fx.cursor + 1]! <= date) {
+        fx.cursor++;
+      }
+    }
+    let baseUnits = 0;
     for (let i = 0; i < legs.length; i++) {
       const leg = legs[i]!;
       let c = cursors[i]!;
       while (c + 1 < leg.times.length && leg.times[c + 1]! <= date) c++;
       cursors[i] = c;
-      dollars += leg.qty * leg.values[c]!;
+      const fx = fxLegs.get(leg.currency);
+      const rate = fx ? fx.values[fx.cursor]! : 1;
+      baseUnits += leg.qty * leg.values[c]! * rate;
     }
     return {
       time: date,
-      valueCents: Math.round(dollars * 100) + cashCents + flatCents,
+      valueCents: Math.round(baseUnits * 100) + cashCents + flatCents,
     };
   });
 }
@@ -454,13 +624,40 @@ function accountValueCurve(
   account: Account,
   rows: Holding[],
   nav: ValuePoint[] | undefined,
-  prices: Record<string, { points?: PricePoint[] }>,
-  optionPrices: Record<string, { points?: PricePoint[] }>,
+  prices: PriceMap,
+  optionPrices: PriceMap,
 ): ValuePoint[] {
+  // Both branches produce a curve in the ACCOUNT's base currency: NAV is
+  // broker-reported in base; the reconstruction converts each leg with
+  // that day's FX rate.
   if (nav && nav.length >= 2) {
     return withLiveToday(nav, accountValueCentsOf(account, rows, prices, optionPrices));
   }
-  return buildValueSeries(rows, account.cashCents, prices, optionPrices);
+  return buildValueSeries(
+    rows,
+    account.cashCents,
+    prices,
+    optionPrices,
+    account.baseCurrency ?? "USD",
+  );
+}
+
+/** Convert a daily value curve between currencies at each day's rate
+ *  (carry-forward). null while the FX series is absent (still loading). */
+function convertCurve(
+  curve: ValuePoint[],
+  from: string,
+  to: string,
+  prices: PriceMap,
+): ValuePoint[] | null {
+  if (from === to) return curve;
+  const pts = prices[fxPairSymbol(from, to)]?.points;
+  if (!pts || pts.length === 0) return null;
+  let cursor = 0;
+  return curve.map((p) => {
+    while (cursor + 1 < pts.length && pts[cursor + 1]!.time <= p.time) cursor++;
+    return { time: p.time, valueCents: convertCents(p.valueCents, pts[cursor]!.value) };
+  });
 }
 
 /** Sum per-account curves with carry-forward alignment, starting where every
@@ -495,12 +692,21 @@ export const usePortfolioValueSeries = (): ValuePoint[] => {
   const optionPrices = useStore((s) => s.optionPrices);
   const navHistory = useStore((s) => s.navHistory);
   return useMemo(() => {
+    const base = portfolioBaseOf(accounts);
     const curves: ValuePoint[][] = [];
     let flatCents = 0;
+    // Cash-only accounts contribute flat, converted at the latest rate
+    // (?? 1 is the transient before the FX series lands — same class as
+    // an unpriced holding, resolved by the refreshAll FX fetch).
+    const flatCash = (account: Account) =>
+      convertCents(
+        account.cashCents,
+        latestFxRate(account.baseCurrency ?? "USD", base, prices) ?? 1,
+      );
     for (const account of accounts) {
       const rows = holdings.filter((h) => h.accountId === account.id);
       if (rows.length === 0 && !(navHistory[account.id]?.length)) {
-        flatCents += account.cashCents; // cash-only account, no curve to draw
+        flatCents += flatCash(account); // cash-only account, no curve to draw
         continue;
       }
       const curve = accountValueCurve(
@@ -515,10 +721,14 @@ export const usePortfolioValueSeries = (): ValuePoint[] => {
         // loading — wait. Without holdings (e.g. a one-point NAV record)
         // the account just contributes its cash flat.
         if (rows.length > 0) return [];
-        flatCents += account.cashCents;
+        flatCents += flatCash(account);
         continue;
       }
-      curves.push(curve);
+      // Account curves are in each account's own base — align them on the
+      // portfolio base with that day's rate before summing.
+      const converted = convertCurve(curve, account.baseCurrency ?? "USD", base, prices);
+      if (converted == null) return []; // cross-base FX still loading
+      curves.push(converted);
     }
     return sumValueCurves(curves, flatCents);
   }, [holdings, accounts, prices, optionPrices, navHistory]);
@@ -560,16 +770,26 @@ function buildIntradayValueSeries(
   rows: Holding[],
   cashCents: number,
   intraday: Record<string, IntradayEntry | undefined>,
-  prices: Record<string, { points?: PricePoint[] }>,
-  optionPrices: Record<string, { points?: PricePoint[] }>,
+  prices: PriceMap,
+  optionPrices: PriceMap,
   startKey: string,
+  targetBase = "USD",
 ): { points: IntradayValuePoint[]; ready: boolean; loading: boolean } {
-  const legs: { qty: number; times: number[]; values: number[] }[] = [];
+  // FX here is the LATEST daily rate held constant across the window —
+  // intraday FX drift is deliberately not modeled (equity moves dwarf it
+  // over a ≤1-month window, and there's no intraday FX feed to pay for).
+  const rateFor = (h: Holding) =>
+    latestFxRate(holdingCurrencyOf(h, prices), targetBase, prices);
+  const legs: { qty: number; times: number[]; values: number[]; rate: number }[] = [];
   let flatCents = 0;
   const addFlat = (h: Holding): boolean => {
     const unit = unitPriceCentsFor(h, prices, optionPrices);
-    if (unit == null) return false;
-    flatCents += Math.round(h.qty * unit * contractMultiplier(h.symbol));
+    const rate = rateFor(h);
+    if (unit == null || rate == null) return false;
+    flatCents += convertCents(
+      Math.round(h.qty * unit * contractMultiplier(h.symbol)),
+      rate,
+    );
     return true;
   };
   for (const h of rows) {
@@ -579,10 +799,15 @@ function buildIntradayValueSeries(
     }
     const entry = intraday[intradayCacheKey(h.symbol, startKey)];
     if (entry?.points && entry.points.length > 0) {
+      const rate = rateFor(h);
+      if (rate == null) {
+        return { points: [], ready: false, loading: true }; // FX in flight
+      }
       legs.push({
         qty: h.qty,
         times: entry.points.map((p) => p.time),
         values: entry.points.map((p) => p.value),
+        rate,
       });
     } else if (entry && entry.status !== "loading" && entry.status !== "idle") {
       // Settled without bars (no coverage / error) — hold it flat.
@@ -605,15 +830,15 @@ function buildIntradayValueSeries(
   const out: IntradayValuePoint[] = [];
   for (const t of anchor.times) {
     if (t < startSec) continue;
-    let dollars = 0;
+    let baseUnits = 0;
     for (let i = 0; i < legs.length; i++) {
       const leg = legs[i]!;
       let c = cursors[i]!;
       while (c + 1 < leg.times.length && leg.times[c + 1]! <= t) c++;
       cursors[i] = c;
-      dollars += leg.qty * leg.values[c]!;
+      baseUnits += leg.qty * leg.values[c]! * leg.rate;
     }
-    out.push({ time: t, valueCents: Math.round(dollars * 100) + cashCents + flatCents });
+    out.push({ time: t, valueCents: Math.round(baseUnits * 100) + cashCents + flatCents });
   }
   return { points: out, ready: true, loading: false };
 }
@@ -652,11 +877,24 @@ export function useIntradayPctSeries(
     return scope === ALL_ACCOUNTS ? holdings : holdings.filter((h) => h.accountId === scope);
   }, [scope, holdings]);
 
+  const scopeBase = useMemo(
+    () => scopeBaseOf(accounts, scope ?? undefined),
+    [accounts, scope],
+  );
+
   const cashCents = useMemo(() => {
     if (scope == null) return 0;
-    if (scope === ALL_ACCOUNTS) return accounts.reduce((a, acc) => a + acc.cashCents, 0);
-    return accounts.find((a) => a.id === scope)?.cashCents ?? 0;
-  }, [scope, accounts]);
+    // Cash is per-account base; align on the scope base at the latest rate
+    // (?? 1 covers the transient before the FX series lands).
+    const cashOf = (acc: Account) =>
+      convertCents(
+        acc.cashCents,
+        latestFxRate(acc.baseCurrency ?? "USD", scopeBase, prices) ?? 1,
+      );
+    if (scope === ALL_ACCOUNTS) return accounts.reduce((a, acc) => a + cashOf(acc), 0);
+    const account = accounts.find((a) => a.id === scope);
+    return account ? cashOf(account) : 0;
+  }, [scope, accounts, scopeBase, prices]);
 
   const stockSymbols = useMemo(
     () => [
@@ -681,6 +919,7 @@ export function useIntradayPctSeries(
       prices,
       optionPrices,
       startKey,
+      scopeBase,
     );
     if (!built.ready || built.points.length < 2) {
       return { active: false, pending: built.loading, points: [] };
@@ -693,7 +932,7 @@ export function useIntradayPctSeries(
       valueCents: p.valueCents,
     }));
     return { active: true, pending: false, points };
-  }, [isShort, rows, cashCents, intraday, prices, optionPrices, startKey]);
+  }, [isShort, rows, cashCents, intraday, prices, optionPrices, startKey, scopeBase]);
 }
 
 // ---------- actions (re-exported for ergonomic access) ----------
@@ -948,17 +1187,38 @@ export type TradeExtreme = {
 
 export const useTradeStats = (scope: string = ALL_ACCOUNTS): JournalStats => {
   const trades = useFilteredTrades(scope);
-  return useMemo(() => computeStats(trades), [trades]);
+  const accounts = useStore((s) => s.accounts);
+  const prices = useStore((s) => s.prices);
+  return useMemo(
+    () => computeStats(trades, scopeBaseOf(accounts, scope), prices),
+    [trades, accounts, prices, scope],
+  );
 };
 
 /** All-time trading-edge analytics for the Performance page. Range-independent
  *  on purpose — it's the standing edge, not a windowed snapshot like the Journal. */
 export const usePerformanceStats = (scope: string = ALL_ACCOUNTS): Performance => {
   const trades = useStore((s) => s.trades);
-  return useMemo(() => computePerformance(scopeTrades(trades, scope)), [trades, scope]);
+  const accounts = useStore((s) => s.accounts);
+  const prices = useStore((s) => s.prices);
+  return useMemo(
+    () =>
+      computePerformance(scopeTrades(trades, scope), {
+        base: scopeBaseOf(accounts, scope),
+        prices,
+      }),
+    [trades, accounts, prices, scope],
+  );
 };
 
-function computeStats(trades: Trade[]): JournalStats {
+/** Sums across trades convert each trade's realized figures into the scope
+ *  base at the trade-date FX rate — a KRW win and a USD win land in the
+ *  same unit. Ratios (returnPct per trade) stay native and rate-free. */
+function computeStats(
+  trades: Trade[],
+  base: string,
+  prices: PriceMap,
+): JournalStats {
   let wins = 0;
   let losses = 0;
   let open = 0;
@@ -980,22 +1240,24 @@ function computeStats(trades: Trade[]): JournalStats {
       open++;
       continue;
     }
-    pnlCents += tot.returnCents;
-    entryCapitalCents += tot.entryTotalCents;
-    closed.push({ at: tradeDateKey(t), symbol: t.symbol, returnCents: tot.returnCents });
-    if (tot.returnCents > 0 && (best == null || tot.returnCents > best.returnCents)) {
-      best = { tradeId: t.id, symbol: t.symbol, returnCents: tot.returnCents, returnPct: tot.returnPct };
+    const rate = tradeFxRate(t, base, prices);
+    const returnCents = convertCents(tot.returnCents, rate);
+    pnlCents += returnCents;
+    entryCapitalCents += convertCents(tot.entryTotalCents, rate);
+    closed.push({ at: tradeDateKey(t), symbol: t.symbol, returnCents });
+    if (returnCents > 0 && (best == null || returnCents > best.returnCents)) {
+      best = { tradeId: t.id, symbol: t.symbol, returnCents, returnPct: tot.returnPct };
     }
-    if (tot.returnCents < 0 && (worst == null || tot.returnCents < worst.returnCents)) {
-      worst = { tradeId: t.id, symbol: t.symbol, returnCents: tot.returnCents, returnPct: tot.returnPct };
+    if (returnCents < 0 && (worst == null || returnCents < worst.returnCents)) {
+      worst = { tradeId: t.id, symbol: t.symbol, returnCents, returnPct: tot.returnPct };
     }
     if (status === "WIN") {
       wins++;
-      winSumCents += tot.returnCents;
+      winSumCents += returnCents;
       if (tot.returnPct != null) winPctSum += tot.returnPct;
     } else {
       losses++;
-      lossSumCents += tot.returnCents;
+      lossSumCents += returnCents;
       if (tot.returnPct != null) lossPctSum += tot.returnPct;
     }
   }
@@ -1080,7 +1342,10 @@ export const useMonthStats = (
   scope: string = ALL_ACCOUNTS,
 ): MonthStats => {
   const trades = useStore((s) => s.trades);
+  const accounts = useStore((s) => s.accounts);
+  const prices = useStore((s) => s.prices);
   return useMemo(() => {
+    const base = scopeBaseOf(accounts, scope);
     const yyyymm = monthIso.slice(0, 7);
     let pnlCents = 0;
     let capitalCents = 0;
@@ -1099,13 +1364,15 @@ export const useMonthStats = (
         open++;
         continue;
       }
-      pnlCents += tot.returnCents;
-      capitalCents += tot.entryTotalCents;
+      const rate = tradeFxRate(t, base, prices);
+      const returnCents = convertCents(tot.returnCents, rate);
+      pnlCents += returnCents;
+      capitalCents += convertCents(tot.entryTotalCents, rate);
       if (tot.status === "WIN") wins++;
       else losses++;
-      const extreme = { symbol: t.symbol, returnCents: tot.returnCents, returnPct: tot.returnPct };
-      if (best == null || tot.returnCents > best.returnCents) best = extreme;
-      if (worst == null || tot.returnCents < worst.returnCents) worst = extreme;
+      const extreme = { symbol: t.symbol, returnCents, returnPct: tot.returnPct };
+      if (best == null || returnCents > best.returnCents) best = extreme;
+      if (worst == null || returnCents < worst.returnCents) worst = extreme;
     }
     return {
       pnlCents,
@@ -1117,7 +1384,7 @@ export const useMonthStats = (
       best,
       worst,
     };
-  }, [trades, monthIso, scope]);
+  }, [trades, accounts, prices, monthIso, scope]);
 };
 
 /** Per-day P/L summary keyed by ISO date — for the calendar grid,
@@ -1126,7 +1393,10 @@ export const useTradesByDay = (
   scope: string = ALL_ACCOUNTS,
 ): Map<string, DaySummary> => {
   const trades = useStore((s) => s.trades);
+  const accounts = useStore((s) => s.accounts);
+  const prices = useStore((s) => s.prices);
   return useMemo(() => {
+    const base = scopeBaseOf(accounts, scope);
     const out = new Map<string, DaySummary>();
     for (const t of scopeTrades(trades, scope)) {
       const key = tradeDateKey(t);
@@ -1145,7 +1415,7 @@ export const useTradesByDay = (
         // Open trades count toward the day's total but carry no realized P&L.
         cur.open += 1;
       } else {
-        cur.pnlCents += tot.returnCents;
+        cur.pnlCents += convertCents(tot.returnCents, tradeFxRate(t, base, prices));
         cur.count += 1;
         if (tot.status === "WIN") cur.wins += 1;
         else cur.losses += 1;
@@ -1156,5 +1426,5 @@ export const useTradesByDay = (
       out.set(key, cur);
     }
     return out;
-  }, [trades, scope]);
+  }, [trades, accounts, prices, scope]);
 };

@@ -1,10 +1,14 @@
 import { createPortal } from "react-dom";
 import { ExternalLink, X } from "lucide-react";
 import type { Holding } from "@/lib/mock";
-import { formatCents, formatPct, toneOf } from "@/lib/money";
+import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import { parseOccSymbol, formatOptionLabel } from "@/lib/optionSymbol";
 import { tradingViewChartUrl, tradingViewEmbedUrl } from "@/lib/tradingview";
-import { useHoldingDelta, useUnrealizedCents } from "@/store/selectors";
+import {
+  useAccountBaseCurrency,
+  useHoldingDelta,
+  useUnrealizedBaseCents,
+} from "@/store/selectors";
 
 type HoldingChartModalProps = {
   holding: Holding;
@@ -18,7 +22,8 @@ export function HoldingChartModal({ holding, onClose }: HoldingChartModalProps) 
   const opt = parseOccSymbol(holding.symbol);
   const sym = opt ? opt.underlying : holding.symbol.split(" ")[0]!;
 
-  const unrealizedCents = useUnrealizedCents(holding.symbol);
+  const unrealizedCents = useUnrealizedBaseCents(holding.symbol);
+  const baseCurrency = useAccountBaseCurrency(holding.accountId);
   const dayPct = useHoldingDelta(holding.symbol, "1D");
 
   const url = tradingViewEmbedUrl(sym, { interval: "D" });
@@ -52,7 +57,7 @@ export function HoldingChartModal({ holding, onClose }: HoldingChartModalProps) 
                   className={`tradeView__return tradeView__return--${toneOf(unrealizedCents)}`}
                 >
                   {unrealizedCents >= 0 ? "+" : "−"}
-                  {formatCents(Math.abs(unrealizedCents))}
+                  {formatMoney(Math.abs(unrealizedCents), baseCurrency)}
                 </span>
               )}
               {dayPct != null && (

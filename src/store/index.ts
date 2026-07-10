@@ -24,6 +24,7 @@ import {
 } from "@/lib/yahoo";
 import { fetchFlexStatement, parseFlexXml } from "@/lib/ibkr";
 import type { ParsedNavPoint, ParsedPosition } from "@/lib/ibkr/flexParser";
+import { fxPairsNeeded, portfolioBaseOf } from "@/lib/fx";
 import { parseOccSymbol } from "@/lib/optionSymbol";
 import { optionsPriceProvider, OptionsNotFoundError } from "@/lib/options";
 
@@ -35,6 +36,9 @@ export type PriceEntry = {
   error?: string;
   /** epoch ms */
   fetchedAt?: number;
+  /** Major-unit quote currency reported by Yahoo (GBp already normalized
+   *  to GBP). Lets manual holdings infer their native currency. */
+  currency?: string;
 };
 
 /** Intraday cache entry. `null` points = no data available (e.g. outside Yahoo retention). */
@@ -95,6 +99,7 @@ export type NewAccountInput = {
   flexConnectionId?: string;
   primaryUse?: Account["primaryUse"];
   source?: "demo" | "manual" | "ibkr";
+  baseCurrency?: string;
 };
 
 export type ToastKind = "success" | "error" | "info" | "warning";
@@ -172,6 +177,11 @@ type StoreState = {
   /** `force` bypasses the freshness window — used by the explicit Sync
    *  button so a user-initiated sync always re-pulls prices. */
   refreshAll: (opts?: { force?: boolean }) => Promise<void>;
+  /** Fetch every FX pair series that base-currency conversion currently
+   *  needs. Cheap when already loaded (per-symbol freshness guard). Runs
+   *  after syncs/imports AND as a second pass in refreshAll — a holding's
+   *  quote currency may only be known once its price fetch lands. */
+  loadFxPairs: () => Promise<void>;
 
   /** Set or clear the MarketData.app token. */
   setMarketDataToken: (token: string | null) => void;
@@ -190,6 +200,7 @@ type StoreState = {
         | "netContributionsCents"
         | "flexConnectionId"
         | "primaryUse"
+        | "baseCurrency"
       >
     >,
   ) => void;
@@ -292,6 +303,7 @@ function buildIbkrHoldings(accountId: string, positions: ParsedPosition[]): Hold
       qty: p.qty,
       avgCostCents: p.avgCostCents,
       ...(p.markPriceCents > 0 ? { lastPriceCents: p.markPriceCents } : {}),
+      ...(p.currency ? { currency: p.currency } : {}),
       source: "ibkr" as const,
     }));
 }
@@ -327,17 +339,32 @@ function mergeIbkrTrade(stored: Trade, parsed: Trade): Trade {
   if (
     stored.executions.length === parsed.executions.length &&
     stored.side === parsed.side &&
-    stored.accountId === parsed.accountId
+    stored.accountId === parsed.accountId &&
+    stored.symbol === parsed.symbol &&
+    stored.currency === parsed.currency
   ) {
     return stored; // unchanged — keep the reference, avoid re-renders
   }
   return {
     ...stored,
     accountId: parsed.accountId,
+    // Symbol + currency are broker facts too — a re-parse may map a bare
+    // pre-currency-support symbol ("DRAM") onto its Yahoo form ("DRAM.L").
+    symbol: parsed.symbol,
+    currency: parsed.currency,
     side: parsed.side,
     market: parsed.market,
     executions: parsed.executions,
   };
+}
+
+/** Detected base currency for one raw IBKR account id, falling back to the
+ *  statement-level detection ("" key) or any detected value. */
+function detectedBaseCurrency(
+  byAccount: Record<string, string>,
+  rawId: string,
+): string | undefined {
+  return byAccount[rawId] ?? byAccount[""] ?? Object.values(byAccount)[0];
 }
 
 /** Earliest execution timestamp across a parsed pull — the start of the
@@ -409,14 +436,15 @@ export const useStore = create<StoreState>()(
         }));
 
         try {
-          const points = await fetchYahooDaily(symbol, "2y");
+          const daily = await fetchYahooDaily(symbol, "2y");
           set((s) => ({
             prices: {
               ...s.prices,
               [symbol]: {
-                points,
+                points: daily.points,
                 status: "ready",
                 fetchedAt: Date.now(),
+                ...(daily.currency ? { currency: daily.currency } : {}),
               },
             },
           }));
@@ -578,9 +606,27 @@ export const useStore = create<StoreState>()(
           ...symbols.map((s) => get().loadPrice(s, { force: opts?.force })),
           ...optionSymbols.map((s) => get().loadOptionPrice(s)),
         ]);
+        // FX pairs AFTER the equity fetches settle: a manual holding's quote
+        // currency is inferred from its Yahoo response, so the pairs the
+        // conversion needs are only fully known now. (Explicit IBKR
+        // currencies would allow a first pass, but one pass afterwards
+        // covers both — loadPrice's freshness guard keeps it cheap.)
+        await get().loadFxPairs();
         // lastSyncAt also nudges the intraday reconstruction (its load effect
         // keys on it), so charts re-pull bars after an explicit sync.
         set({ syncing: false, lastSyncAt: Date.now() });
+      },
+
+      loadFxPairs: async () => {
+        const s = get();
+        const fxSymbols = fxPairsNeeded(
+          s.holdings,
+          s.trades,
+          s.accounts,
+          portfolioBaseOf(s.accounts),
+          s.prices,
+        );
+        await Promise.allSettled(fxSymbols.map((sym) => get().loadPrice(sym)));
       },
 
       // ---------- accounts ----------
@@ -604,6 +650,7 @@ export const useStore = create<StoreState>()(
               netContributionsCents: input.netContributionsCents ?? 0,
               flexConnectionId: input.flexConnectionId,
               primaryUse: input.primaryUse,
+              ...(input.baseCurrency ? { baseCurrency: input.baseCurrency } : {}),
               createdAt: now,
               updatedAt: now,
               source: input.source ?? "manual",
@@ -631,6 +678,9 @@ export const useStore = create<StoreState>()(
                     ? { flexConnectionId: patch.flexConnectionId }
                     : {}),
                   ...("primaryUse" in patch ? { primaryUse: patch.primaryUse } : {}),
+                  ...(patch.baseCurrency != null
+                    ? { baseCurrency: patch.baseCurrency }
+                    : {}),
                   updatedAt: new Date().toISOString(),
                 }
               : a,
@@ -670,7 +720,7 @@ export const useStore = create<StoreState>()(
 
       // ---------- holdings ----------
 
-      addHolding: (input) =>
+      addHolding: (input) => {
         set((s) => {
           const exists = s.holdings.some(
             (h) => h.accountId === input.accountId && h.symbol === input.symbol,
@@ -703,22 +753,46 @@ export const useStore = create<StoreState>()(
               },
             ],
           };
-        }),
+        });
+        // Kick off the price fetch right away (plus any FX pair its quote
+        // currency needs) — otherwise the new row sits on "—" until the
+        // next page-mount refreshAll.
+        const sym = input.symbol.trim();
+        if (!parseOccSymbol(sym)) {
+          void get()
+            .loadPrice(sym)
+            .then(() => get().loadFxPairs());
+        }
+      },
 
-      updateHolding: (accountId, symbol, patch) =>
+      updateHolding: (accountId, symbol, patch) => {
         set((s) => ({
           holdings: s.holdings.map((h) =>
             h.accountId === accountId && h.symbol === symbol
               ? {
                   ...h,
                   ...(patch.symbol != null ? { symbol: patch.symbol.trim() } : {}),
+                  // A retargeted ticker may point at a different listing —
+                  // drop the stored currency and let the Yahoo quote
+                  // currency re-infer it (holdingCurrencyOf).
+                  ...(patch.symbol != null && patch.symbol.trim() !== h.symbol
+                    ? { currency: undefined }
+                    : {}),
                   ...(patch.name != null ? { name: patch.name.trim() || h.name } : {}),
                   ...(patch.qty != null ? { qty: patch.qty } : {}),
                   ...(patch.avgCostCents != null ? { avgCostCents: patch.avgCostCents } : {}),
                 }
               : h,
           ),
-        })),
+        }));
+        // A retargeted ticker needs its series (and possibly a new FX pair).
+        const next = patch.symbol?.trim();
+        if (next && next !== symbol && !parseOccSymbol(next)) {
+          void get()
+            .loadPrice(next)
+            .then(() => get().loadFxPairs());
+        }
+      },
 
       removeHolding: (accountId, symbol) =>
         set((s) => ({
@@ -929,6 +1003,18 @@ export const useStore = create<StoreState>()(
         const resolve = (rawId: string) =>
           targetAccountId ?? ensureImportAccountId(rawId);
 
+        // Base currency: fill-if-unset so a Settings override survives imports.
+        const fillBaseCurrency = (accId: string, rawId: string) => {
+          const detected = detectedBaseCurrency(result.baseCurrencyByAccount, rawId);
+          const account = get().accounts.find((a) => a.id === accId);
+          if (detected && account && account.baseCurrency == null) {
+            get().updateAccount(accId, { baseCurrency: detected });
+          }
+        };
+        for (const rawId of [...result.accountIds, ""]) {
+          if (targetAccountId || rawId) fillBaseCurrency(resolve(rawId), rawId);
+        }
+
         const stamped = result.trades.map((t) => ({
           ...t,
           accountId: resolve(t.accountId),
@@ -1000,6 +1086,9 @@ export const useStore = create<StoreState>()(
             return { navHistory };
           });
         }
+        // Imported positions/trades may introduce currencies whose FX pairs
+        // aren't loaded yet — fetch them so conversions don't sit on "—".
+        void get().loadFxPairs();
         return {
           added: fresh.length,
           skipped: result.trades.length - fresh.length,
@@ -1046,6 +1135,16 @@ export const useStore = create<StoreState>()(
               flexConnectionId: conn.id,
               source: "ibkr",
             });
+          // Base currency: fill-if-unset so a Settings override is never
+          // clobbered by a later sync.
+          const detectedBase = detectedBaseCurrency(
+            result.baseCurrencyByAccount,
+            result.accountIds[0] ?? "",
+          );
+          const syncedAccount = get().accounts.find((a) => a.id === accountId);
+          if (detectedBase && syncedAccount?.baseCurrency == null) {
+            get().updateAccount(accountId, { baseCurrency: detectedBase });
+          }
           const stamped = result.trades.map((t) => ({ ...t, accountId }));
           const prevById = new Map(get().trades.map((t) => [t.id, t]));
           const fresh = stamped.filter((t) => !prevById.has(t.id));
@@ -1123,6 +1222,10 @@ export const useStore = create<StoreState>()(
             lastSyncAt: Date.now(),
             lastSummary: summary,
           });
+          // Freshly synced holdings/trades may need FX pairs the app hasn't
+          // loaded yet (e.g. a first KRW position) — without this, every
+          // base-converted figure stays "—" until the next full refresh.
+          void get().loadFxPairs();
           // Holdings feedback: how many priceable positions landed, or a nudge
           // if the query has no Open Positions section (so the account is $0).
           const stockPositions = buildIbkrHoldings(accountId, result.positions).length;

@@ -1,5 +1,6 @@
 import { ALL_ACCOUNTS } from "@/store";
 import {
+  usePortfolioBaseCurrency,
   usePortfolioValueCents,
   usePortfolioValueSeries,
 } from "@/store/selectors";
@@ -9,12 +10,14 @@ import { PerformanceCard } from "./PerformanceCard";
 export function PortfolioPerformanceCard() {
   const valueCents = usePortfolioValueCents();
   const series = usePortfolioValueSeries();
+  const currency = usePortfolioBaseCurrency();
   return (
     <PerformanceCard
       label="Total Portfolio Value"
       valueCents={valueCents}
       series={series}
       scope={ALL_ACCOUNTS}
+      currency={currency}
     />
   );
 }

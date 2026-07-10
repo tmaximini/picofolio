@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ExternalLink, Pencil, Share2, X } from "lucide-react";
-import { formatCents, formatPct, toneOf } from "@/lib/money";
+import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import { contractMultiplier, formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import { coalesceExecutions, deriveTotals, formatHold } from "@/lib/tradeMath";
 import {
@@ -125,6 +125,10 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
     tot.status === "OPEN" ? liveUnrealCents : tot.returnCents !== 0 ? tot.returnCents : null;
   const headlinePct = tot.status === "OPEN" ? liveUnrealPct : tot.returnPct;
   const headlineTone = headlineCents == null ? null : toneOf(headlineCents);
+  // Open-position P/L is a live preview, not a booked result — same muted
+  // treatment as the trade table's return cells.
+  const headlinePreview = tot.status === "OPEN" && headlineCents != null;
+  const tradeCurrency = trade.currency ?? "USD";
 
   return createPortal(
     <div className="modalBackdrop" onClick={onClose}>
@@ -150,12 +154,20 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
                 </span>
               )}
               {headlineCents != null && (
-                <span className={`tradeView__return tradeView__return--${headlineTone ?? "neutral"}`}>
-                  {formatCents(headlineCents)}
+                <span
+                  className={`tradeView__return tradeView__return--${headlineTone ?? "neutral"}${
+                    headlinePreview ? " tradeView__return--preview" : ""
+                  }`}
+                  title={headlinePreview ? "Unrealized — position open" : undefined}
+                >
+                  {formatMoney(headlineCents, tradeCurrency)}
                   {headlinePct != null && (
                     <span style={{ marginLeft: "var(--space-2)", fontSize: "var(--text-sm)" }}>
                       {formatPct(headlinePct)}
                     </span>
+                  )}
+                  {headlinePreview && (
+                    <span className="tradeView__returnTag">unrealized</span>
                   )}
                 </span>
               )}
@@ -212,12 +224,12 @@ export function TradeViewModal({ tradeId, onClose }: TradeViewModalProps) {
           <div className="tradeView__chipRow">
             {trade.targetCents != null && (
               <span className="tradeView__chip">
-                Target: {formatCents(trade.targetCents)}
+                Target: {formatMoney(trade.targetCents, tradeCurrency)}
               </span>
             )}
             {trade.stopCents != null && (
               <span className="tradeView__chip">
-                Stop: {formatCents(trade.stopCents)}
+                Stop: {formatMoney(trade.stopCents, tradeCurrency)}
               </span>
             )}
             {tot.rMultiple != null && (
@@ -418,6 +430,7 @@ function TradeHeaderSymbol({ trade }: { trade: import("@/lib/trades").Trade }) {
 function ExecutionList({ trade }: { trade: import("@/lib/trades").Trade }) {
   // Coalesce IBKR slot fills (same time + price + action) into single rows.
   const execs = coalesceExecutions(trade.executions);
+  const currency = trade.currency ?? "USD";
   if (execs.length === 0) return null;
 
   const tot = deriveTotals(trade);
@@ -462,9 +475,11 @@ function ExecutionList({ trade }: { trade: import("@/lib/trades").Trade }) {
               <span className="execList__action">{ex.action}</span>
               <span className="execList__qty num">{ex.qty.toLocaleString("en-US")}</span>
               <span className="execList__at">@</span>
-              <span className="execList__price num">{formatCents(ex.priceCents)}</span>
+              <span className="execList__price num">
+                {formatMoney(ex.priceCents, currency)}
+              </span>
               <span className="execList__total num">
-                = {formatCents(ex.qty * ex.priceCents)}
+                = {formatMoney(ex.qty * ex.priceCents, currency)}
               </span>
             </div>
           </Fragment>

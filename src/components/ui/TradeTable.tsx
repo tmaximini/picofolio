@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { Market, Trade } from "@/lib/trades";
-import { formatCents, formatPct, toneOf } from "@/lib/money";
+import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import {
   deriveTotals,
   formatHold,
@@ -136,6 +136,7 @@ function TradeRow({
 
   const statusClass = `tradeTable__status tradeTable__status--${tot.status.toLowerCase()}`;
   const sideArrowClass = `tradeTable__sideArrow--${trade.side.toLowerCase()}`;
+  const currency = trade.currency ?? "USD";
 
   // Realized return color for closed trades; unrealized color for open stocks.
   const returnCents = tot.status === "OPEN" ? unrealCents : tot.returnCents;
@@ -173,13 +174,15 @@ function TradeRow({
         </span>
       </td>
       <td className="num tradeTable__muted">{qty.toLocaleString("en-US")}</td>
-      <td className="num tradeTable__muted">{tot.avgEntryCents != null ? formatCents(tot.avgEntryCents) : <Dash />}</td>
       <td className="num tradeTable__muted">
-        {tot.avgExitCents != null ? formatCents(tot.avgExitCents) : <Dash />}
+        {tot.avgEntryCents != null ? formatMoney(tot.avgEntryCents, currency) : <Dash />}
       </td>
-      <td className="num tradeTable__muted">{formatCents(tot.entryTotalCents)}</td>
       <td className="num tradeTable__muted">
-        {tot.exitTotalCents > 0 ? formatCents(tot.exitTotalCents) : <Dash />}
+        {tot.avgExitCents != null ? formatMoney(tot.avgExitCents, currency) : <Dash />}
+      </td>
+      <td className="num tradeTable__muted">{formatMoney(tot.entryTotalCents, currency)}</td>
+      <td className="num tradeTable__muted">
+        {tot.exitTotalCents > 0 ? formatMoney(tot.exitTotalCents, currency) : <Dash />}
       </td>
       <td className="num tradeTable__muted">
         {(() => {
@@ -196,18 +199,30 @@ function TradeRow({
         })()}
       </td>
       <td className={returnColorClass}>
-        {returnCents != null
-          ? formatCents(returnCents)
-          : tot.status === "OPEN"
-            ? <OpenTag />
-            : <Dash />}
+        {returnCents != null ? (
+          tot.status === "OPEN" ? (
+            <PreviewValue>{formatMoney(returnCents, currency)}</PreviewValue>
+          ) : (
+            formatMoney(returnCents, currency)
+          )
+        ) : tot.status === "OPEN" ? (
+          <OpenTag />
+        ) : (
+          <Dash />
+        )}
       </td>
       <td className={returnColorClass}>
-        {returnPct != null
-          ? formatPct(returnPct)
-          : tot.status === "OPEN"
-            ? <OpenTag />
-            : <Dash />}
+        {returnPct != null ? (
+          tot.status === "OPEN" ? (
+            <PreviewValue>{formatPct(returnPct)}</PreviewValue>
+          ) : (
+            formatPct(returnPct)
+          )
+        ) : tot.status === "OPEN" ? (
+          <OpenTag />
+        ) : (
+          <Dash />
+        )}
       </td>
       <td>
         <span className="tradeTable__rowActions">
@@ -292,6 +307,16 @@ function Dash() {
 /** Open position with no live price yet — reads as "in progress", not broken. */
 function OpenTag() {
   return <span className="tradeTable__live">live</span>;
+}
+
+/** Live unrealized P/L on an OPEN row — tone hue is kept (glanceable
+ *  direction) but muted with an ≈ prefix so it never reads as booked. */
+function PreviewValue({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="tradeTable__returnPreview" title="Unrealized — position open">
+      {children}
+    </span>
+  );
 }
 
 /**

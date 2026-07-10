@@ -1,7 +1,7 @@
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Eyebrow } from "@/components/primitives";
-import { formatPct } from "@/lib/money";
+import { formatMoney, formatPct } from "@/lib/money";
 import { PERF_RANGES, computePctSeries, type PctPoint, type PerfRange } from "@/lib/perf";
 import { useIntradayPctSeries, type ValuePoint } from "@/store/selectors";
 import { PerformanceChart } from "./PerformanceChart";
@@ -14,6 +14,8 @@ type PerformanceCardProps = {
   /** Scope (accountId or ALL_ACCOUNTS) used to reconstruct an intraday curve
    *  for short ranges (7D / MTD). Omit to always use the daily series. */
   scope?: string;
+  /** Base currency of valueCents. Default USD. */
+  currency?: string;
 };
 
 /**
@@ -21,7 +23,7 @@ type PerformanceCardProps = {
  * performance curve. Daily value series drives the long ranges; short ranges
  * (7D / MTD) upgrade to an intraday-reconstructed curve when available.
  */
-export function PerformanceCard({ label, valueCents, series, scope }: PerformanceCardProps) {
+export function PerformanceCard({ label, valueCents, series, scope, currency = "USD" }: PerformanceCardProps) {
   const [range, setRange] = useState<PerfRange>("All");
 
   const dailyPct = useMemo(() => computePctSeries(series, range), [series, range]);
@@ -53,10 +55,10 @@ export function PerformanceCard({ label, valueCents, series, scope }: Performanc
           <Eyebrow>{label}</Eyebrow>
           {valueCents == null ? (
             <div className="heroValue" style={{ color: "var(--text-tertiary)" }}>
-              $—
+              —
             </div>
           ) : (
-            <BigValue cents={valueCents} />
+            <BigValue cents={valueCents} currency={currency} />
           )}
         </div>
 
@@ -110,15 +112,17 @@ export function PerformanceCard({ label, valueCents, series, scope }: Performanc
   );
 }
 
-function BigValue({ cents }: { cents: number }) {
-  const dollars = Math.trunc(cents / 100);
-  const frac = Math.abs(cents % 100)
-    .toString()
-    .padStart(2, "0");
+function BigValue({ cents, currency }: { cents: number; currency: string }) {
+  // Split at the decimal point so the fraction renders in the smaller cap;
+  // zero-decimal currencies (KRW, JPY) have no split.
+  const formatted = formatMoney(cents, currency);
+  const dot = formatted.lastIndexOf(".");
+  const main = dot >= 0 ? formatted.slice(0, dot) : formatted;
+  const frac = dot >= 0 ? formatted.slice(dot) : null;
   return (
     <div className="heroValue">
-      ${dollars.toLocaleString("en-US")}
-      <span className="heroValue__cents">.{frac}</span>
+      {main}
+      {frac && <span className="heroValue__cents">{frac}</span>}
     </div>
   );
 }

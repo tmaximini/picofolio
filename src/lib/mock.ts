@@ -33,6 +33,9 @@ export type Account = {
   primaryUse?: AccountUse;
   /** Provenance — lets us distinguish seeded demo data from real entries. */
   source?: "demo" | "manual" | "ibkr";
+  /** Base/reporting currency for values and P&L. Absent = USD. Auto-set on
+   *  first Flex sync (fill-if-unset — a Settings override is never clobbered). */
+  baseCurrency?: string;
 };
 
 /** Which lens an account leads with. Advisory only — see `Account.primaryUse`. */
@@ -49,6 +52,9 @@ export type Holding = {
    *  with no live Yahoo source (options, futures). Optional. */
   lastPriceCents?: number;
   source?: "demo" | "manual" | "ibkr";
+  /** ISO 4217 currency the position's prices are denominated in. Absent =
+   *  USD, or inferred from the Yahoo quote currency for manual holdings. */
+  currency?: string;
 };
 
 export type WeekBar = {

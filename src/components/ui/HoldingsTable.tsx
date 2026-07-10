@@ -3,8 +3,9 @@ import { ChevronRight } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { Holding } from "@/lib/mock";
 import { formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
-import { formatCents, formatPct, toneOf } from "@/lib/money";
+import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import {
+  useAccountBaseCurrency,
   useAccountValueCents,
   useAccounts,
   useHoldingsMetrics,
@@ -24,6 +25,7 @@ export function HoldingsTable({ accountId, cashCents }: HoldingsTableProps = {})
   const metrics = useHoldingsMetrics(accountId);
   const accounts = useAccounts();
   const totalValueCents = useAccountValueCents(accountId ?? "");
+  const baseCurrency = useAccountBaseCurrency(accountId);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const accountNameById = useMemo(
@@ -106,6 +108,7 @@ export function HoldingsTable({ accountId, cashCents }: HoldingsTableProps = {})
         showCashRow ? (
           <CashRow
             cashCents={cashCents!}
+            currency={baseCurrency}
             totalValueCents={totalValueCents}
             showAccount={showAccount}
             showWeight={showWeight}
@@ -137,7 +140,8 @@ function HoldingRow({
   totalValueCents,
   colSpan,
 }: HoldingRowProps) {
-  const { holding, priceCents, valueCents, dayPct, unrealCents, unrealPct } = metrics;
+  const { holding, priceCents, currency, baseCurrency, valueCents, dayPct, unrealCents, unrealPct } =
+    metrics;
 
   const weight =
     showWeight && valueCents != null && totalValueCents != null && totalValueCents > 0
@@ -162,9 +166,11 @@ function HoldingRow({
         )}
         <td className="num" style={{ color: "var(--text-secondary)" }}>{holding.qty.toLocaleString("en-US")}</td>
         <td className="num" style={{ color: "var(--text-secondary)" }}>
-          {priceCents != null ? formatCents(priceCents) : <Dash />}
+          {priceCents != null ? formatMoney(priceCents, currency) : <Dash />}
         </td>
-        <td className="num">{valueCents != null ? formatCents(valueCents) : <Dash />}</td>
+        <td className="num">
+          {valueCents != null ? formatMoney(valueCents, baseCurrency) : <Dash />}
+        </td>
         {showWeight && (
           <td className="num" style={{ color: "var(--text-secondary)" }}>
             {weight != null ? formatPct(weight).replace("+", "") : <Dash />}
@@ -174,7 +180,7 @@ function HoldingRow({
           <Pct value={dayPct} />
         </td>
         <td className="num">
-          <UnrealizedCell cents={unrealCents} pct={unrealPct} />
+          <UnrealizedCell cents={unrealCents} pct={unrealPct} currency={baseCurrency} />
         </td>
       </tr>
       <ExpandRow holding={holding} open={isOpen} colSpan={colSpan} />
@@ -222,7 +228,15 @@ function HoldingSymbolCell({ holding }: { holding: Holding }) {
   );
 }
 
-function UnrealizedCell({ cents, pct }: { cents: number | null; pct: number | null }) {
+function UnrealizedCell({
+  cents,
+  pct,
+  currency,
+}: {
+  cents: number | null;
+  pct: number | null;
+  currency: string;
+}) {
   if (cents == null) return <Dash />;
   const tone = toneOf(cents);
   const color = tone === "neutral" ? "var(--text-primary)" : `var(--${tone})`;
@@ -235,7 +249,7 @@ function UnrealizedCell({ cents, pct }: { cents: number | null; pct: number | nu
         lineHeight: 1.2,
       }}
     >
-      <span style={{ color }}>{formatCents(cents)}</span>
+      <span style={{ color }}>{formatMoney(cents, currency)}</span>
       {pct != null && (
         <span style={{ color, fontSize: "var(--text-xs)", opacity: 0.85 }}>
           {formatPct(pct)}
@@ -247,11 +261,13 @@ function UnrealizedCell({ cents, pct }: { cents: number | null; pct: number | nu
 
 function CashRow({
   cashCents,
+  currency,
   totalValueCents,
   showAccount,
   showWeight,
 }: {
   cashCents: number;
+  currency: string;
   totalValueCents: number | null;
   showAccount: boolean;
   showWeight: boolean;
@@ -276,7 +292,7 @@ function CashRow({
       <td className="num">
         <Dash />
       </td>
-      <td className="num">{formatCents(cashCents)}</td>
+      <td className="num">{formatMoney(cashCents, currency)}</td>
       {showWeight && (
         <td className="num" style={{ color: "var(--text-secondary)" }}>
           {weight != null ? formatPct(weight).replace("+", "") : <Dash />}

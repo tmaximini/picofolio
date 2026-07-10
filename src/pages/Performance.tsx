@@ -2,10 +2,15 @@ import { useMemo, useState } from "react";
 import { Topbar } from "@/components/layout";
 import { Card, Stat } from "@/components/primitives";
 import { BreakdownBars, PerformanceChart, type BreakdownBar } from "@/components/ui";
-import { formatCents, formatPct, toneOf } from "@/lib/money";
+import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import { breakdownBy, type BreakdownDimension } from "@/lib/performance";
 import { ALL_ACCOUNTS } from "@/store";
-import { useAccountById, usePerformanceStats, useSelectedAccountId } from "@/store/selectors";
+import {
+  useAccountBaseCurrency,
+  useAccountById,
+  usePerformanceStats,
+  useSelectedAccountId,
+} from "@/store/selectors";
 
 const DIMENSIONS: { key: BreakdownDimension; label: string }[] = [
   { key: "tag", label: "Setup" },
@@ -23,6 +28,7 @@ export function Performance() {
   const isAll = scope === ALL_ACCOUNTS;
   const account = useAccountById(isAll ? undefined : scope);
   const perf = usePerformanceStats(scope);
+  const baseCurrency = useAccountBaseCurrency(scope);
   const s = perf.summary;
   const [dim, setDim] = useState<BreakdownDimension>("tag");
 
@@ -48,10 +54,10 @@ export function Performance() {
         label: r.label,
         amount: r.pnlCents,
         tone: toneOf(r.pnlCents),
-        value: formatCents(r.pnlCents, true),
+        value: formatMoney(r.pnlCents, baseCurrency, true),
         sub: `${r.count} · ${Math.round(r.winRate * 100)}%`,
       }));
-  }, [perf.rows, dim]);
+  }, [perf.rows, dim, baseCurrency]);
 
   const hasR = perf.rBuckets.some((b) => b.count > 0);
   const rBars: BreakdownBar[] = perf.rBuckets.map((b) => ({
@@ -59,7 +65,7 @@ export function Performance() {
     amount: b.count,
     tone: b.positive ? "gain" : "loss",
     value: String(b.count),
-    sub: b.pnlCents !== 0 ? formatCents(b.pnlCents, true) : undefined,
+    sub: b.pnlCents !== 0 ? formatMoney(b.pnlCents, baseCurrency, true) : undefined,
   }));
 
   const subtitle = `All-time · ${isAll ? "All accounts" : account?.name ?? "Account"}`;
@@ -90,19 +96,19 @@ export function Performance() {
           rest support it a tier down. */}
       <Card>
         <div className="perfHero__chartLabel">Equity curve</div>
-        <PerformanceChart data={equitySeries} height={220} format="currency" step />
+        <PerformanceChart data={equitySeries} height={220} format="currency" step currency={baseCurrency} />
         <div className="perfHero__stats">
           <div className="perfHero__primary">
             <span className="stat__label">Net P&L</span>
             <span className="perfHero__primaryValue" style={colorFor(s.netCents)}>
-              {formatCents(s.netCents, true)}
+              {formatMoney(s.netCents, baseCurrency, true)}
             </span>
             <span className="perfHero__primaryMeta">all-time realized</span>
           </div>
           <div className="perfHero__secondary">
             <Stat
               label="Max Drawdown"
-              value={<span style={colorFor(-1)}>−{formatCents(s.maxDrawdownCents)}</span>}
+              value={<span style={colorFor(-1)}>−{formatMoney(s.maxDrawdownCents, baseCurrency)}</span>}
               delta={
                 s.maxDrawdownPct != null
                   ? { value: formatPct(s.maxDrawdownPct), tone: "loss" }
@@ -118,7 +124,7 @@ export function Performance() {
               label="Expectancy"
               value={
                 <span style={colorFor(s.expectancyCents)}>
-                  {formatCents(s.expectancyCents, true)}
+                  {formatMoney(s.expectancyCents, baseCurrency, true)}
                 </span>
               }
               delta={{ value: "per trade", tone: "neutral" }}
@@ -161,11 +167,11 @@ export function Performance() {
           />
           <Stat
             label="Avg Win"
-            value={<span style={colorFor(1)}>{formatCents(s.avgWinCents, true)}</span>}
+            value={<span style={colorFor(1)}>{formatMoney(s.avgWinCents, baseCurrency, true)}</span>}
           />
           <Stat
             label="Avg Loss"
-            value={<span style={colorFor(-1)}>{formatCents(s.avgLossCents, true)}</span>}
+            value={<span style={colorFor(-1)}>{formatMoney(s.avgLossCents, baseCurrency, true)}</span>}
           />
           <Stat label="Trades" value={String(s.trades)} />
         </div>
@@ -196,8 +202,8 @@ export function Performance() {
             value={`${Math.round(s.pctGreenDays * 100)}%`}
             delta={{ value: `${s.greenDays} / ${s.greenDays + s.redDays}`, tone: "neutral" }}
           />
-          <Stat label="Avg Up Day" value={<span style={colorFor(1)}>{formatCents(s.avgUpDayCents, true)}</span>} />
-          <Stat label="Avg Down Day" value={<span style={colorFor(-1)}>{formatCents(s.avgDownDayCents, true)}</span>} />
+          <Stat label="Avg Up Day" value={<span style={colorFor(1)}>{formatMoney(s.avgUpDayCents, baseCurrency, true)}</span>} />
+          <Stat label="Avg Down Day" value={<span style={colorFor(-1)}>{formatMoney(s.avgDownDayCents, baseCurrency, true)}</span>} />
         </div>
       </Card>
 
