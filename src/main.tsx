@@ -11,7 +11,6 @@ import "./styles/settings.css";
 import "./styles/cmdk.css";
 import "./styles/toast.css";
 import "./styles/switcher.css";
-import "./styles/welcome.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

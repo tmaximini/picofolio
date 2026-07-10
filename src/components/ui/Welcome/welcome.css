@@ -1,0 +1,449 @@
+/* ---------- LANDING / FIRST-RUN ----------
+   Full-page takeover shown on first run (and via "About"). A real landing
+   page: hero, product shots, feature grid, keyboard strip. Chiaroscuro on
+   the void — one warm light from above, everything else stays calm. */
+
+.landing {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* The "expensive" Fey glow: one warm source above the fold, nothing else. */
+  background:
+    radial-gradient(90% 48% at 50% -12%, var(--accent-muted), transparent 62%),
+    var(--surface-void);
+  opacity: 0;
+  animation: modalIn var(--duration-base) var(--ease-out) forwards;
+}
+
+/* Shared content column */
+.landing__nav,
+.landing__main,
+.landing__footer {
+  width: min(1100px, 100%);
+  margin-inline: auto;
+  padding-inline: var(--space-6);
+}
+
+/* ---------- nav ---------- */
+
+.landing__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-block: var(--space-5);
+}
+
+.landing__brand {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--accent);
+}
+
+.landing__navRight {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.landing__navLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.landing__navLink:hover {
+  color: var(--text-primary);
+}
+
+.landing__close {
+  position: static;
+}
+
+/* ---------- hero ---------- */
+
+.landing__hero {
+  padding-top: clamp(var(--space-10), 8vh, var(--space-20));
+  text-align: center;
+}
+
+/* Staggered entrance — one orchestrated reveal, then the page holds still. */
+.landing__hero > * {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: landingRise var(--duration-slow) var(--ease-out) forwards;
+}
+.landing__hero > :nth-child(2) { animation-delay: 60ms; }
+.landing__hero > :nth-child(3) { animation-delay: 120ms; }
+.landing__hero > :nth-child(4) { animation-delay: 180ms; }
+.landing__hero > :nth-child(5) { animation-delay: 220ms; }
+.landing__hero > :nth-child(6) { animation-delay: 300ms; }
+
+@keyframes landingRise {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.landing__eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-tertiary);
+}
+
+.landing__headline {
+  margin: var(--space-5) auto 0;
+  max-width: 17ch;
+  font-family: var(--font-display);
+  font-size: clamp(38px, 6vw, 68px);
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+.landing__headline em {
+  font-style: italic;
+  font-weight: 500;
+}
+
+.landing__sub {
+  margin: var(--space-5) auto 0;
+  max-width: 58ch;
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+.landing__cta {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-8);
+}
+/* Landing CTAs get a touch more presence than in-app buttons. */
+.landing__cta .btn {
+  padding: 9px 18px;
+  font-size: var(--text-sm);
+}
+
+.landing__foot {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+/* Hero product shot. The PNGs carry their own rounded frame on transparent
+   margins, so the shadow is a drop-shadow (follows the alpha edge), not a
+   box-shadow. A faint glow pools behind the glass. */
+.landing__shot {
+  position: relative;
+  isolation: isolate;
+  margin: var(--space-10) auto 0;
+}
+.landing__shot::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 12% 8% 20%;
+  background: radial-gradient(60% 50% at 50% 30%, var(--accent-glow), transparent 70%);
+  filter: blur(48px);
+  opacity: 0.5;
+}
+.landing__shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 32px 72px rgba(0, 0, 0, 0.65));
+}
+
+/* ---------- sections ---------- */
+
+.landing__section {
+  margin-top: clamp(var(--space-16), 12vh, 128px);
+  text-align: center;
+}
+
+.landing__sectionTitle {
+  margin: var(--space-4) auto 0;
+  max-width: 26ch;
+  font-family: var(--font-display);
+  font-size: clamp(var(--text-xl), 3.4vw, var(--text-2xl));
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+/* ---------- feature grid ---------- */
+
+.landing__features {
+  list-style: none;
+  margin: var(--space-10) 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: var(--space-3);
+  text-align: left;
+}
+
+.landing__feature {
+  padding: var(--space-5);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--highlight-top), var(--shadow-sm);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.landing__feature:hover {
+  border-color: var(--border-default);
+  background: var(--surface-hover);
+}
+
+.landing__featureIcon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--glass-medium);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.landing__featureLabel {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.landing__featureBody {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+/* ---------- showcases ---------- */
+
+.landing__showcase {
+  display: grid;
+  grid-template-columns: 5fr 7fr;
+  align-items: center;
+  gap: var(--space-12);
+  margin-top: clamp(var(--space-16), 12vh, 128px);
+}
+.landing__showcase--flip .landing__showcaseCopy {
+  order: 2;
+}
+
+.landing__showcaseTitle {
+  margin: var(--space-3) 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(var(--text-lg), 2.6vw, var(--text-xl));
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+.landing__showcaseBody {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--text-secondary);
+  max-width: 44ch;
+}
+
+.landing__showcasePoints {
+  list-style: none;
+  margin: var(--space-5) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.landing__showcasePoints li {
+  position: relative;
+  padding-left: var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.landing__showcasePoints li::before {
+  content: "—";
+  position: absolute;
+  left: 0;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.landing__showcaseShot {
+  margin: 0;
+  /* The shots include generous transparent margins — pull them in a bit so
+     the visible card sits tight against the copy column. */
+  margin-inline: -4%;
+}
+.landing__showcaseShot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 20px 48px rgba(0, 0, 0, 0.55));
+}
+
+/* ---------- keyboard strip ---------- */
+
+.landing__keys {
+  list-style: none;
+  margin: var(--space-8) auto 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.landing__key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3);
+  background: var(--glass-thin);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--highlight-top);
+}
+
+.landing__keyCaps {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.landing__keyLabel {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* ---------- closing CTA ---------- */
+
+.landing__closing {
+  margin-top: clamp(var(--space-16), 12vh, 128px);
+  text-align: center;
+}
+
+.landing__closingTitle {
+  margin: 0 auto;
+  max-width: 22ch;
+  font-family: var(--font-display);
+  font-size: clamp(var(--text-xl), 3.4vw, var(--text-2xl));
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+/* ---------- footer ---------- */
+
+.landing__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: clamp(var(--space-16), 12vh, 128px);
+  padding-block: var(--space-8);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.landing__footerFine {
+  color: var(--text-disabled);
+}
+
+/* ---------- danger (About mode: clear all data) ---------- */
+
+.landing__clearTrigger {
+  color: var(--loss);
+}
+
+.landing__danger {
+  margin: var(--space-8) auto 0;
+  max-width: 520px;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--loss-muted);
+  border: 1px solid var(--loss);
+  text-align: left;
+}
+.landing__danger .landing__cta {
+  justify-content: flex-start;
+  margin-top: var(--space-4);
+}
+.landing__dangerText {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--text-secondary);
+}
+.landing__dangerBtn {
+  background: var(--loss);
+  border-color: var(--loss-strong);
+  color: var(--surface-void);
+  font-weight: 500;
+}
+.landing__dangerBtn:hover {
+  background: var(--loss-strong);
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 900px) {
+  .landing__showcase {
+    grid-template-columns: 1fr;
+    gap: var(--space-6);
+    text-align: left;
+  }
+  .landing__showcase--flip .landing__showcaseCopy {
+    order: 0;
+  }
+  .landing__showcaseShot {
+    margin-inline: -6%;
+  }
+}
+
+@media (max-width: 560px) {
+  .landing__cta {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .landing__cta .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .landing__hero {
+    text-align: left;
+  }
+  .landing__hero .landing__cta {
+    align-items: stretch;
+  }
+  .landing__headline,
+  .landing__sub {
+    margin-inline: 0;
+  }
+}
