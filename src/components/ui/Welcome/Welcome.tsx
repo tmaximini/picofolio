@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import {
   BarChart3,
   CalendarDays,
+  Github,
   KeyRound,
   LineChart,
   Trash2,
@@ -175,6 +176,16 @@ export function Welcome() {
             ? "Demo data is fully removable later in Settings. No account required."
             : "Local-first · BYOK · your data never leaves your machine."}
         </p>
+
+        <a
+          className="welcome__github"
+          href="https://github.com/tmaximini/picofolio"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Github size={14} strokeWidth={1.75} />
+          <span>tmaximini/picofolio</span>
+        </a>
       </div>
     </div>,
     document.body,

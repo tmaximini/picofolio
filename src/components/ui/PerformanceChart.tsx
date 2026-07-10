@@ -3,7 +3,6 @@ import {
   BaselineSeries,
   ColorType,
   CrosshairMode,
-  HistogramSeries,
   LineStyle,
   LineType,
   TickMarkType,
@@ -13,6 +12,7 @@ import {
   type Time,
 } from "lightweight-charts";
 import { formatCents } from "@/lib/money";
+import { GradientBarsSeries } from "./perfBarsSeries";
 
 export type PerfPoint = {
   time: string | number;
@@ -137,7 +137,9 @@ export function PerformanceChart({
 }: PerformanceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<"Baseline"> | ISeriesApi<"Histogram"> | null>(null);
+  const seriesRef = useRef<
+    ISeriesApi<"Baseline"> | ISeriesApi<"Custom"> | null
+  >(null);
   // Lookup by date for the hover popover — kept in a ref so the (once-only)
   // crosshair subscription always reads the latest data.
   const byTimeRef = useRef<Map<string, PerfPoint>>(new Map());
@@ -219,10 +221,11 @@ export function PerformanceChart({
       formatter: format === "percent" ? percentFormatter : currencyFormatter,
       minMove: format === "percent" ? 0.01 : 1,
     };
-    const series: ISeriesApi<"Baseline"> | ISeriesApi<"Histogram"> =
+    const series: ISeriesApi<"Baseline"> | ISeriesApi<"Custom"> =
       kind === "bars"
-        ? chart.addSeries(HistogramSeries, {
-            base: 0,
+        ? chart.addCustomSeries(new GradientBarsSeries(), {
+            gainColor: tokens.gain,
+            lossColor: tokens.loss,
             priceFormat,
             priceLineVisible: false,
             lastValueVisible: false,
@@ -311,16 +314,9 @@ export function PerformanceChart({
     const map = new Map<string, PerfPoint>();
     for (const p of data) map.set(String(p.time), p);
     byTimeRef.current = map;
-    // Bars colour each point by sign; the line series carries no per-point color.
-    const rows =
-      kind === "bars"
-        ? data.map((p) => ({
-            time: p.time,
-            value: p.value,
-            color: p.value >= 0 ? tokens.gain : tokens.loss,
-          }))
-        : data;
-    series.setData(rows as { time: Time; value: number }[]);
+    // Both the baseline curve and the custom gradient-bars series take
+    // {time, value}; the bars derive their tone from the value's sign.
+    series.setData(data as { time: Time; value: number }[]);
     chart.timeScale().fitContent();
   }, [data, kind]);
 

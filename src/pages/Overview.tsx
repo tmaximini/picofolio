@@ -1,6 +1,6 @@
 import { ArrowRight, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Topbar } from "@/components/layout";
 import { Badge, Button, Card, EmptyState, Kbd, Stat } from "@/components/primitives";
 import {
@@ -11,6 +11,7 @@ import {
   PortfolioPerformanceCard,
 } from "@/components/ui";
 import { TradeViewModal } from "@/features/trades/TradeViewModal";
+import { rangeKeyToParam } from "@/lib/dateRange";
 import type { AccountUse } from "@/lib/mock";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
 import { ALL_ACCOUNTS } from "@/store";
@@ -282,6 +283,7 @@ function TradingPanel({ scope }: { scope: string }) {
       ? trades.length
       : trades.filter((t) => t.accountId === scope).length;
   const [viewTradeId, setViewTradeId] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   return (
     <section style={{ marginTop: "var(--space-5)" }}>
@@ -295,7 +297,13 @@ function TradingPanel({ scope }: { scope: string }) {
       {count === 0 ? (
         <LensEmpty>No trades logged yet</LensEmpty>
       ) : (
-        <JournalStats scope={scope} onOpenTrade={setViewTradeId} />
+        <JournalStats
+          scope={scope}
+          onOpenTrade={setViewTradeId}
+          onOpenJournal={(rangeKey) =>
+            navigate(`/activity?range=${rangeKeyToParam(rangeKey)}`)
+          }
+        />
       )}
       {viewTradeId && (
         <TradeViewModal tradeId={viewTradeId} onClose={() => setViewTradeId(null)} />

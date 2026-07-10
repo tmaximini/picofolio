@@ -1,5 +1,5 @@
 import { Plus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Kbd } from "@/components/primitives";
 import { riskReward } from "@/lib/tradeMath";
 import type {
@@ -9,6 +9,7 @@ import type {
   Trade,
   TradeExecution,
 } from "@/lib/trades";
+import { useLatestPrice } from "@/store/selectors";
 import { SymbolPreview } from "./SymbolPreview";
 
 const MARKETS: Market[] = ["STOCK", "OPTION", "CRYPTO", "FOREX", "FUTURE"];
@@ -37,6 +38,7 @@ type FormState = {
   market: Market;
   symbol: string;
   side: Side;
+  entry: string;
   target: string;
   stop: string;
   notes: string;
@@ -76,6 +78,7 @@ function initialFromTrade(trade?: Trade, prefill?: TradePrefill): FormState {
       market: prefill?.market ?? "STOCK",
       symbol: prefill?.symbol ?? "",
       side: prefill?.side ?? "LONG",
+      entry: centsToDollars(prefill?.entryCents),
       target: centsToDollars(prefill?.targetCents),
       stop: centsToDollars(prefill?.stopCents),
       notes: prefill?.notes ?? "",
@@ -93,10 +96,15 @@ function initialFromTrade(trade?: Trade, prefill?: TradePrefill): FormState {
       ],
     };
   }
+  // Entry mirrors the opening-side fill — the price you actually got in at.
+  const openingAction: ExecutionAction = trade.side === "LONG" ? "BUY" : "SELL";
+  const entryExec =
+    trade.executions.find((e) => e.action === openingAction) ?? trade.executions[0];
   return {
     market: trade.market,
     symbol: trade.symbol,
     side: trade.side,
+    entry: entryExec ? centsToDollars(entryExec.priceCents) : "",
     target: centsToDollars(trade.targetCents),
     stop: centsToDollars(trade.stopCents),
     notes: trade.notes ?? "",
@@ -177,6 +185,46 @@ export function TradeForm({
     }
   };
 
+  // Default the entry to the live market price once it loads (new trades only),
+  // and seed the opening execution's fill from it. Seeded at most once per
+  // symbol so the user stays free to clear or override it afterward.
+  const latest = useLatestPrice(lockedSymbol);
+  const marketSeededRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (trade) return; // editing an existing trade: leave levels untouched
+    if (!lockedSymbol || latest == null) return;
+    if (marketSeededRef.current === lockedSymbol) return;
+    marketSeededRef.current = lockedSymbol;
+    setForm((f) => {
+      if (f.entry.trim()) return f; // user already set an entry
+      const priceStr = latest.toFixed(2);
+      const opening: ExecutionAction = f.side === "LONG" ? "BUY" : "SELL";
+      const rowId = (f.execs.find((e) => e.action === opening) ?? f.execs[0])?.id;
+      return {
+        ...f,
+        entry: priceStr,
+        execs: f.execs.map((e) =>
+          e.id === rowId && !e.price ? { ...e, price: priceStr } : e,
+        ),
+      };
+    });
+  }, [trade, lockedSymbol, latest]);
+
+  // Entry is the R:R anchor; the opening fill defaults to it until the user
+  // types a fill of their own — then the two are independent.
+  const setEntry = (value: string) =>
+    setForm((f) => {
+      const opening: ExecutionAction = f.side === "LONG" ? "BUY" : "SELL";
+      const rowId = (f.execs.find((e) => e.action === opening) ?? f.execs[0])?.id;
+      return {
+        ...f,
+        entry: value,
+        execs: f.execs.map((e) =>
+          e.id === rowId && !e.price ? { ...e, price: value } : e,
+        ),
+      };
+    });
+
   const updateExec = (id: string, patch: Partial<FormExec>) =>
     setForm((f) => ({
       ...f,
@@ -251,13 +299,19 @@ export function TradeForm({
     });
   };
 
-  // Live R:R from the planned levels and the first opening-side fill.
+  // Live R:R from the planned levels. Anchor on the top-level entry, falling
+  // back to the first priced fill if the entry field is left blank.
   const openingAction: ExecutionAction = form.side === "LONG" ? "BUY" : "SELL";
   const entryExec =
     form.execs.find((e) => e.action === openingAction && e.price) ??
     form.execs.find((e) => e.price);
+  const entryCents = form.entry.trim()
+    ? dollarsToCents(form.entry)
+    : entryExec
+      ? dollarsToCents(entryExec.price)
+      : null;
   const rr = riskReward(
-    entryExec ? dollarsToCents(entryExec.price) : null,
+    entryCents,
     form.target ? dollarsToCents(form.target) : null,
     form.stop ? dollarsToCents(form.stop) : null,
     form.side,
@@ -346,6 +400,16 @@ export function TradeForm({
 
         <div className="tradeForm__row tradeForm__row--levels">
           <div className="tradeForm__field">
+            <label className="tradeForm__label">Entry</label>
+            <input
+              className="tradeForm__input num"
+              value={form.entry}
+              onChange={(e) => setEntry(e.target.value)}
+              placeholder="0.00"
+              inputMode="decimal"
+            />
+          </div>
+          <div className="tradeForm__field">
             <label className="tradeForm__label">Target</label>
             <input
               className="tradeForm__input num"
@@ -376,7 +440,9 @@ export function TradeForm({
           </div>
         </div>
 
-        {lockedSymbol && <SymbolPreview symbol={lockedSymbol} />}
+        {lockedSymbol && (
+          <>
+            <SymbolPreview symbol={lockedSymbol} />
 
         <div className="tradeForm__execTable">
           <div className="tradeForm__execCols tradeForm__execHead">
@@ -499,6 +565,8 @@ export function TradeForm({
             </div>
           </div>
         </div>
+          </>
+        )}
       </div>
 
       <div className="modal__foot">

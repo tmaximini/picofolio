@@ -1,6 +1,11 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ExternalLink } from "lucide-react";
 import { PriceChart } from "@/components/ui";
 import { formatPct, toneOf } from "@/lib/money";
+import {
+  tradingViewChartUrl,
+  tradingViewEmbedUrl,
+} from "@/lib/tradingview";
 import {
   useHoldingDelta,
   useLatestPrice,
@@ -21,6 +26,7 @@ type SymbolPreviewProps = {
  * session loads instantly.
  */
 export function SymbolPreview({ symbol }: SymbolPreviewProps) {
+  const [tvEmbedded, setTvEmbedded] = useState(false);
   const loadPrice = useLoadPrice();
   const status = usePriceStatus(symbol);
   const points = usePricePoints(symbol);
@@ -62,8 +68,64 @@ export function SymbolPreview({ symbol }: SymbolPreviewProps) {
           <DeltaCell label="YTD" value={ytdDelta} />
         </div>
       </div>
+      <div className="symbolPreview__chartHead">
+        <div className="chartSource" role="tablist" aria-label="Chart source">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={!tvEmbedded}
+            className={
+              tvEmbedded ? "chartSource__seg" : "chartSource__seg chartSource__seg--active"
+            }
+            onClick={() => setTvEmbedded(false)}
+          >
+            Picofolio
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tvEmbedded}
+            className={
+              tvEmbedded ? "chartSource__seg chartSource__seg--active" : "chartSource__seg"
+            }
+            onClick={() => setTvEmbedded(true)}
+          >
+            TradingView
+          </button>
+        </div>
+        {tvEmbedded && symbol ? (
+          <a
+            className="chartToolbar__btn"
+            href={tradingViewChartUrl(symbol)}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`Open ${symbol} on TradingView`}
+          >
+            <span>Open in TradingView</span>
+            <ExternalLink size={11} strokeWidth={1.75} />
+          </a>
+        ) : null}
+      </div>
       <div className="symbolPreview__chart">
-        {trimmed && trimmed.length > 0 ? (
+        {tvEmbedded && symbol ? (
+          <div
+            className="tvEmbed"
+            style={{
+              height: "clamp(360px, 48vh, 560px)",
+              background: "var(--surface-base)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "var(--radius-md)",
+              overflow: "hidden",
+            }}
+          >
+            <iframe
+              title={`TradingView ${symbol}`}
+              src={tradingViewEmbedUrl(symbol, { interval: "D" })}
+              style={{ width: "100%", height: "100%", border: 0, display: "block" }}
+              allowFullScreen
+            />
+          </div>
+        ) : trimmed && trimmed.length > 0 ? (
           <PriceChart data={trimmed} height={120} />
         ) : (
           <div className="priceChart priceChart--fallback" style={{ height: 120 }}>

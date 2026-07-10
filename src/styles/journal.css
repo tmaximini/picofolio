@@ -1096,7 +1096,7 @@
   grid-template-columns: 130px minmax(0, 1fr) 132px;
 }
 .tradeForm__row--levels {
-  grid-template-columns: 1fr 1fr 110px;
+  grid-template-columns: 1fr 1fr 1fr 110px;
   margin-bottom: var(--space-5);
 }
 .tradeForm__field {
@@ -1390,6 +1390,14 @@
 .symbolPreview__deltaValue--gain { color: var(--gain); }
 .symbolPreview__deltaValue--loss { color: var(--loss); }
 .symbolPreview__deltaValue--neutral { color: var(--text-secondary); }
+
+.symbolPreview__chartHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
 
 .symbolPreview__chart {
   width: 100%;

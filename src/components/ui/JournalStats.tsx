@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { CalendarDays, ChevronRight } from "lucide-react";
 import { formatCents, formatPct, toneOf } from "@/lib/money";
 import { parseOccSymbol } from "@/lib/optionSymbol";
-import { eachDayKey, rangeFor, todayKey } from "@/lib/dateRange";
+import { eachDayKey, rangeFor, todayKey, type DateRangeKey } from "@/lib/dateRange";
 import { useJournalRange, useTradeStats } from "@/store/selectors";
 import { PerformanceChart, type PerfPoint } from "./PerformanceChart";
 
@@ -63,9 +63,11 @@ type JournalStatsProps = {
   scope?: string;
   /** Open a trade's detail modal — makes the Best/Worst cards clickable. */
   onOpenTrade?: (id: string) => void;
+  /** Jump to the full journal at the current range — makes the Trades card clickable. */
+  onOpenJournal?: (rangeKey: DateRangeKey) => void;
 };
 
-export function JournalStats({ scope, onOpenTrade }: JournalStatsProps) {
+export function JournalStats({ scope, onOpenTrade, onOpenJournal }: JournalStatsProps) {
   const stats = useTradeStats(scope);
   const rangeKey = useJournalRange();
   const pnlTone = toneOf(stats.pnlCents);
@@ -257,6 +259,7 @@ export function JournalStats({ scope, onOpenTrade }: JournalStatsProps) {
           tip={TIPS.trades}
           value={String(closed + stats.open)}
           sub={`${closed} closed${stats.open > 0 ? ` · ${stats.open} open` : ""}`}
+          onClick={onOpenJournal ? () => onOpenJournal(rangeKey) : undefined}
         />
         <StatCard
           label="Avg win / loss"
