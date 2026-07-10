@@ -1,7 +1,8 @@
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { Eyebrow } from "@/components/primitives";
-import { formatCents, formatPct, toneOf } from "@/lib/money";
+import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import {
+  usePortfolioBaseCurrency,
   usePortfolioDeltaCents,
   usePortfolioValueCents,
 } from "@/store/selectors";
@@ -17,27 +18,39 @@ export function HeroValueCard({
 }: HeroValueCardProps) {
   const valueCents = usePortfolioValueCents();
   const deltaCents = usePortfolioDeltaCents("1W");
+  const currency = usePortfolioBaseCurrency();
 
   return (
     <div className="heroCard">
       <div className="heroCard__inner">
         <Eyebrow>{label}</Eyebrow>
-        {valueCents == null ? <ValueSkeleton /> : <Value valueCents={valueCents} />}
-        <Meta deltaCents={deltaCents} valueCents={valueCents} caption={caption} />
+        {valueCents == null ? (
+          <ValueSkeleton />
+        ) : (
+          <Value valueCents={valueCents} currency={currency} />
+        )}
+        <Meta
+          deltaCents={deltaCents}
+          valueCents={valueCents}
+          caption={caption}
+          currency={currency}
+        />
       </div>
     </div>
   );
 }
 
-function Value({ valueCents }: { valueCents: number }) {
-  const dollars = Math.trunc(valueCents / 100);
-  const cents = Math.abs(valueCents % 100)
-    .toString()
-    .padStart(2, "0");
+function Value({ valueCents, currency }: { valueCents: number; currency: string }) {
+  // Split the formatted amount at its decimal point so the fraction renders
+  // in the smaller cap — zero-decimal currencies (KRW, JPY) have no split.
+  const formatted = formatMoney(valueCents, currency);
+  const dot = formatted.lastIndexOf(".");
+  const main = dot >= 0 ? formatted.slice(0, dot) : formatted;
+  const frac = dot >= 0 ? formatted.slice(dot) : null;
   return (
     <div className="heroValue">
-      ${dollars.toLocaleString("en-US")}
-      <span className="heroValue__cents">.{cents}</span>
+      {main}
+      {frac && <span className="heroValue__cents">{frac}</span>}
     </div>
   );
 }
@@ -45,7 +58,7 @@ function Value({ valueCents }: { valueCents: number }) {
 function ValueSkeleton() {
   return (
     <div className="heroValue" style={{ color: "var(--text-tertiary)" }}>
-      $—
+      —
     </div>
   );
 }
@@ -54,9 +67,10 @@ type MetaProps = {
   deltaCents: number | null;
   valueCents: number | null;
   caption: string;
+  currency: string;
 };
 
-function Meta({ deltaCents, valueCents, caption }: MetaProps) {
+function Meta({ deltaCents, valueCents, caption, currency }: MetaProps) {
   if (deltaCents == null || valueCents == null) {
     return (
       <div className="heroMeta">
@@ -71,7 +85,7 @@ function Meta({ deltaCents, valueCents, caption }: MetaProps) {
     <div className="heroMeta">
       <span className={`stat__delta stat__delta--${tone}`}>
         <Arrow size={14} strokeWidth={1.75} />
-        {formatCents(Math.abs(deltaCents))}
+        {formatMoney(Math.abs(deltaCents), currency)}
       </span>
       <span className={`stat__delta stat__delta--${tone}`}>{formatPct(pct)}</span>
       <span className="heroMeta__caption">{caption}</span>

@@ -7,6 +7,7 @@
  * When Tauri lands these move to Rust commands and the proxy goes away.
  */
 
+import { MINOR_UNIT_CURRENCIES } from "./fx";
 import type { PricePoint } from "./priceHistory";
 
 /** Intraday close point with sub-day timestamp (Unix seconds, UTC). */
@@ -25,6 +26,7 @@ export function toYahooSymbol(s: string): string {
 type YahooResponse = {
   chart: {
     result?: Array<{
+      meta?: { currency?: string | null };
       timestamp: number[];
       indicators: {
         quote: Array<{ close: Array<number | null> }>;
@@ -34,10 +36,79 @@ type YahooResponse = {
   };
 };
 
+/**
+ * Normalize a Yahoo quote currency to its major unit. LSE quotes arrive
+ * in pence ("GBp"), JSE in cents ("ZAc") — values there are ÷100 so the
+ * whole app deals in major units only (matching IBKR, which reports LSE
+ * fills in GBP). Returns the major-unit code and the value scale factor.
+ */
+function normalizeQuoteCurrency(raw: string | null | undefined): {
+  currency: string | null;
+  scale: number;
+} {
+  if (!raw) return { currency: null, scale: 1 };
+  const major = MINOR_UNIT_CURRENCIES[raw];
+  if (major) return { currency: major, scale: 0.01 };
+  return { currency: raw.toUpperCase(), scale: 1 };
+}
+
+/** Daily series plus the (major-unit) currency the quotes are in. */
+export type YahooDaily = { points: PricePoint[]; currency: string | null };
+
+/** One hit from Yahoo's symbol search — already carries the exchange
+ *  suffix ("000660.KS"), so a picked symbol is chart-ready as-is. */
+export type YahooSearchHit = {
+  symbol: string;
+  name: string;
+  /** Human exchange name ("Korea", "NASDAQ", "London"). */
+  exchange: string;
+  /** Instrument kind ("Equity", "ETF"). */
+  type: string;
+};
+
+type YahooSearchResponse = {
+  quotes?: Array<{
+    symbol?: string;
+    shortname?: string;
+    longname?: string;
+    exchDisp?: string;
+    typeDisp?: string;
+    quoteType?: string;
+    isYahooFinance?: boolean;
+  }>;
+};
+
+/** Instrument kinds worth offering when adding a position. */
+const SEARCH_TYPES = new Set(["EQUITY", "ETF", "MUTUALFUND", "INDEX"]);
+
+/** Symbol/name search against Yahoo's search endpoint (same proxy as the
+ *  chart calls). Returns chart-ready symbols; caller debounces. */
+export async function searchYahoo(query: string): Promise<YahooSearchHit[]> {
+  const url = `/api/yahoo/v1/finance/search?q=${encodeURIComponent(
+    query,
+  )}&quotesCount=8&newsCount=0&listsCount=0`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Yahoo search ${res.status}`);
+  const json = (await res.json()) as YahooSearchResponse;
+  return (json.quotes ?? [])
+    .filter(
+      (q) =>
+        q.symbol &&
+        q.isYahooFinance !== false &&
+        SEARCH_TYPES.has((q.quoteType ?? "").toUpperCase()),
+    )
+    .map((q) => ({
+      symbol: q.symbol!,
+      name: q.longname ?? q.shortname ?? q.symbol!,
+      exchange: q.exchDisp ?? "",
+      type: q.typeDisp ?? "",
+    }));
+}
+
 export async function fetchYahooDaily(
   symbol: string,
   range: "1y" | "2y" | "5y" | "max" = "2y",
-): Promise<PricePoint[]> {
+): Promise<YahooDaily> {
   const url = `/api/yahoo/v8/finance/chart/${encodeURIComponent(
     toYahooSymbol(symbol),
   )}?range=${range}&interval=1d`;
@@ -55,6 +126,7 @@ export async function fetchYahooDaily(
   const result = json.chart.result?.[0];
   if (!result) throw new Error(`No data for ${symbol}`);
 
+  const { currency, scale } = normalizeQuoteCurrency(result.meta?.currency);
   const times = result.timestamp;
   const closes = result.indicators.quote[0]?.close ?? [];
   const out: PricePoint[] = [];
@@ -63,10 +135,10 @@ export async function fetchYahooDaily(
     const c = closes[i];
     if (c == null || !Number.isFinite(c)) continue;
     const d = new Date(times[i]! * 1000);
-    out.push({ time: d.toISOString().slice(0, 10), value: c });
+    out.push({ time: d.toISOString().slice(0, 10), value: c * scale });
   }
 
-  return out;
+  return { points: out, currency };
 }
 
 /**
@@ -147,6 +219,9 @@ export async function fetchYahooIntraday(
   const result = json.chart.result?.[0];
   if (!result) throw new Error(`No intraday data for ${symbol}`);
 
+  // Same pence→major normalization as the daily fetch so intraday value
+  // reconstruction never mixes GBp with GBP.
+  const { scale } = normalizeQuoteCurrency(result.meta?.currency);
   const times = result.timestamp;
   const closes = result.indicators.quote[0]?.close ?? [];
 
@@ -161,7 +236,7 @@ export async function fetchYahooIntraday(
     const c = closes[i];
     if (c == null || !Number.isFinite(c)) continue;
     const t = times[i]!;
-    out.push({ time: t, value: c });
+    out.push({ time: t, value: c * scale });
   }
 
   return out;

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronsUpDown, Layers, Pencil, Plus } from "lucide-react";
-import { formatCents } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 import { ALL_ACCOUNTS } from "@/store";
 import type { Account } from "@/lib/mock";
 import {
   useAccountValueCents,
   useAccounts,
+  usePortfolioBaseCurrency,
   usePortfolioValueCents,
   useSelectedAccountId,
   useSetSelectedAccount,
@@ -23,6 +24,7 @@ export function AccountSwitcher({ onNewAccount, onEditAccount }: AccountSwitcher
   const selectedId = useSelectedAccountId();
   const setSelected = useSetSelectedAccount();
   const portfolioCents = usePortfolioValueCents();
+  const portfolioBase = usePortfolioBaseCurrency();
 
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -95,7 +97,7 @@ export function AccountSwitcher({ onNewAccount, onEditAccount }: AccountSwitcher
               <span className="acctSwitcher__rowName">All Accounts</span>
             </span>
             <span className="acctSwitcher__rowValue num">
-              {portfolioCents != null ? formatCents(portfolioCents, true) : "—"}
+              {portfolioCents != null ? formatMoney(portfolioCents, portfolioBase, true) : "—"}
             </span>
             <span className="acctSwitcher__slot">
               {isAll && <Check size={13} strokeWidth={2} className="acctSwitcher__check" />}
@@ -150,6 +152,7 @@ function AccountRow({
   onEdit?: () => void;
 }) {
   const valueCents = useAccountValueCents(account.id);
+  const baseCurrency = account.baseCurrency ?? "USD";
   return (
     <div className={`acctSwitcher__row${active ? " acctSwitcher__row--active" : ""}`}>
       <button
@@ -163,7 +166,7 @@ function AccountRow({
         <span className="acctSwitcher__rowName">{account.name}</span>
       </button>
       <span className="acctSwitcher__rowValue num">
-        {valueCents != null ? formatCents(valueCents, true) : "—"}
+        {valueCents != null ? formatMoney(valueCents, baseCurrency, true) : "—"}
       </span>
       <span className="acctSwitcher__slot">
         {active && <Check size={13} strokeWidth={2} className="acctSwitcher__check" />}

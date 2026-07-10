@@ -43,7 +43,7 @@ The bias is always toward restraint: darker, calmer, more typographic.
 
 - Dividend forecasting
 - Tax-lot accounting
-- Multi-currency reporting (use account currency only)
+- Per-currency P&L breakdowns (values report in the account's base currency; foreign positions show native prices and convert at daily FX rates — see `src/lib/fx.ts`)
 - Benchmarking vs S&P
 - News feeds
 - AI features

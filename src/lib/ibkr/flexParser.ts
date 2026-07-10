@@ -20,6 +20,7 @@ import type {
   Trade,
   TradeExecution,
 } from "../trades";
+import { isUnknownExchange, yahooSymbolFor } from "./exchangeMap";
 
 export type ParsedExecution = {
   /** IBKR tradeID — globally unique per execution. Used for dedupe. */
@@ -40,6 +41,10 @@ export type ParsedExecution = {
   feeCents: number;
   /** Reported by IBKR: "O" (open) or "C" (close). May be empty. */
   openClose: "O" | "C" | "";
+  /** ISO 4217 currency of the trade's prices. Absent = USD. */
+  currency?: string;
+  /** IBKR listing exchange code (LSE, KSE, TWSE, …). */
+  listingExchange?: string;
 };
 
 /** A current open position from the Flex <OpenPositions> section. */
@@ -54,6 +59,8 @@ export type ParsedPosition = {
   /** IBKR's last mark price per unit, in cents. Used to value instruments
    *  with no Yahoo source (options, futures). 0 if not reported. */
   markPriceCents: number;
+  /** ISO 4217 currency the position's prices are denominated in. Absent = USD. */
+  currency?: string;
 };
 
 /** One day of broker-reported NAV, from the "Net Asset Value (NAV) in Base"
@@ -80,6 +87,11 @@ export type FlexParseResult = {
   nav: ParsedNavPoint[];
   warnings: string[];
   accountIds: string[];
+  /** Detected account base currency per raw IBKR accountId. "" key =
+   *  statement-level (no accountId on the source row). Empty when the
+   *  query includes none of the detectable sections — caller falls back
+   *  to USD. */
+  baseCurrencyByAccount: Record<string, string>;
 };
 
 const ASSET_CATEGORY_MAP: Record<string, Market> = {
@@ -121,7 +133,41 @@ function abs(n: number): number {
   return Math.abs(n);
 }
 
-function parseTradeElement(el: Element, warnings: string[]): ParsedExecution | null {
+/** Read the row's currency + listing exchange and map the symbol to its
+ *  Yahoo form (STK only — OCC/futures/CASH symbols must stay raw). Warns
+ *  once per unknown non-US exchange code so the sync toast surfaces it. */
+function resolveListing(
+  el: Element,
+  symbol: string,
+  market: Market,
+  warnings: string[],
+  warnedExchanges: Set<string>,
+): { symbol: string; currency?: string; listingExchange?: string } {
+  const currency = el.getAttribute("currency")?.toUpperCase() || undefined;
+  const listingExchange =
+    el.getAttribute("listingExchange") || el.getAttribute("exchange") || undefined;
+  if (market !== "STOCK" || !listingExchange) {
+    return { symbol, currency, listingExchange };
+  }
+  const mapped = yahooSymbolFor(symbol, listingExchange);
+  if (
+    mapped === symbol &&
+    isUnknownExchange(listingExchange) &&
+    !warnedExchanges.has(listingExchange)
+  ) {
+    warnedExchanges.add(listingExchange);
+    warnings.push(
+      `Unknown exchange "${listingExchange}" (${symbol}) — kept the raw symbol; edit the ticker to add a Yahoo suffix if charts don't load.`,
+    );
+  }
+  return { symbol: mapped, currency, listingExchange };
+}
+
+function parseTradeElement(
+  el: Element,
+  warnings: string[],
+  warnedExchanges: Set<string>,
+): ParsedExecution | null {
   const tradeID = el.getAttribute("tradeID") ?? "";
   if (!tradeID) {
     warnings.push("Trade row missing tradeID — skipped");
@@ -178,10 +224,12 @@ function parseTradeElement(el: Element, warnings: string[]): ParsedExecution | n
 
   const ibOrderID = el.getAttribute("ibOrderID") ?? "";
 
+  const listing = resolveListing(el, symbol, market, warnings, warnedExchanges);
+
   return {
     tradeID,
     ibOrderID,
-    symbol,
+    symbol: listing.symbol,
     market,
     accountId,
     action,
@@ -190,11 +238,17 @@ function parseTradeElement(el: Element, warnings: string[]): ParsedExecution | n
     priceCents,
     feeCents,
     openClose,
+    currency: listing.currency,
+    listingExchange: listing.listingExchange,
   };
 }
 
 /** Parse the <OpenPositions> section into current positions. */
-function parseOpenPositions(doc: Document, warnings: string[]): ParsedPosition[] {
+function parseOpenPositions(
+  doc: Document,
+  warnings: string[],
+  warnedExchanges: Set<string>,
+): ParsedPosition[] {
   const els = Array.from(doc.getElementsByTagName("OpenPosition"));
   const out: ParsedPosition[] = [];
   for (const el of els) {
@@ -219,7 +273,17 @@ function parseOpenPositions(doc: Document, warnings: string[]): ParsedPosition[]
     // Last mark price per share/contract (per-share, multiplier excluded).
     const markPriceCents = dollarsStringToCents(el.getAttribute("markPrice"));
 
-    out.push({ symbol, market, accountId, qty, avgCostCents, markPriceCents });
+    const listing = resolveListing(el, symbol, market, warnings, warnedExchanges);
+
+    out.push({
+      symbol: listing.symbol,
+      market,
+      accountId,
+      qty,
+      avgCostCents,
+      markPriceCents,
+      currency: listing.currency,
+    });
   }
   if (els.length > 0 && out.length === 0) {
     warnings.push("Open positions section had no usable rows.");
@@ -245,6 +309,44 @@ function parseCashCents(doc: Document): number {
   if (base) return pick(base);
   // Single-currency account: use the sole row.
   return rows.length === 1 ? pick(rows[0]!) : 0;
+}
+
+/**
+ * Detect each account's base currency. The BASE_SUMMARY cash row's
+ * `currency` attr is literally the string "BASE_SUMMARY", so the base
+ * must come from other sections, in order of reliability:
+ *   1. <AccountInformation currency="…"> (Account Information section)
+ *   2. `currency` attr on <EquitySummaryByReportDateInBase> rows
+ *   3. a sole non-BASE_SUMMARY <CashReportCurrency> row (single-currency account)
+ */
+function parseBaseCurrencies(doc: Document): Record<string, string> {
+  const out: Record<string, string> = {};
+  const put = (el: Element) => {
+    const cur = (el.getAttribute("currency") ?? "").toUpperCase();
+    if (!cur || cur === "BASE_SUMMARY" || cur.length !== 3) return;
+    const accountId = el.getAttribute("accountId") ?? "";
+    if (out[accountId] == null) out[accountId] = cur;
+  };
+
+  for (const el of Array.from(doc.getElementsByTagName("AccountInformation"))) {
+    put(el);
+  }
+  if (Object.keys(out).length > 0) return out;
+
+  for (const el of Array.from(
+    doc.getElementsByTagName("EquitySummaryByReportDateInBase"),
+  )) {
+    put(el);
+  }
+  if (Object.keys(out).length > 0) return out;
+
+  const cashRows = Array.from(
+    doc.getElementsByTagName("CashReportCurrency"),
+  ).filter(
+    (r) => (r.getAttribute("currency") ?? "").toUpperCase() !== "BASE_SUMMARY",
+  );
+  if (cashRows.length === 1) put(cashRows[0]!);
+  return out;
 }
 
 /**
@@ -470,6 +572,7 @@ function buildTradeFromBucket(
     executions,
     tags: [],
     source: "ibkr",
+    currency: bucket[0]!.currency,
   };
 
   // If forceOpen, the user may have closed it manually elsewhere — leave it
@@ -499,15 +602,17 @@ export function parseFlexXml(xml: string): FlexParseResult {
     throw new Error(`IBKR Flex error ${errCode}: ${errMsg}`);
   }
 
-  const positions = parseOpenPositions(doc, warnings);
+  const warnedExchanges = new Set<string>();
+  const positions = parseOpenPositions(doc, warnings, warnedExchanges);
   const cashCents = parseCashCents(doc);
   const nav = parseNavHistory(doc, warnings);
+  const baseCurrencyByAccount = parseBaseCurrencies(doc);
 
   const tradeEls = Array.from(doc.getElementsByTagName("Trade"));
   const executions: ParsedExecution[] = [];
   const accountIds = new Set<string>();
   for (const el of tradeEls) {
-    const parsed = parseTradeElement(el, warnings);
+    const parsed = parseTradeElement(el, warnings, warnedExchanges);
     if (parsed) {
       executions.push(parsed);
       if (parsed.accountId) accountIds.add(parsed.accountId);
@@ -530,5 +635,6 @@ export function parseFlexXml(xml: string): FlexParseResult {
     nav,
     warnings,
     accountIds: Array.from(accountIds),
+    baseCurrencyByAccount,
   };
 }

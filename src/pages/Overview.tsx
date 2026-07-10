@@ -13,9 +13,10 @@ import {
 import { TradeViewModal } from "@/features/trades/TradeViewModal";
 import { rangeKeyToParam } from "@/lib/dateRange";
 import type { AccountUse } from "@/lib/mock";
-import { formatCents, formatPct, toneOf } from "@/lib/money";
+import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import { ALL_ACCOUNTS } from "@/store";
 import {
+  useAccountBaseCurrency,
   useAccountById,
   useAccountDeltaCents,
   useAccountReturn,
@@ -172,6 +173,7 @@ function AccountOverview({ accountId }: { accountId: string }) {
   const allHoldings = useHoldings();
   const trades = useTrades();
   const value = useAccountValueCents(accountId);
+  const baseCurrency = useAccountBaseCurrency(accountId);
   const valueSeries = useAccountValueSeries(accountId);
   const ret = useAccountReturn(accountId);
   const dayDelta = useAccountDeltaCents(accountId, "1D");
@@ -190,7 +192,7 @@ function AccountOverview({ accountId }: { accountId: string }) {
     <>
       <Topbar
         title={account.name}
-        subtitle={`${formatCents(account.cashCents)} cash · ${positions} ${positions === 1 ? "position" : "positions"}`}
+        subtitle={`${formatMoney(account.cashCents, baseCurrency)} cash · ${positions} ${positions === 1 ? "position" : "positions"}`}
         actions={<SyncButton accountId={accountId} />}
       />
 
@@ -203,6 +205,7 @@ function AccountOverview({ accountId }: { accountId: string }) {
             valueCents={value}
             series={valueSeries}
             scope={accountId}
+            currency={baseCurrency}
           />
 
           <Card style={{ marginBottom: "var(--space-5)" }}>
@@ -211,10 +214,11 @@ function AccountOverview({ accountId }: { accountId: string }) {
                 label="Total Return"
                 gainCents={ret?.gainCents ?? null}
                 pct={ret?.returnPct ?? null}
+                currency={baseCurrency}
               />
-              <DeltaStat label="Day" cents={dayDelta} baseValue={value} />
-              <DeltaStat label="Week" cents={weekDelta} baseValue={value} />
-              <DeltaStat label="Month" cents={monthDelta} baseValue={value} />
+              <DeltaStat label="Day" cents={dayDelta} baseValue={value} currency={baseCurrency} />
+              <DeltaStat label="Week" cents={weekDelta} baseValue={value} currency={baseCurrency} />
+              <DeltaStat label="Month" cents={monthDelta} baseValue={value} currency={baseCurrency} />
             </div>
           </Card>
 
@@ -341,10 +345,12 @@ function ReturnStatCell({
   label,
   gainCents,
   pct,
+  currency = "USD",
 }: {
   label: string;
   gainCents: number | null;
   pct: number | null;
+  currency?: string;
 }) {
   if (gainCents == null) return <Stat label={label} value={<Dash />} />;
   const tone = toneOf(gainCents);
@@ -352,7 +358,7 @@ function ReturnStatCell({
   return (
     <Stat
       label={label}
-      value={<span style={{ color }}>{formatCents(gainCents)}</span>}
+      value={<span style={{ color }}>{formatMoney(gainCents, currency)}</span>}
       delta={
         pct != null
           ? { value: formatPct(pct), tone: tone === "neutral" ? "neutral" : tone }
@@ -366,10 +372,12 @@ function DeltaStat({
   label,
   cents,
   baseValue,
+  currency = "USD",
 }: {
   label: string;
   cents: number | null;
   baseValue?: number | null;
+  currency?: string;
 }) {
   if (cents == null) return <Stat label={label} value={<Dash />} />;
   const tone = toneOf(cents);
@@ -380,7 +388,7 @@ function DeltaStat({
   return (
     <Stat
       label={label}
-      value={<span style={{ color }}>{formatCents(cents)}</span>}
+      value={<span style={{ color }}>{formatMoney(cents, currency)}</span>}
       delta={
         pct != null
           ? { value: formatPct(pct), tone: tone === "neutral" ? "neutral" : tone }

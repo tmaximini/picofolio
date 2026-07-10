@@ -653,6 +653,18 @@
   font-style: italic;
   font-size: var(--text-xs);
 }
+/* Open position WITH a live price — unrealized preview P/L. Keeps the
+   gain/loss hue from the cell but muted, with an ≈ prefix, so a glance
+   separates "how it's going" from booked returns on closed rows. */
+.tradeTable__returnPreview {
+  opacity: 0.72;
+}
+.tradeTable__returnPreview::before {
+  content: "≈";
+  margin-right: 3px;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
 
 /* ---------- CALENDAR ---------- */
 
@@ -1133,6 +1145,66 @@
   border-color: var(--border-focus);
   background: var(--surface-raised);
 }
+/* ---------- SYMBOL AUTOCOMPLETE (Add/Edit position) ---------- */
+
+.symbolSearch__anchor {
+  position: relative;
+  display: grid;
+}
+.symbolSearch {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  z-index: 30;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--highlight-top), var(--shadow-lg);
+  max-height: 264px;
+  overflow-y: auto;
+}
+.symbolSearch__item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.symbolSearch__item--active {
+  background: var(--surface-overlay);
+}
+.symbolSearch__sym {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.symbolSearch__name {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.symbolSearch__exch {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  white-space: nowrap;
+}
+/* Confirmed pick — quiet, reads as metadata, not celebration. */
+.symbolSearch__confirm {
+  color: var(--text-secondary);
+}
+
 /* Side — segmented LONG / SHORT control. */
 .tradeForm__sideSeg {
   display: grid;
@@ -1435,6 +1507,23 @@
 .tradeView__return--gain { color: var(--gain); }
 .tradeView__return--loss { color: var(--loss); }
 .tradeView__return--neutral { color: var(--text-secondary); }
+/* Open position — live preview, mirrors .tradeTable__returnPreview. */
+.tradeView__return--preview { opacity: 0.72; }
+.tradeView__return--preview::before {
+  content: "≈";
+  margin-right: 4px;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+.tradeView__returnTag {
+  margin-left: var(--space-2);
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
 .tradeView__pills {
   display: flex;
   gap: var(--space-2);

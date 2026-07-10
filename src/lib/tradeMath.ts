@@ -6,6 +6,7 @@
 
 import type { Side, Trade, TradeExecution, TradeStatus } from "./trades";
 import { contractMultiplier } from "./optionSymbol";
+import { fxRateOnOrBefore, latestFxRate, type FxSeriesSource } from "./fx";
 
 /**
  * Planned risk:reward ratio for an entry/target/stop triple. Returns null
@@ -145,6 +146,27 @@ export function deriveTotals(trade: Trade): TradeTotals {
     rMultiple,
     status,
   };
+}
+
+/**
+ * Rate for converting a trade's native-currency cents into `base` cents,
+ * preferring the FX close on the trade's (close) date, else the latest
+ * rate, else 1. The `?? 1` is a documented transient: on first render
+ * before the FX series lands, journal aggregates briefly show
+ * native-summed numbers — same class as an unpriced holding.
+ */
+export function tradeFxRate(
+  trade: Trade,
+  base: string,
+  prices: FxSeriesSource,
+): number {
+  const cur = trade.currency ?? "USD";
+  if (cur === base) return 1;
+  return (
+    fxRateOnOrBefore(cur, base, tradeDateKey(trade), prices) ??
+    latestFxRate(cur, base, prices) ??
+    1
+  );
 }
 
 /** ISO date (YYYY-MM-DD) of the trade's last execution — used for calendar bucketing. */

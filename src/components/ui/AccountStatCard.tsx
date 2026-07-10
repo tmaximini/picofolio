@@ -1,6 +1,7 @@
 import { Card, Delta } from "@/components/primitives";
-import { formatCents, formatPct, toneOf } from "@/lib/money";
+import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import {
+  useAccountBaseCurrency,
   useAccountById,
   useAccountReturn,
   useAccountValueCents,
@@ -17,6 +18,7 @@ type AccountStatCardProps = {
 export function AccountStatCard({ accountId, onClick }: AccountStatCardProps) {
   const account = useAccountById(accountId);
   const valueCents = useAccountValueCents(accountId);
+  const baseCurrency = useAccountBaseCurrency(accountId);
   const ret = useAccountReturn(accountId);
   const portfolioCents = usePortfolioValueCents();
 
@@ -57,7 +59,7 @@ export function AccountStatCard({ accountId, onClick }: AccountStatCardProps) {
             </span>
           )}
         </div>
-        <span className="stat__value">{formatCents(valueCents, true)}</span>
+        <span className="stat__value">{formatMoney(valueCents, baseCurrency, true)}</span>
         {ret?.returnPct != null && <Delta tone={tone}>{formatPct(ret.returnPct)}</Delta>}
       </div>
     </Card>

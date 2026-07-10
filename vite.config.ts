@@ -1,9 +1,14 @@
+/// <reference types="vitest/config" />
 import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    // happy-dom for DOMParser — the Flex XML parser tests need it.
+    environment: "happy-dom",
+  },
   server: {
     port: 5173,
     strictPort: true,

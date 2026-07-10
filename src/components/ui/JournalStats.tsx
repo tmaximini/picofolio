@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { CalendarDays, ChevronRight } from "lucide-react";
-import { formatCents, formatPct, toneOf } from "@/lib/money";
+import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import { parseOccSymbol } from "@/lib/optionSymbol";
 import { eachDayKey, rangeFor, todayKey, type DateRangeKey } from "@/lib/dateRange";
-import { useJournalRange, useTradeStats } from "@/store/selectors";
+import { useAccountBaseCurrency, useJournalRange, useTradeStats } from "@/store/selectors";
 import { PerformanceChart, type PerfPoint } from "./PerformanceChart";
 
 /** Journal chart mode — daily P&L bars vs. the cumulative equity curve.
@@ -69,6 +69,7 @@ type JournalStatsProps = {
 
 export function JournalStats({ scope, onOpenTrade, onOpenJournal }: JournalStatsProps) {
   const stats = useTradeStats(scope);
+  const baseCurrency = useAccountBaseCurrency(scope);
   const rangeKey = useJournalRange();
   const pnlTone = toneOf(stats.pnlCents);
   const closed = stats.wins + stats.losses;
@@ -209,9 +210,9 @@ export function JournalStats({ scope, onOpenTrade, onOpenJournal }: JournalStats
         {!hasData ? (
           <div className="journalSpark__empty">No closed trades in range</div>
         ) : mode === "daily" ? (
-          <PerformanceChart data={daily} height={200} format="currency" kind="bars" />
+          <PerformanceChart data={daily} height={200} format="currency" kind="bars" currency={baseCurrency} />
         ) : (
-          <PerformanceChart data={equity} height={200} format="currency" step />
+          <PerformanceChart data={equity} height={200} format="currency" step currency={baseCurrency} />
         )}
       </div>
 
@@ -219,7 +220,7 @@ export function JournalStats({ scope, onOpenTrade, onOpenJournal }: JournalStats
         <StatCard
           label="P&L"
           tip={TIPS.pnl}
-          value={stats.pnlCents !== 0 ? formatCents(stats.pnlCents, true) : "—"}
+          value={stats.pnlCents !== 0 ? formatMoney(stats.pnlCents, baseCurrency, true) : "—"}
           sub={stats.returnPct !== 0 ? formatPct(stats.returnPct) : undefined}
           tone={pnlTone === "neutral" ? undefined : pnlTone}
           subTone={pnlTone === "neutral" ? undefined : pnlTone}
@@ -239,7 +240,7 @@ export function JournalStats({ scope, onOpenTrade, onOpenJournal }: JournalStats
         <StatCard
           label="Best trade"
           tip={TIPS.best}
-          value={stats.best ? formatCents(stats.best.returnCents, true) : "—"}
+          value={stats.best ? formatMoney(stats.best.returnCents, baseCurrency, true) : "—"}
           sub={
             stats.best
               ? `${symLabel(stats.best.symbol)}${
@@ -267,11 +268,11 @@ export function JournalStats({ scope, onOpenTrade, onOpenJournal }: JournalStats
           value={
             <span className="journalCard__pair">
               <span className="journalCard__pairItem journalCard__pairItem--gain">
-                {stats.avgWinCents > 0 ? formatCents(stats.avgWinCents, true) : "—"}
+                {stats.avgWinCents > 0 ? formatMoney(stats.avgWinCents, baseCurrency, true) : "—"}
               </span>
               <span className="journalCard__pairSep" />
               <span className="journalCard__pairItem journalCard__pairItem--loss">
-                {stats.avgLossCents < 0 ? formatCents(stats.avgLossCents, true) : "—"}
+                {stats.avgLossCents < 0 ? formatMoney(stats.avgLossCents, baseCurrency, true) : "—"}
               </span>
             </span>
           }
@@ -279,7 +280,7 @@ export function JournalStats({ scope, onOpenTrade, onOpenJournal }: JournalStats
         <StatCard
           label="Worst trade"
           tip={TIPS.worst}
-          value={stats.worst ? formatCents(stats.worst.returnCents, true) : "—"}
+          value={stats.worst ? formatMoney(stats.worst.returnCents, baseCurrency, true) : "—"}
           sub={
             stats.worst
               ? `${symLabel(stats.worst.symbol)}${

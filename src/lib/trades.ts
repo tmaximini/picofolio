@@ -42,6 +42,8 @@ export type Trade = {
   confidence?: 1 | 2 | 3 | 4 | 5;
   /** Provenance. Used to distinguish seeded demo data from real entries. */
   source?: "demo" | "manual" | "ibkr";
+  /** ISO 4217 currency of the executions' prices. Absent = USD. */
+  currency?: string;
 };
 
 export type TradeSetup = {
