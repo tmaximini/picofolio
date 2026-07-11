@@ -29,8 +29,21 @@ export const MINOR_UNIT_CURRENCIES: Record<string, string> = {
   ILA: "ILS",
 };
 
+/**
+ * Currencies Yahoo doesn't quote FX crosses for, aliased to the sibling it
+ * does quote. IBKR reports offshore yuan (CNH) on China Connect trades and
+ * positions, but Yahoo only lists CNY pairs ("CNHEUR=X" 404s, "CNYEUR=X"
+ * exists). The two track within basis points — without the alias the rate
+ * lookup falls back to 1 and CNH amounts aggregate as base currency 1:1.
+ */
+const FX_ALIASES: Record<string, string> = { CNH: "CNY" };
+
+function fxCurrency(c: string): string {
+  return FX_ALIASES[c] ?? c;
+}
+
 export function fxPairSymbol(from: string, to: string): string {
-  return `${from}${to}=X`;
+  return `${fxCurrency(from)}${fxCurrency(to)}=X`;
 }
 
 export function isFxSymbol(symbol: string): boolean {
@@ -43,7 +56,7 @@ export function latestFxRate(
   to: string,
   prices: FxSeriesSource,
 ): number | null {
-  if (from === to) return 1;
+  if (fxCurrency(from) === fxCurrency(to)) return 1;
   const points = prices[fxPairSymbol(from, to)]?.points;
   const last = points?.[points.length - 1];
   return last != null && Number.isFinite(last.value) ? last.value : null;
@@ -60,7 +73,7 @@ export function fxRateOnOrBefore(
   dateKey: string,
   prices: FxSeriesSource,
 ): number | null {
-  if (from === to) return 1;
+  if (fxCurrency(from) === fxCurrency(to)) return 1;
   const points = prices[fxPairSymbol(from, to)]?.points;
   if (!points || points.length === 0) return null;
   let rate: number | null = null;
@@ -103,7 +116,9 @@ export function fxPairsNeeded(
   const baseOf = new Map(accounts.map((a) => [a.id, a.baseCurrency ?? "USD"]));
   const pairs = new Set<string>();
   const need = (from: string, to: string) => {
-    if (from && to && from !== to) pairs.add(fxPairSymbol(from, to));
+    if (from && to && fxCurrency(from) !== fxCurrency(to)) {
+      pairs.add(fxPairSymbol(from, to));
+    }
   };
   for (const h of holdings) {
     need(holdingCurrencyOf(h, prices), baseOf.get(h.accountId) ?? "USD");
