@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   convertCents,
   fxPairSymbol,
+  fxPairsNeeded,
   fxRateOnOrBefore,
   isFxSymbol,
   latestFxRate,
   portfolioBaseOf,
 } from "./fx";
 import type { Account } from "./mock";
+import type { Trade } from "./trades";
 
 const KRWUSD = {
   "KRWUSD=X": {
@@ -41,9 +43,40 @@ describe("fx pairs", () => {
     expect(fxRateOnOrBefore("KRW", "KRW", "2026-06-30", {})).toBe(1);
   });
 
+  it("aliases CNH (IBKR offshore yuan) to Yahoo's CNY crosses", () => {
+    const CNYEUR = {
+      "CNYEUR=X": { points: [{ time: "2026-07-01", value: 0.1196 }] },
+    };
+    expect(fxPairSymbol("CNH", "EUR")).toBe("CNYEUR=X");
+    expect(latestFxRate("CNH", "EUR", CNYEUR)).toBe(0.1196);
+    expect(fxRateOnOrBefore("CNH", "EUR", "2026-07-02", CNYEUR)).toBe(0.1196);
+    // CNH↔CNY are the same unit for conversion purposes.
+    expect(latestFxRate("CNH", "CNY", {})).toBe(1);
+  });
+
   it("convertCents rounds to integer cents", () => {
     expect(convertCents(4220000, 0.00073)).toBe(3081);
     expect(convertCents(1000, 1)).toBe(1000);
+  });
+});
+
+describe("fxPairsNeeded", () => {
+  it("requests the CNY cross for CNH trades, and skips CNH↔CNY", () => {
+    const accounts = [
+      { id: "a", baseCurrency: "EUR" },
+      { id: "b", baseCurrency: "CNY" },
+    ] as unknown as Account[];
+    const trades = [
+      { accountId: "a", currency: "CNH" },
+      { accountId: "b", currency: "CNH" },
+    ] as unknown as Trade[];
+    const pairs = fxPairsNeeded([], trades, accounts, "USD", {});
+    expect(pairs).toContain("CNYEUR=X");
+    // CNH in a CNY-based account needs no conversion…
+    expect(pairs).not.toContain("CNYCNY=X");
+    // …but each account base still needs its leg to the portfolio base.
+    expect(pairs).toContain("EURUSD=X");
+    expect(pairs).toContain("CNYUSD=X");
   });
 });
 
