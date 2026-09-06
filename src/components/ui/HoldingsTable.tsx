@@ -159,7 +159,14 @@ function HoldingRow({
           <ChevronRight size={14} strokeWidth={1.75} />
         </td>
         <td data-col="symbol">
-          <HoldingSymbolCell holding={holding} />
+          <HoldingSymbolCell
+            holding={holding}
+            position={
+              priceCents != null
+                ? `${holding.qty.toLocaleString("en-US")} × ${formatMoney(priceCents, currency)}`
+                : holding.qty.toLocaleString("en-US")
+            }
+          />
         </td>
         {showAccount && (
           <td data-col="account" style={{ color: "var(--text-secondary)" }}>{accountName}</td>
@@ -189,8 +196,10 @@ function HoldingRow({
 }
 
 /** Symbol cell — options render as underlying + CALL/PUT badge + a
- *  "expiry · $strike" label (matching the Activity table); stocks stay plain. */
-function HoldingSymbolCell({ holding }: { holding: Holding }) {
+ *  "expiry · $strike" label (matching the Activity table); stocks stay plain.
+ *  `position` ("150 × $95.80") is a phone-only line that stands in for the
+ *  Qty / Price columns hidden at narrow widths. */
+function HoldingSymbolCell({ holding, position }: { holding: Holding; position: string }) {
   const opt = parseOccSymbol(holding.symbol);
   if (opt) {
     return (
@@ -215,15 +224,17 @@ function HoldingSymbolCell({ holding }: { holding: Holding }) {
         >
           {formatOptionLabel(opt, { includeType: false })}
         </span>
+        <span className="holdings__position">{position}</span>
       </div>
     );
   }
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
       <span style={{ fontWeight: 500 }}>{holding.symbol}</span>
-      <span style={{ color: "var(--text-tertiary)", fontSize: "var(--text-xs)" }}>
+      <span className="holdings__name" style={{ color: "var(--text-tertiary)", fontSize: "var(--text-xs)" }}>
         {holding.name}
       </span>
+      <span className="holdings__position">{position}</span>
     </div>
   );
 }

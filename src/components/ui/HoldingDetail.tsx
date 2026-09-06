@@ -10,6 +10,7 @@ import {
   useAccountBaseCurrency,
   useHoldingCurrency,
   useHoldingDelta,
+  useHoldingUnitPriceCents,
   useHoldingValueBaseCents,
   useIntradayEntry,
   useLoadIntraday,
@@ -116,6 +117,7 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
   const currency = useHoldingCurrency(holding.symbol);
   const baseCurrency = useAccountBaseCurrency(holding.accountId);
   const valueCents = useHoldingValueBaseCents(holding.symbol);
+  const unitPriceCents = useHoldingUnitPriceCents(holding.symbol);
   const unrealizedCents = useUnrealizedBaseCents(holding.symbol);
   const r1m = useHoldingDelta(holding.symbol, "1M");
   const ytd = useHoldingDelta(holding.symbol, "YTD");
@@ -191,6 +193,14 @@ export function HoldingDetail({ holding }: HoldingDetailProps) {
       </div>
 
       <div className="holdingDetail__side">
+        <StatLine
+          label={isOption ? "Contracts" : "Shares"}
+          value={holding.qty.toLocaleString("en-US")}
+        />
+        <StatLine
+          label="Last"
+          value={unitPriceCents != null ? formatMoney(unitPriceCents, currency) : "—"}
+        />
         <StatLine label="Avg Cost" value={formatMoney(holding.avgCostCents, currency)} />
         <StatLine label="Cost Basis" value={formatMoney(costBasisCents, currency)} />
         <StatLine

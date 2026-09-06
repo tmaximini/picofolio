@@ -180,6 +180,13 @@
   .holdings [data-col="day"] {
     display: none;
   }
+  /* Qty × price replaces the company name under the symbol. */
+  .holdings__name {
+    display: none;
+  }
+  .holdings__position {
+    display: block;
+  }
   .tradeTable [data-col="account"],
   .tradeTable [data-col="status"],
   .tradeTable [data-col="side"],

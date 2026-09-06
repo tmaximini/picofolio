@@ -894,6 +894,15 @@
 .holdings__row--cash:hover td {
   background: var(--surface-base);
 }
+/* Phone-only "qty × price" line under the symbol (see mobile.css) — stands
+   in for the Qty / Price columns that are hidden at narrow widths. */
+.holdings__position {
+  display: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
 .holdings__caret {
   width: 18px;
   padding-right: 0 !important;
