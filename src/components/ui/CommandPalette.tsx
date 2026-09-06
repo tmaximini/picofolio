@@ -51,7 +51,7 @@ const ACTIONS: ReadonlyArray<ActionResult> = [
   { kind: "action", id: "new-trade", label: "New Trade", shortcut: "n" },
   { kind: "action", id: "new-setup", label: "New Setup", shortcut: "s" },
   { kind: "action", id: "new-note", label: "New Note", shortcut: "b" },
-  { kind: "action", id: "sync", label: "Sync prices", shortcut: "r" },
+  { kind: "action", id: "sync", label: "Sync", shortcut: "r" },
 ];
 
 type CommandPaletteProps = {

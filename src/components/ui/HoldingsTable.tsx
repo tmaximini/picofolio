@@ -155,31 +155,31 @@ function HoldingRow({
         onClick={() => onToggle(holding.symbol)}
         aria-expanded={isOpen}
       >
-        <td className="holdings__caret">
+        <td className="holdings__caret" data-col="caret">
           <ChevronRight size={14} strokeWidth={1.75} />
         </td>
-        <td>
+        <td data-col="symbol">
           <HoldingSymbolCell holding={holding} />
         </td>
         {showAccount && (
-          <td style={{ color: "var(--text-secondary)" }}>{accountName}</td>
+          <td data-col="account" style={{ color: "var(--text-secondary)" }}>{accountName}</td>
         )}
-        <td className="num" style={{ color: "var(--text-secondary)" }}>{holding.qty.toLocaleString("en-US")}</td>
-        <td className="num" style={{ color: "var(--text-secondary)" }}>
+        <td className="num" data-col="qty" style={{ color: "var(--text-secondary)" }}>{holding.qty.toLocaleString("en-US")}</td>
+        <td className="num" data-col="price" style={{ color: "var(--text-secondary)" }}>
           {priceCents != null ? formatMoney(priceCents, currency) : <Dash />}
         </td>
-        <td className="num">
+        <td className="num" data-col="value">
           {valueCents != null ? formatMoney(valueCents, baseCurrency) : <Dash />}
         </td>
         {showWeight && (
-          <td className="num" style={{ color: "var(--text-secondary)" }}>
+          <td className="num" data-col="weight" style={{ color: "var(--text-secondary)" }}>
             {weight != null ? formatPct(weight).replace("+", "") : <Dash />}
           </td>
         )}
-        <td className="num">
+        <td className="num" data-col="day">
           <Pct value={dayPct} />
         </td>
-        <td className="num">
+        <td className="num" data-col="unreal">
           <UnrealizedCell cents={unrealCents} pct={unrealPct} currency={baseCurrency} />
         </td>
       </tr>
@@ -276,8 +276,8 @@ function CashRow({
     totalValueCents != null && totalValueCents > 0 ? cashCents / totalValueCents : null;
   return (
     <tr className="holdings__row holdings__row--cash">
-      <td />
-      <td>
+      <td data-col="caret" />
+      <td data-col="symbol">
         <div style={{ display: "flex", flexDirection: "column" }}>
           <span style={{ fontWeight: 500 }}>Cash</span>
           <span style={{ color: "var(--text-tertiary)", fontSize: "var(--text-xs)" }}>
@@ -285,23 +285,23 @@ function CashRow({
           </span>
         </div>
       </td>
-      {showAccount && <td />}
-      <td className="num">
+      {showAccount && <td data-col="account" />}
+      <td className="num" data-col="qty">
         <Dash />
       </td>
-      <td className="num">
+      <td className="num" data-col="price">
         <Dash />
       </td>
-      <td className="num">{formatMoney(cashCents, currency)}</td>
+      <td className="num" data-col="value">{formatMoney(cashCents, currency)}</td>
       {showWeight && (
-        <td className="num" style={{ color: "var(--text-secondary)" }}>
+        <td className="num" data-col="weight" style={{ color: "var(--text-secondary)" }}>
           {weight != null ? formatPct(weight).replace("+", "") : <Dash />}
         </td>
       )}
-      <td className="num">
+      <td className="num" data-col="day">
         <Dash />
       </td>
-      <td className="num">
+      <td className="num" data-col="unreal">
         <Dash />
       </td>
     </tr>

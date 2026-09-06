@@ -1,0 +1,403 @@
+/* ============================================================
+   MOBILE — narrow-viewport overrides
+   ------------------------------------------------------------
+   Loaded last so it wins by source order. Only token references.
+   Breakpoints: ≤900 drawer nav (see app.css), ≤720 phone, ≤400 tight.
+   Philosophy: keep the density, cut the chrome. Vertical space is
+   cheap on a phone; horizontal scroll is the thing to eliminate.
+   ============================================================ */
+
+/* Touch devices have no keyboard — the shortcut hints are noise. */
+@media (hover: none) and (pointer: coarse) {
+  .btn .kbd,
+  .topbar__actions .kbd {
+    display: none;
+  }
+}
+
+/* ---------- ≤900: drawer nav ---------- */
+@media (max-width: 900px) {
+  .main {
+    padding: var(--space-4) var(--space-4) var(--space-10);
+    overflow-x: clip;
+  }
+  /* Floating reopen button sits top-left; indent the page header so the
+     title never runs underneath it. */
+  .app--nav-collapsed .navReopen {
+    top: var(--space-4);
+    left: var(--space-4);
+    width: 32px;
+    height: 32px;
+  }
+  .app--nav-collapsed .topbar {
+    padding-left: calc(32px + var(--space-3));
+  }
+  .topbar {
+    margin-bottom: var(--space-5);
+  }
+  .pageTitle {
+    font-size: var(--text-2xl);
+  }
+  .grid2,
+  .grid3 {
+    grid-template-columns: 1fr;
+  }
+  .accountStatsRow {
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-4);
+  }
+  .accountStatsRow--deltas {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .toaster {
+    left: var(--space-4);
+    right: var(--space-4);
+    bottom: var(--space-4);
+  }
+  .toaster > * {
+    width: auto;
+  }
+}
+
+/* ---------- ≤720: phone ---------- */
+@media (max-width: 720px) {
+  .main {
+    padding: var(--space-4) var(--space-3) var(--space-10);
+  }
+  .app--nav-collapsed .navReopen {
+    left: var(--space-3);
+  }
+
+  /* Page header stacks; actions fill the row instead of overflowing it. */
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+  .topbar__actions {
+    flex-wrap: wrap;
+  }
+  .topbar__actions > .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  .pageTitle {
+    margin-bottom: var(--space-1);
+  }
+  .pageSub {
+    font-size: var(--text-xs);
+  }
+
+  .sectionHead {
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  /* Segmented tab bars (Breakdown, chart ranges) scroll instead of overflowing. */
+  .tabs {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sectionTitle {
+    font-size: var(--text-lg);
+  }
+
+  /* Surfaces: tighter inset, same chiaroscuro. */
+  .card:not(.card--flush),
+  .heroCard,
+  .perfCard,
+  .journalStats,
+  .settingsCard {
+    padding: var(--space-4);
+  }
+  .perfCard,
+  .journalStats {
+    margin-bottom: var(--space-4);
+  }
+  .emptyState {
+    padding: var(--space-8) var(--space-4);
+  }
+
+  /* Hero value + rate of return stack. */
+  .perfCard__head {
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  .perfCard__ror {
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-3);
+    text-align: left;
+  }
+  .perfCard__rorValue {
+    font-size: var(--text-xl);
+  }
+  .perfCard__chartEmpty {
+    height: 200px;
+  }
+  .heroValue {
+    font-size: 36px;
+    margin-top: var(--space-2);
+  }
+  .perfRanges {
+    margin-top: var(--space-3);
+  }
+  .perfRanges__pill {
+    padding: 0 var(--space-3);
+  }
+  .accountStatsRow {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .accountRow {
+    gap: var(--space-3);
+  }
+
+  /* ---------- Tables ----------
+     Drop the desktop min-width and the secondary columns; the row's
+     expand panel carries the full detail. Cells get denser padding. */
+  .tableScroll .table {
+    min-width: 0 !important;
+  }
+  .table th,
+  .table td {
+    padding: var(--space-2) var(--space-2);
+  }
+  .table th:first-child,
+  .table td:first-child {
+    padding-left: var(--space-3);
+  }
+  .table th:last-child,
+  .table td:last-child {
+    padding-right: var(--space-3);
+  }
+  .holdings [data-col="account"],
+  .holdings [data-col="qty"],
+  .holdings [data-col="price"],
+  .holdings [data-col="weight"],
+  .holdings [data-col="day"] {
+    display: none;
+  }
+  .tradeTable [data-col="account"],
+  .tradeTable [data-col="status"],
+  .tradeTable [data-col="side"],
+  .tradeTable [data-col="qty"],
+  .tradeTable [data-col="entry"],
+  .tradeTable [data-col="exit"],
+  .tradeTable [data-col="entryTotal"],
+  .tradeTable [data-col="exitTotal"],
+  .tradeTable [data-col="hold"],
+  .tradeTable [data-col="actions"] {
+    display: none;
+  }
+
+  /* Expanded holding: chart on top, stats below. */
+  .holdingDetail {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-3);
+  }
+  .holdingDetail__chartHead {
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+  }
+  .holdingDetail__side {
+    padding-top: 0;
+  }
+
+  /* Journal */
+  .journalStats__chartHead {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  /* Setup / note strips: label on its own line, chain + actions beneath. */
+  .setupRow,
+  .noteRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: var(--space-3);
+  }
+  .setupRow__label,
+  .noteRow__label {
+    grid-column: 1 / -1;
+  }
+  .setupRow__chain,
+  .noteRow__main {
+    grid-column: 1;
+  }
+  .setupRow__actions,
+  .noteRow__actions {
+    grid-column: 2;
+  }
+  .setupRow__notes {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+  .journalCards {
+    gap: var(--space-2);
+  }
+  .journalCard {
+    padding: var(--space-3);
+  }
+  .journalListHead,
+  .statusFilter {
+    flex-wrap: wrap;
+  }
+
+  /* Performance */
+  .perfHero__primaryValue {
+    font-size: var(--text-2xl);
+  }
+  .perfHero__secondary {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: var(--space-4);
+  }
+  .perfGrid {
+    gap: var(--space-4);
+  }
+
+  /* ---------- Calendar ----------
+     Seven equal day columns; the weekly summary becomes a full-width
+     strip under each week instead of an eighth column. */
+  .calendarHead {
+    margin-bottom: var(--space-3);
+  }
+  .monthSummary {
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-3) var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-3);
+  }
+  .monthSummary__value,
+  .monthSummary__wl {
+    font-size: var(--text-md);
+  }
+  .calendarGrid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .calendarRailLabel {
+    display: none;
+  }
+  .calendarWeekday {
+    font-size: 10px;
+    padding: var(--space-1) 0;
+  }
+  .calendarDay {
+    min-height: 52px;
+    padding: 6px 2px;
+    gap: 2px;
+    border-radius: var(--radius-sm);
+  }
+  .calendarDay__num {
+    font-size: var(--text-xs);
+  }
+  .calendarDay__pnl {
+    font-size: 9px;
+    margin-top: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .calendarDay__count {
+    display: none;
+  }
+  .calendarWeekSummary {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-1);
+  }
+  .calendarWeekSummary__counts {
+    margin-left: auto;
+  }
+  /* A week with no trades has nothing to summarize — skip the strip. */
+  .calendarWeekSummary:not(.calendarWeekSummary--has-trades) {
+    display: none;
+  }
+  .monthExtremes {
+    margin-top: var(--space-4);
+  }
+
+  /* ---------- Modals ---------- */
+  .modalBackdrop {
+    padding: var(--space-3);
+  }
+  .modal {
+    max-height: calc(100dvh - 2 * var(--space-3));
+  }
+  .modal__head,
+  .modal__foot {
+    padding: var(--space-3) var(--space-4);
+  }
+  .modal__body {
+    padding: var(--space-4);
+  }
+  .modal__foot {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .tradeForm__grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .tradeForm__row--head {
+    grid-template-columns: 1fr;
+  }
+  .tradeForm__row--levels {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* ---------- Settings ---------- */
+  .settingsTabs {
+    flex-wrap: wrap;
+    margin-bottom: var(--space-4);
+  }
+  .settingsCard__head {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .ibkrGrid {
+    grid-template-columns: 1fr;
+  }
+  .ibkrConn {
+    padding: var(--space-3);
+  }
+  .ibkrConn__head {
+    flex-wrap: wrap;
+  }
+  .ibkrSummary {
+    flex-wrap: wrap;
+  }
+  .dangerRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  /* Command palette */
+  .cmdBackdrop {
+    padding-top: 8vh;
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+}
+
+/* ---------- ≤400: tight phones ---------- */
+@media (max-width: 400px) {
+  .accountStatsRow--deltas {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .monthSummary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .journalCards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .tradeTable [data-col="returnPct"] {
+    display: none;
+  }
+}

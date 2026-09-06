@@ -34,7 +34,7 @@ const GROUPS: ShortcutGroup[] = [
   {
     title: "Actions",
     rows: [
-      { keys: ["r"], label: "Sync prices" },
+      { keys: ["r"], label: "Sync (IBKR + prices)" },
       { keys: ["?"], label: "This overlay" },
     ],
   },

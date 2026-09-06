@@ -158,6 +158,8 @@ type StoreState = {
 
   lastSyncAt: number | null;
   syncing: boolean;
+  /** Transient: a full sync (IBKR pulls + prices) is in flight. */
+  syncingAll: boolean;
 
   /** First-run gate. False until the user picks a path in the welcome screen
    *  (demo data or empty). Persisted so it only shows once. */
@@ -177,6 +179,12 @@ type StoreState = {
   /** `force` bypasses the freshness window — used by the explicit Sync
    *  button so a user-initiated sync always re-pulls prices. */
   refreshAll: (opts?: { force?: boolean }) => Promise<void>;
+  /** THE sync. Pulls every linked IBKR connection in scope (one account, or
+   *  all of them) in parallel with a forced price refresh, then a second
+   *  price pass so positions that just arrived get marks too. Wired to the
+   *  Sync button, the `R` hotkey, the command palette and app load. `quiet`
+   *  suppresses the chatty progress / up-to-date toasts (auto-sync). */
+  syncAll: (opts?: { accountId?: string; quiet?: boolean }) => Promise<void>;
   /** Fetch every FX pair series that base-currency conversion currently
    *  needs. Cheap when already loaded (per-symbol freshness guard). Runs
    *  after syncs/imports AND as a second pass in refreshAll — a holding's
@@ -265,7 +273,10 @@ type StoreState = {
     patch: Partial<Pick<IbkrConnection, "label" | "token" | "queryId">>,
   ) => void;
   removeIbkrConnection: (id: string) => void;
-  syncIbkrConnection: (id: string, opts?: { replace?: boolean }) => Promise<void>;
+  syncIbkrConnection: (
+    id: string,
+    opts?: { replace?: boolean; quiet?: boolean },
+  ) => Promise<void>;
   /** Re-pull and atomically replace this account's IBKR trades + positions —
    *  old data is only dropped once the fresh statement parses successfully. */
   resyncIbkrConnection: (id: string) => Promise<void>;
@@ -417,6 +428,7 @@ export const useStore = create<StoreState>()(
       marketDataToken: null,
       lastSyncAt: null,
       syncing: false,
+      syncingAll: false,
       onboarded: false,
       welcomeOpen: false,
 
@@ -615,6 +627,46 @@ export const useStore = create<StoreState>()(
         // lastSyncAt also nudges the intraday reconstruction (its load effect
         // keys on it), so charts re-pull bars after an explicit sync.
         set({ syncing: false, lastSyncAt: Date.now() });
+      },
+
+      syncAll: async (opts) => {
+        if (get().syncingAll) return;
+        set({ syncingAll: true });
+        try {
+          const { accounts, pushToast } = get();
+          const scoped = opts?.accountId
+            ? accounts.filter((a) => a.id === opts.accountId)
+            : accounts;
+          const connIds = scoped
+            .map((a) => a.flexConnectionId)
+            .filter((id): id is string => Boolean(id));
+          if (connIds.length > 0 && !opts?.quiet) {
+            pushToast({
+              kind: "info",
+              title:
+                connIds.length === 1
+                  ? "Syncing from IBKR…"
+                  : `Syncing ${connIds.length} accounts from IBKR…`,
+              body: "Pulling trades, positions & cash — can take up to a minute.",
+              duration: 4000,
+            });
+          }
+          // IBKR pulls and the price refresh run concurrently; each pull
+          // pushes its own result toast.
+          await Promise.allSettled([
+            ...connIds.map((id) => get().syncIbkrConnection(id, { quiet: opts?.quiet })),
+            get().refreshAll({ force: true }),
+          ]);
+          if (connIds.length > 0) {
+            // Second pass (freshness-guarded, so only new symbols hit the
+            // network): positions the pulls just added need marks + FX.
+            await get().refreshAll();
+          } else if (!opts?.quiet) {
+            pushToast({ kind: "info", title: "Prices updated", duration: 2500 });
+          }
+        } finally {
+          set({ syncingAll: false });
+        }
       },
 
       loadFxPairs: async () => {
@@ -1098,6 +1150,7 @@ export const useStore = create<StoreState>()(
 
       syncIbkrConnection: async (id, opts) => {
         const replace = opts?.replace ?? false;
+        const quiet = opts?.quiet ?? false;
         const conn = get().ibkrConnections.find((c) => c.id === id);
         const { pushToast } = get();
         if (!conn) return;
@@ -1258,7 +1311,7 @@ export const useStore = create<StoreState>()(
               ),
               duration: 10000,
             });
-          } else {
+          } else if (!quiet) {
             pushToast({
               kind: "info",
               title: `${conn.label}: up to date`,

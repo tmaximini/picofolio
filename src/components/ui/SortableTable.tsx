@@ -72,6 +72,7 @@ export function SortableTable<T>({
                 return (
                   <th
                     key={header.id}
+                    data-col={header.column.id}
                     className={meta?.align === "right" ? "num" : undefined}
                     style={sortable ? { cursor: "pointer", userSelect: "none" } : undefined}
                     onClick={sortable ? header.column.getToggleSortingHandler() : undefined}

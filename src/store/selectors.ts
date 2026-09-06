@@ -941,6 +941,8 @@ export const useLoadPrice = () => useStore((s) => s.loadPrice);
 export const useLoadIntraday = () => useStore((s) => s.loadIntraday);
 export const useRefreshAll = () => useStore((s) => s.refreshAll);
 export const useSyncing = () => useStore((s) => s.syncing);
+export const useSyncAll = () => useStore((s) => s.syncAll);
+export const useSyncingAll = () => useStore((s) => s.syncingAll);
 export const useLastSyncAt = () => useStore((s) => s.lastSyncAt);
 
 // endKey kept on the signature for callers; the cache key only depends on

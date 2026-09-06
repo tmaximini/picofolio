@@ -1,15 +1,14 @@
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Topbar } from "@/components/layout";
-import { Badge, Button, Card, Kbd } from "@/components/primitives";
-import { HoldingFormModal, HoldingsTable } from "@/components/ui";
+import { Badge, Button, Card } from "@/components/primitives";
+import { HoldingFormModal, HoldingsTable, SyncButton } from "@/components/ui";
 import { ALL_ACCOUNTS } from "@/store";
 import {
   useAccountById,
   useHoldings,
   useRefreshAll,
   useSelectedAccountId,
-  useSyncing,
 } from "@/store/selectors";
 
 export function Holdings() {
@@ -17,7 +16,6 @@ export function Holdings() {
   const account = useAccountById(scope === ALL_ACCOUNTS ? undefined : scope);
   const holdings = useHoldings();
   const refreshAll = useRefreshAll();
-  const syncing = useSyncing();
   const [addOpen, setAddOpen] = useState(false);
 
   useEffect(() => {
@@ -41,11 +39,7 @@ export function Holdings() {
                 <span>Add position</span>
               </Button>
             )}
-            <Button onClick={() => refreshAll({ force: true })} disabled={syncing}>
-              <RefreshCw size={13} strokeWidth={1.75} className={syncing ? "spin" : undefined} />
-              <span>{syncing ? "Syncing…" : "Sync prices"}</span>
-              <Kbd>R</Kbd>
-            </Button>
+            <SyncButton />
           </>
         }
       />

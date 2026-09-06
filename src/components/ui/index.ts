@@ -17,6 +17,7 @@ export { PortfolioPerformanceCard } from "./PortfolioPerformanceCard";
 export { PriceChart } from "./PriceChart";
 export { ShortcutsHelp } from "./ShortcutsHelp";
 export { SortableTable } from "./SortableTable";
+export { SyncButton } from "./SyncButton";
 export { Toaster } from "./Toaster";
 export { TradeSetupRow } from "./TradeSetupRow";
 export { TradeTable } from "./TradeTable";
