@@ -188,6 +188,14 @@ export const useLatestPrice = (symbol: string): number | null =>
     return pts && pts.length > 0 ? pts[pts.length - 1]!.value : null;
   });
 
+/** Per-unit price (listing currency, cents) for a held symbol — see
+ *  `unitPriceCentsFor`. null when the position has no price yet. */
+export const useHoldingUnitPriceCents = (symbol: string): number | null =>
+  useStore((s) => {
+    const h = s.holdings.find((x) => x.symbol === symbol);
+    return h ? unitPriceCentsFor(h, s.prices, s.optionPrices) : null;
+  });
+
 /**
  * Per-unit price for a holding, in cents. Options use the MarketData.app live
  * mark (latest point in `optionPrices`) when available, else the broker's last
