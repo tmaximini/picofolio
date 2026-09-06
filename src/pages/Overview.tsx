@@ -1,14 +1,15 @@
-import { ArrowRight, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ArrowRight } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Topbar } from "@/components/layout";
-import { Badge, Button, Card, EmptyState, Kbd, Stat } from "@/components/primitives";
+import { Badge, Button, Card, EmptyState, Stat } from "@/components/primitives";
 import {
   AccountStatCard,
   HoldingsTable,
   JournalStats,
   PerformanceCard,
   PortfolioPerformanceCard,
+  SyncButton,
 } from "@/components/ui";
 import { TradeViewModal } from "@/features/trades/TradeViewModal";
 import { rangeKeyToParam } from "@/lib/dateRange";
@@ -24,74 +25,12 @@ import {
   useAccountValueSeries,
   useAccounts,
   useHoldings,
-  usePushToast,
   useRefreshAll,
   useSeedDemoData,
   useSelectedAccountId,
   useSetSelectedAccount,
-  useSyncIbkrConnection,
   useTrades,
-  useSyncing,
 } from "@/store/selectors";
-
-/**
- * One Sync button: pulls fresh trades/positions/cash from every linked IBKR
- * connection in scope (one account, or all of them at "All Accounts"), then
- * refreshes Yahoo prices. Toasts narrate progress; the per-connection sync
- * pushes its own success/up-to-date/failure toast.
- */
-function SyncButton({ accountId }: { accountId?: string }) {
-  const accounts = useAccounts();
-  const refreshAll = useRefreshAll();
-  const pricesSyncing = useSyncing();
-  const syncConn = useSyncIbkrConnection();
-  const pushToast = usePushToast();
-  const [running, setRunning] = useState(false);
-
-  // Connections to pull: the scoped account's, or all linked accounts at ALL.
-  const connIds = useMemo(() => {
-    const scoped = accountId ? accounts.filter((a) => a.id === accountId) : accounts;
-    return scoped
-      .map((a) => a.flexConnectionId)
-      .filter((id): id is string => Boolean(id));
-  }, [accounts, accountId]);
-
-  const onSync = async () => {
-    if (running) return;
-    setRunning(true);
-    try {
-      if (connIds.length > 0) {
-        pushToast({
-          kind: "info",
-          title:
-            connIds.length === 1
-              ? "Syncing from IBKR…"
-              : `Syncing ${connIds.length} accounts from IBKR…`,
-          body: "Pulling trades, positions & cash — can take up to a minute.",
-          duration: 4000,
-        });
-      }
-      for (const id of connIds) {
-        await syncConn(id); // pushes its own result toast
-      }
-      await refreshAll({ force: true }); // user asked — bypass the freshness window
-      if (connIds.length === 0) {
-        pushToast({ kind: "info", title: "Prices updated", duration: 2500 });
-      }
-    } finally {
-      setRunning(false);
-    }
-  };
-
-  const busy = running || pricesSyncing;
-  return (
-    <Button onClick={onSync} disabled={busy}>
-      <RefreshCw size={13} strokeWidth={1.75} className={busy ? "spin" : undefined} />
-      <span>{busy ? "Syncing…" : "Sync"}</span>
-      <Kbd>R</Kbd>
-    </Button>
-  );
-}
 
 export function Overview() {
   const scope = useSelectedAccountId();

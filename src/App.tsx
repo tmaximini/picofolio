@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bookmark, CircleHelp, Info, Plus, Terminal } from "lucide-react";
 import {
   BrowserRouter,
@@ -37,7 +37,14 @@ import { NewSetupModal } from "@/features/setups";
 import { NewNoteModal } from "@/features/notes";
 import { useHotkeys } from "@/lib/hotkeys";
 import type { Note } from "@/lib/notes";
-import { useOpenWelcome, useRefreshAll, useWelcomeVisible } from "@/store/selectors";
+import { ALL_ACCOUNTS } from "@/store";
+import {
+  useIsFirstRun,
+  useOpenWelcome,
+  useSelectedAccountId,
+  useSyncAll,
+  useWelcomeVisible,
+} from "@/store/selectors";
 
 // Nav grouped into lenses, not a flat list. Trading and Investing are two
 // viewpoints over the same account's data (the switcher narrows the scope);
@@ -102,7 +109,10 @@ function AppInner() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [newTradeSymbol, setNewTradeSymbol] = useState<string | undefined>(undefined);
-  const refreshAll = useRefreshAll();
+  const syncAll = useSyncAll();
+  const scope = useSelectedAccountId();
+  const scopedAccountId = scope === ALL_ACCOUNTS ? undefined : scope;
+  const firstRun = useIsFirstRun();
   const welcomeVisible = useWelcomeVisible();
   const openWelcome = useOpenWelcome();
   // undefined = closed; { editId?: string } = open (create when editId absent).
@@ -135,13 +145,20 @@ function AppInner() {
     setNewTradeSymbol(undefined);
   };
 
+  // Auto-sync on load: every linked account + prices, once the user is past
+  // the first-run screen. Quiet — only real outcomes (new trades, errors) toast.
+  useEffect(() => {
+    if (!firstRun) void syncAll({ quiet: true });
+  }, [firstRun, syncAll]);
+
   const bindings = useMemo(
     () => [
       { combo: "n", handler: () => openNewTrade() },
       { combo: "s", handler: () => setNewSetupOpen(true) },
       { combo: "b", handler: () => setNoteModal({}) },
-      // "r" (not ⌘R — the browser owns that) force-syncs all prices.
-      { combo: "r", handler: () => refreshAll({ force: true }) },
+      // "r" (not ⌘R — the browser owns that) runs the full sync for the
+      // current scope: IBKR pulls + prices, same as the Sync button.
+      { combo: "r", handler: () => void syncAll({ accountId: scopedAccountId }) },
       { combo: "?", handler: () => setHelpOpen((v) => !v) },
       { combo: "cmd+k", handler: () => setPaletteOpen((v) => !v) },
       { combo: "ctrl+k", handler: () => setPaletteOpen((v) => !v) },
@@ -152,7 +169,7 @@ function AppInner() {
       { combo: "g p", handler: () => navigate("/performance") },
       { combo: "g s", handler: () => navigate("/settings") },
     ],
-    [navigate, refreshAll],
+    [navigate, syncAll, scopedAccountId],
   );
   useHotkeys(bindings);
 
@@ -259,7 +276,7 @@ function AppInner() {
             if (id === "new-trade") openNewTrade();
             else if (id === "new-setup") setNewSetupOpen(true);
             else if (id === "new-note") setNoteModal({});
-            else refreshAll({ force: true });
+            else void syncAll({ accountId: scopedAccountId });
           }}
           onEditNote={(note) => setNoteModal({ note })}
         />
