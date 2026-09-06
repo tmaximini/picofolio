@@ -153,38 +153,38 @@ function TradeRow({
 
   return (
     <tr className="tradeTable__row" onClick={() => onClick?.(trade.id)}>
-      <td className="mono tradeTable__muted">{dateDisplay}</td>
-      <td>
+      <td className="mono tradeTable__muted" data-col="date">{dateDisplay}</td>
+      <td data-col="symbol">
         <SymbolCell trade={trade} marketBadge={marketBadge} />
       </td>
       {accountName !== undefined && (
-        <td className="tradeTable__muted">{accountName}</td>
+        <td className="tradeTable__muted" data-col="account">{accountName}</td>
       )}
-      <td>
+      <td data-col="status">
         <span className="tradeTable__statusCell">
           <span className={statusClass}>{tot.status}</span>
           {trade.notes?.trim() && <NoteHover note={trade.notes.trim()} />}
         </span>
       </td>
-      <td>
+      <td data-col="side">
         <span className={sideArrowClass} title={trade.side}>
           {trade.side === "LONG"
             ? <ArrowUpRight size={14} strokeWidth={2} />
             : <ArrowDownRight size={14} strokeWidth={2} />}
         </span>
       </td>
-      <td className="num tradeTable__muted">{qty.toLocaleString("en-US")}</td>
-      <td className="num tradeTable__muted">
+      <td className="num tradeTable__muted" data-col="qty">{qty.toLocaleString("en-US")}</td>
+      <td className="num tradeTable__muted" data-col="entry">
         {tot.avgEntryCents != null ? formatMoney(tot.avgEntryCents, currency) : <Dash />}
       </td>
-      <td className="num tradeTable__muted">
+      <td className="num tradeTable__muted" data-col="exit">
         {tot.avgExitCents != null ? formatMoney(tot.avgExitCents, currency) : <Dash />}
       </td>
-      <td className="num tradeTable__muted">{formatMoney(tot.entryTotalCents, currency)}</td>
-      <td className="num tradeTable__muted">
+      <td className="num tradeTable__muted" data-col="entryTotal">{formatMoney(tot.entryTotalCents, currency)}</td>
+      <td className="num tradeTable__muted" data-col="exitTotal">
         {tot.exitTotalCents > 0 ? formatMoney(tot.exitTotalCents, currency) : <Dash />}
       </td>
-      <td className="num tradeTable__muted">
+      <td className="num tradeTable__muted" data-col="hold">
         {(() => {
           // Open positions show a live hold (now − open); closed use holdMs.
           const holdMs =
@@ -198,7 +198,7 @@ function TradeRow({
           );
         })()}
       </td>
-      <td className={returnColorClass}>
+      <td className={returnColorClass} data-col="return">
         {returnCents != null ? (
           tot.status === "OPEN" ? (
             <PreviewValue>{formatMoney(returnCents, currency)}</PreviewValue>
@@ -211,7 +211,7 @@ function TradeRow({
           <Dash />
         )}
       </td>
-      <td className={returnColorClass}>
+      <td className={returnColorClass} data-col="returnPct">
         {returnPct != null ? (
           tot.status === "OPEN" ? (
             <PreviewValue>{formatPct(returnPct)}</PreviewValue>
@@ -224,7 +224,7 @@ function TradeRow({
           <Dash />
         )}
       </td>
-      <td>
+      <td data-col="actions">
         <span className="tradeTable__rowActions">
           <button
             type="button"
