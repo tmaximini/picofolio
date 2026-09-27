@@ -7,6 +7,8 @@ type NavItem = {
   label: ReactNode;
   icon?: ReactNode;
   shortcut?: string;
+  /** Quiet count (e.g. trades awaiting review); hidden at 0. */
+  badge?: number;
 };
 
 /** A labeled group of nav items. A section with no `label` renders after a
@@ -92,6 +94,11 @@ function NavButton({
     >
       {item.icon && <span className="nav__icon">{item.icon}</span>}
       <span className="nav__label">{item.label}</span>
+      {item.badge ? (
+        <span className="nav__badge num" aria-label={`${item.badge} to review`}>
+          {item.badge > 99 ? "99+" : item.badge}
+        </span>
+      ) : null}
       {item.shortcut && (
         <span className="nav__key">
           {item.shortcut.split(" ").map((k) => (

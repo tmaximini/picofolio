@@ -16,6 +16,7 @@ export { PerformanceCard } from "./PerformanceCard";
 export { PerformanceChart } from "./PerformanceChart";
 export { PortfolioPerformanceCard } from "./PortfolioPerformanceCard";
 export { ReturnsOverview } from "./ReturnsOverview";
+export { ReviewInsights } from "./ReviewInsights";
 export { PriceChart } from "./PriceChart";
 export { ShortcutsHelp } from "./ShortcutsHelp";
 export { SortableTable } from "./SortableTable";

@@ -15,6 +15,7 @@ import {
   GlyphHoldings,
   GlyphOverview,
   GlyphPerformance,
+  GlyphReview,
   GlyphSettings,
   GlyphWatchlist,
 } from "@/components/layout/nav-glyphs";
@@ -34,6 +35,7 @@ import { Calendar } from "@/pages/Calendar";
 import { Performance } from "@/pages/Performance";
 import { Settings } from "@/pages/Settings";
 import { Watchlist } from "@/pages/Watchlist";
+import { Review } from "@/pages/Review";
 import { NewTradeModal } from "@/features/trades";
 import { NewSetupModal } from "@/features/setups";
 import { NewNoteModal } from "@/features/notes";
@@ -44,6 +46,7 @@ import {
   useIsFirstRun,
   useSelectedAccountId,
   useSyncAll,
+  useUnreviewedCount,
 } from "@/store/selectors";
 
 // Nav grouped into lenses, not a flat list. Trading and Investing are two
@@ -68,6 +71,7 @@ const NAV_SECTIONS = [
     items: [
       { id: "/activity", label: "Journal", icon: <GlyphActivity />, shortcut: "g a" },
       { id: "/calendar", label: "Calendar", icon: <GlyphCalendar />, shortcut: "g c" },
+      { id: "/review", label: "Review", icon: <GlyphReview />, shortcut: "g r" },
       { id: "/performance", label: "Performance", icon: <GlyphPerformance />, shortcut: "g p" },
     ],
   },
@@ -149,6 +153,17 @@ function Workspace() {
     }
   };
 
+  // Review carries a quiet count of recent trades still waiting for review.
+  const unreviewed = useUnreviewedCount(scope);
+  const navSections = useMemo(
+    () =>
+      NAV_SECTIONS.map((sec) => ({
+        ...sec,
+        items: sec.items.map((i) => (i.id === "/review" ? { ...i, badge: unreviewed } : i)),
+      })),
+    [unreviewed],
+  );
+
   const allNavIds = useMemo(
     () => NAV_SECTIONS.flatMap((s) => s.items.map((i) => i.id)),
     [],
@@ -187,6 +202,7 @@ function Workspace() {
       { combo: "g h", handler: () => navigate("/holdings") },
       { combo: "g w", handler: () => navigate("/watchlist") },
       { combo: "g p", handler: () => navigate("/performance") },
+      { combo: "g r", handler: () => navigate("/review") },
       { combo: "g s", handler: () => navigate("/settings") },
     ],
     [navigate, syncAll, scopedAccountId, openNewTrade],
@@ -201,7 +217,7 @@ function Workspace() {
         <Sidebar
           active={normalizedActive}
           onSelect={onNavSelect}
-          sections={NAV_SECTIONS}
+          sections={navSections}
           onToggleNav={() => setNavOpen((v) => !v)}
           header={
             <AccountSwitcher
@@ -267,6 +283,7 @@ function Workspace() {
         <Route path="/holdings" element={<Holdings />} />
         <Route path="/watchlist" element={<Watchlist onNewTrade={openNewTrade} />} />
         <Route path="/performance" element={<Performance />} />
+        <Route path="/review" element={<Review />} />
         <Route path="/settings" element={<Settings />} />
         {/* Legacy paths → new IA */}
         <Route path="/trading" element={<Navigate to="/activity" replace />} />
