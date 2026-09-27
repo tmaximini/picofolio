@@ -33,7 +33,7 @@ export function IbkrSetupGuide() {
         <strong>Last 365 Calendar Days</strong> — the full year backfills your
         account-value chart on the first sync.
       </Step>
-      <Step n={5} title="Tick exactly four sections">
+      <Step n={5} title="Tick exactly six sections">
         In each section's popup, tick the topmost box to select all fields.
         Leave every other section off and all date/time formats at their
         defaults.
@@ -52,6 +52,14 @@ export function IbkrSetupGuide() {
             <strong>Net Asset Value (NAV) in Base</strong> — IBKR's official
             daily account value. This is what makes the performance chart
             match IBKR exactly.
+          </li>
+          <li>
+            <strong>Cash Transactions</strong> — deposits and withdrawals.
+          </li>
+          <li>
+            <strong>Transfers</strong> — moves between your sub-accounts.
+            With these two, returns are time-weighted like IBKR's: moving
+            money in, out or between accounts never counts as a gain or loss.
           </li>
         </ul>
         Already have a query? Edit it, tick the missing sections, save — the

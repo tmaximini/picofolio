@@ -16,7 +16,7 @@ import { extractNoteTokens, type Note } from "@/lib/notes";
 import type { PricePoint } from "@/lib/priceHistory";
 import type { Trade, TradeSetup } from "@/lib/trades";
 import type { WatchItem } from "@/lib/watchlist";
-import { DEFAULT_DATE_RANGE, type DateRangeKey } from "@/lib/dateRange";
+import { DEFAULT_DATE_RANGE, type RangeValue } from "@/lib/dateRange";
 import {
   fetchYahooDaily,
   fetchYahooIntraday,
@@ -24,7 +24,7 @@ import {
   type IntradayPoint,
 } from "@/lib/yahoo";
 import { fetchFlexStatement, parseFlexXml } from "@/lib/ibkr";
-import type { ParsedNavPoint, ParsedPosition } from "@/lib/ibkr/flexParser";
+import type { ParsedCashFlow, ParsedNavPoint, ParsedPosition } from "@/lib/ibkr/flexParser";
 import { fxPairsNeeded, portfolioBaseOf } from "@/lib/fx";
 import { parseOccSymbol } from "@/lib/optionSymbol";
 import { optionsPriceProvider, OptionsNotFoundError } from "@/lib/options";
@@ -90,6 +90,7 @@ export type IbkrConnection = {
 
 /** One day of broker-reported account value (IBKR NAV-in-Base). */
 export type NavPoint = { time: string; valueCents: number };
+export type CashFlowRecord = { id: string; time: string; valueCents: number };
 
 /** Sentinel scope = the consolidated "All Accounts" roll-up. */
 export const ALL_ACCOUNTS = "ALL" as const;
@@ -147,7 +148,7 @@ type StoreState = {
   notes: Note[];
   /** Symbols followed but not held — newest first. */
   watchlist: WatchItem[];
-  journalRange: DateRangeKey;
+  journalRange: RangeValue;
   /** Calendar viewing month — first-of-month ISO date. */
   calendarMonth: string;
 
@@ -167,6 +168,10 @@ type StoreState = {
    *  section), date-ascending. The authoritative account-value history —
    *  charts prefer it over the price-reconstructed curve. */
   navHistory: Record<string, NavPoint[]>;
+  /** Deposits, withdrawals and inter-account transfers per account (account
+   *  base currency) — what time-weighted returns take out. A key present with
+   *  [] means "statement had the sections, no flows"; absent means unknown. */
+  cashFlows: Record<string, CashFlowRecord[]>;
 
   /** MarketData.app token (BYOK) for options pricing. Optional — the app is
    *  fully functional without it; only open-option live marks + charts need it.
@@ -262,7 +267,7 @@ type StoreState = {
   /** Body patches re-extract inline $symbols/#tags and stamp updatedAt. */
   updateNote: (id: string, patch: Partial<Pick<Note, "body" | "accountId">>) => void;
   deleteNote: (id: string) => void;
-  setJournalRange: (key: DateRangeKey) => void;
+  setJournalRange: (range: RangeValue) => void;
   setCalendarMonth: (iso: string) => void;
   clearDemoTrades: () => void;
   restoreDemoTrades: () => void;
@@ -340,12 +345,6 @@ function buildIbkrHoldings(accountId: string, positions: ParsedPosition[]): Hold
     }));
 }
 
-/**
- * Merge freshly parsed NAV rows into an account's existing history. Rows for
- * the same date sum (a statement can span several raw IBKR accounts feeding
- * one Picofolio account); fresh dates overwrite, older history outside the
- * query window is kept — so a 365-day query never erodes a longer record.
- */
 /** Demo watchlist — names the demo portfolio doesn't hold, staggered add
  *  dates so "since added" has something to say. */
 function watchlistSeed(): WatchItem[] {
@@ -358,6 +357,19 @@ function watchlistSeed(): WatchItem[] {
     { symbol: "SAP.DE", name: "SAP SE", addedAt: daysAgo(110), source: "demo" },
     { symbol: "UBER", name: "Uber Technologies", addedAt: daysAgo(160), source: "demo" },
   ];
+}
+
+/**
+ * Merge freshly parsed NAV rows into an account's existing history. Rows for
+ * the same date sum (a statement can span several raw IBKR accounts feeding
+ * one Picofolio account); fresh dates overwrite, older history outside the
+ * query window is kept — so a 365-day query never erodes a longer record.
+ */
+/** Merge parsed cash flows into an account's record, deduped by id. */
+function mergeCashFlows(prev: CashFlowRecord[] | undefined, rows: ParsedCashFlow[]): CashFlowRecord[] {
+  const byId = new Map((prev ?? []).map((f) => [f.id, f]));
+  for (const r of rows) byId.set(r.id, { id: r.id, time: r.time, valueCents: r.valueCents });
+  return [...byId.values()].sort((a, b) => a.time.localeCompare(b.time));
 }
 
 function mergeNavHistory(prev: NavPoint[] | undefined, rows: ParsedNavPoint[]): NavPoint[] {
@@ -461,6 +473,7 @@ export const useStore = create<StoreState>()(
       intraday: {},
       optionPrices: {},
       navHistory: {},
+      cashFlows: {},
       marketDataToken: null,
       lastSyncAt: null,
       syncing: false,
@@ -791,6 +804,7 @@ export const useStore = create<StoreState>()(
           navHistory: Object.fromEntries(
             Object.entries(s.navHistory).filter(([k]) => k !== id),
           ),
+          cashFlows: Object.fromEntries(Object.entries(s.cashFlows).filter(([k]) => k !== id)),
           accounts: s.accounts.map((a) =>
             a.id === id
               ? { ...a, cashCents: 0, updatedAt: new Date().toISOString() }
@@ -809,6 +823,7 @@ export const useStore = create<StoreState>()(
           navHistory: Object.fromEntries(
             Object.entries(s.navHistory).filter(([k]) => k !== id),
           ),
+          cashFlows: Object.fromEntries(Object.entries(s.cashFlows).filter(([k]) => k !== id)),
           // If it was the active scope, fall back to the roll-up.
           selectedAccountId:
             s.selectedAccountId === id ? ALL_ACCOUNTS : s.selectedAccountId,
@@ -1050,6 +1065,7 @@ export const useStore = create<StoreState>()(
           intraday: {},
           optionPrices: {},
           navHistory: {},
+          cashFlows: {},
           marketDataToken: null,
           lastSyncAt: null,
           syncing: false,
@@ -1197,6 +1213,19 @@ export const useStore = create<StoreState>()(
             return { navHistory };
           });
         }
+        // Deposits/withdrawals/transfers → per-resolved-account flow record.
+        if (result.hasCashFlowData) {
+          const flowsByAccount = new Map<string, ParsedCashFlow[]>();
+          for (const id of new Set([...result.nav.map((n) => n.accountId), ...result.cashFlows.map((f) => f.accountId)])) {
+            flowsByAccount.set(resolve(id), flowsByAccount.get(resolve(id)) ?? []);
+          }
+          for (const f of result.cashFlows) flowsByAccount.get(resolve(f.accountId))!.push(f);
+          set((s) => {
+            const cashFlows = { ...s.cashFlows };
+            for (const [accId, rows] of flowsByAccount) cashFlows[accId] = mergeCashFlows(cashFlows[accId], rows);
+            return { cashFlows };
+          });
+        }
         // Imported positions/trades may introduce currencies whose FX pairs
         // aren't loaded yet — fetch them so conversions don't sit on "—".
         void get().loadFxPairs();
@@ -1307,6 +1336,17 @@ export const useStore = create<StoreState>()(
               navHistory: {
                 ...s.navHistory,
                 [accountId]: mergeNavHistory(s.navHistory[accountId], result.nav),
+              },
+            }));
+          }
+          // Cash flows (deposits, withdrawals, sub-account transfers) — what
+          // time-weighted returns take out. Transfers between two raw IBKR
+          // accounts feeding this one Picofolio account cancel out here.
+          if (result.hasCashFlowData) {
+            set((s) => ({
+              cashFlows: {
+                ...s.cashFlows,
+                [accountId]: mergeCashFlows(s.cashFlows[accountId], result.cashFlows),
               },
             }));
           }
@@ -1469,6 +1509,8 @@ export const useStore = create<StoreState>()(
         ),
         marketDataToken: s.marketDataToken,
         navHistory: s.navHistory,
+        // Additive key — the default shallow merge fills `cashFlows: {}`.
+        cashFlows: s.cashFlows,
         lastSyncAt: s.lastSyncAt,
         onboarded: s.onboarded,
         // Never persist transient sync status/error — a sync in flight when

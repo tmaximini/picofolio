@@ -11,7 +11,9 @@ export type DateRangeKey =
   | "YESTERDAY"
   | "THIS_WEEK"
   | "LAST_WEEK"
+  | "LAST_7_DAYS"
   | "LAST_30_DAYS"
+  | "LAST_90_DAYS"
   | "THIS_MONTH"
   | "LAST_MONTH"
   | "LAST_3_MONTHS"
@@ -62,20 +64,23 @@ export function rangeFor(key: DateRangeKey, now = new Date()): DateRange {
       return { fromKey: isoDateKey(y), toKey: isoDateKey(y) };
     }
     case "THIS_WEEK": {
-      const sun = startOfWeekSun(today);
-      return { fromKey: isoDateKey(sun), toKey: isoDateKey(addDays(sun, 6)) };
+      // Running periods end today — there's nothing to show in the future.
+      return { fromKey: isoDateKey(startOfWeekSun(today)), toKey: isoDateKey(today) };
     }
     case "LAST_WEEK": {
       const lastSun = addDays(startOfWeekSun(today), -7);
       return { fromKey: isoDateKey(lastSun), toKey: isoDateKey(addDays(lastSun, 6)) };
     }
+    case "LAST_7_DAYS":
+      return { fromKey: isoDateKey(addDays(today, -6)), toKey: isoDateKey(today) };
     case "LAST_30_DAYS":
       // Rolling window: today and the 29 days before it (30 days inclusive).
       return { fromKey: isoDateKey(addDays(today, -29)), toKey: isoDateKey(today) };
+    case "LAST_90_DAYS":
+      return { fromKey: isoDateKey(addDays(today, -89)), toKey: isoDateKey(today) };
     case "THIS_MONTH": {
       const first = new Date(today.getFullYear(), today.getMonth(), 1);
-      const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-      return { fromKey: isoDateKey(first), toKey: isoDateKey(last) };
+      return { fromKey: isoDateKey(first), toKey: isoDateKey(today) };
     }
     case "LAST_MONTH": {
       const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
@@ -84,13 +89,11 @@ export function rangeFor(key: DateRangeKey, now = new Date()): DateRange {
     }
     case "LAST_3_MONTHS": {
       const first = new Date(today.getFullYear(), today.getMonth() - 2, 1);
-      const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-      return { fromKey: isoDateKey(first), toKey: isoDateKey(last) };
+      return { fromKey: isoDateKey(first), toKey: isoDateKey(today) };
     }
     case "THIS_YEAR": {
       const first = new Date(today.getFullYear(), 0, 1);
-      const last = new Date(today.getFullYear(), 11, 31);
-      return { fromKey: isoDateKey(first), toKey: isoDateKey(last) };
+      return { fromKey: isoDateKey(first), toKey: isoDateKey(today) };
     }
     case "LAST_YEAR": {
       const first = new Date(today.getFullYear() - 1, 0, 1);
@@ -100,6 +103,11 @@ export function rangeFor(key: DateRangeKey, now = new Date()): DateRange {
     case "ALL":
       return { fromKey: null, toKey: null };
   }
+}
+
+/** Local YYYY-MM-DD for a Date. */
+export function dateKeyOf(d: Date): string {
+  return isoDateKey(d);
 }
 
 /** Today's local date key (YYYY-MM-DD). */
@@ -125,34 +133,127 @@ export function inRange(dateKey: string, range: DateRange): boolean {
   return true;
 }
 
-export const DATE_RANGE_OPTIONS: ReadonlyArray<{ key: DateRangeKey; label: string }> = [
-  { key: "TODAY",         label: "Today"      },
-  { key: "YESTERDAY",     label: "Yesterday"  },
-  { key: "THIS_WEEK",     label: "This wk."   },
-  { key: "LAST_WEEK",     label: "Last wk."   },
-  { key: "LAST_30_DAYS",  label: "30 days"    },
-  { key: "THIS_MONTH",    label: "This mo."   },
-  { key: "LAST_MONTH",    label: "Last mo."   },
-  { key: "LAST_3_MONTHS", label: "Last 3 mo." },
-  { key: "THIS_YEAR",     label: "This yr."   },
-  { key: "LAST_YEAR",     label: "Last yr."   },
-  { key: "ALL",           label: "Reset"      },
+/** Presets, in menu order, with a full label (menus, subtitles) and a short
+ *  one (segmented quick filters). */
+export const DATE_RANGE_OPTIONS: ReadonlyArray<{ key: DateRangeKey; label: string; short?: string }> = [
+  { key: "TODAY",         label: "Today" },
+  { key: "YESTERDAY",     label: "Yesterday" },
+  { key: "THIS_WEEK",     label: "This week" },
+  { key: "LAST_WEEK",     label: "Last week" },
+  { key: "LAST_7_DAYS",   label: "Last 7 days",   short: "7D" },
+  { key: "LAST_30_DAYS",  label: "Last 30 days",  short: "30D" },
+  { key: "LAST_90_DAYS",  label: "Last 90 days",  short: "90D" },
+  { key: "THIS_MONTH",    label: "This month" },
+  { key: "LAST_MONTH",    label: "Last month" },
+  { key: "LAST_3_MONTHS", label: "Last 3 months" },
+  { key: "THIS_YEAR",     label: "This year" },
+  { key: "LAST_YEAR",     label: "Last year" },
+  { key: "ALL",           label: "All time" },
 ];
 
-export function labelForRange(key: DateRangeKey): string {
-  return DATE_RANGE_OPTIONS.find((o) => o.key === key)?.label ?? key;
+/**
+ * A journal range: a named preset, one calendar month, or an explicit span.
+ * Serialized as a plain string so it can live in the store and the URL:
+ *   preset  "LAST_30_DAYS"              ?range=last-30-days
+ *   month   "month:2026-08"             ?range=2026-08
+ *   custom  "custom:2026-01-01:2026-03-31"  ?range=2026-01-01_2026-03-31
+ */
+export type RangeValue = DateRangeKey | `month:${string}` | `custom:${string}:${string}`;
+
+const KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MONTH_RE = /^\d{4}-\d{2}$/;
+
+export function isPreset(v: RangeValue): v is DateRangeKey {
+  return DATE_RANGE_OPTIONS.some((o) => o.key === v);
 }
 
-/** URL-param encoding for a range key, e.g. "LAST_30_DAYS" ⇄ "last-30-days". */
-export function rangeKeyToParam(key: DateRangeKey): string {
-  return key.toLowerCase().replace(/_/g, "-");
+export function monthRange(ym: string): RangeValue {
+  return `month:${ym}`;
 }
 
-/** Parse a `?range=` param back to a known key, or null if absent/invalid. */
-export function paramToRangeKey(param: string | null): DateRangeKey | null {
+/** A custom span; the two keys are ordered, so either click order works. */
+export function customRange(a: string, b: string): RangeValue {
+  const [from, to] = a <= b ? [a, b] : [b, a];
+  return `custom:${from}:${to}`;
+}
+
+/** Resolve any range value to inclusive date keys. */
+export function resolveRange(v: RangeValue, now = new Date()): DateRange {
+  if (v.startsWith("month:")) {
+    const [y, m] = v.slice(6).split("-").map(Number);
+    return {
+      fromKey: isoDateKey(new Date(y!, m! - 1, 1)),
+      toKey: isoDateKey(new Date(y!, m!, 0)),
+    };
+  }
+  if (v.startsWith("custom:")) {
+    const [, from, to] = v.split(":");
+    return { fromKey: from!, toKey: to! };
+  }
+  return rangeFor(v as DateRangeKey, now);
+}
+
+const monthFmt = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+const monthShortFmt = new Intl.DateTimeFormat("en-US", { month: "short", year: "2-digit", timeZone: "UTC" });
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "3 Aug" / "3 Aug 2026" — built by hand so every surface says "Sep", not
+ *  sometimes "Sept" (ICU's en-GB) next to "Sep" elsewhere. */
+const dayFmt = { format: (d: Date) => `${d.getUTCDate()} ${MONTHS_SHORT[d.getUTCMonth()]}` };
+const dayYearFmt = { format: (d: Date) => `${dayFmt.format(d)} ${d.getUTCFullYear()}` };
+
+const utc = (key: string) => new Date(`${key}T00:00:00Z`);
+
+/** "Sep 26" for a YYYY-MM month key — the quick-pick chip label. */
+export function shortMonthLabel(ym: string): string {
+  return monthShortFmt.format(utc(`${ym}-01`)).replace(" ", " ’").replace("’’", "’");
+}
+
+/** "1 Jan – 27 Sep 2026", "3 – 9 Aug 2026", "12 Aug 2026". Open ranges → "All time". */
+export function formatSpan(range: DateRange): string {
+  const { fromKey, toKey } = range;
+  if (!fromKey || !toKey) return "All time";
+  if (fromKey === toKey) return dayYearFmt.format(utc(fromKey));
+  const sameYear = fromKey.slice(0, 4) === toKey.slice(0, 4);
+  const sameMonth = sameYear && fromKey.slice(0, 7) === toKey.slice(0, 7);
+  const from = sameMonth ? String(Number(fromKey.slice(8))) : sameYear ? dayFmt.format(utc(fromKey)) : dayYearFmt.format(utc(fromKey));
+  return `${from} – ${dayYearFmt.format(utc(toKey))}`;
+}
+
+/** Human label: the preset's name, the month's name, or the span. */
+export function labelForRange(v: RangeValue): string {
+  if (v.startsWith("month:")) return monthFmt.format(utc(`${v.slice(6)}-01`));
+  if (v.startsWith("custom:")) return formatSpan(resolveRange(v));
+  return DATE_RANGE_OPTIONS.find((o) => o.key === v)?.label ?? v;
+}
+
+/** URL-param encoding (see RangeValue). */
+export function rangeToParam(v: RangeValue): string {
+  if (v.startsWith("month:")) return v.slice(6);
+  if (v.startsWith("custom:")) {
+    const [, from, to] = v.split(":");
+    return `${from}_${to}`;
+  }
+  return v.toLowerCase().replace(/_/g, "-");
+}
+
+/** Parse a `?range=` param, or null if absent/invalid. */
+export function paramToRange(param: string | null): RangeValue | null {
   if (!param) return null;
+  if (MONTH_RE.test(param)) return monthRange(param);
+  const custom = param.split("_");
+  if (custom.length === 2 && KEY_RE.test(custom[0]!) && KEY_RE.test(custom[1]!)) {
+    return customRange(custom[0]!, custom[1]!);
+  }
   const key = param.toUpperCase().replace(/-/g, "_") as DateRangeKey;
-  return DATE_RANGE_OPTIONS.some((o) => o.key === key) ? key : null;
+  return isPreset(key) ? key : null;
+}
+
+/** The current and two previous calendar months, newest first (YYYY-MM). */
+export function recentMonths(n = 3, now = new Date()): string[] {
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
 }
 
 const relativeFmt = new Intl.RelativeTimeFormat("en", { numeric: "auto" });

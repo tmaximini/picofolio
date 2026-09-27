@@ -12,7 +12,7 @@ import {
   SyncButton,
 } from "@/components/ui";
 import { TradeViewModal } from "@/features/trades/TradeViewModal";
-import { rangeKeyToParam } from "@/lib/dateRange";
+import { rangeToParam } from "@/lib/dateRange";
 import type { AccountUse } from "@/lib/mock";
 import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import { ALL_ACCOUNTS } from "@/store";
@@ -244,7 +244,7 @@ function TradingPanel({ scope }: { scope: string }) {
           scope={scope}
           onOpenTrade={setViewTradeId}
           onOpenJournal={(rangeKey) =>
-            navigate(`/activity?range=${rangeKeyToParam(rangeKey)}`)
+            navigate(`/activity?range=${rangeToParam(rangeKey)}`)
           }
         />
       )}

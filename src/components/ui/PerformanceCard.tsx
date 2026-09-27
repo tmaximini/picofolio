@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Eyebrow } from "@/components/primitives";
 import { formatMoney, formatPct } from "@/lib/money";
 import { PERF_RANGES, computePctSeries, type PctPoint, type PerfRange } from "@/lib/perf";
-import { useIntradayPctSeries, type ValuePoint } from "@/store/selectors";
+import { ALL_ACCOUNTS } from "@/store";
+import { useIntradayPctSeries, useScopeCashFlows, type ValuePoint } from "@/store/selectors";
 import { PerformanceChart } from "./PerformanceChart";
 
 type PerformanceCardProps = {
@@ -26,7 +27,10 @@ type PerformanceCardProps = {
 export function PerformanceCard({ label, valueCents, series, scope, currency = "USD" }: PerformanceCardProps) {
   const [range, setRange] = useState<PerfRange>("All");
 
-  const dailyPct = useMemo(() => computePctSeries(series, range), [series, range]);
+  // Time-weighted: deposits, withdrawals and sub-account transfers are taken
+  // out of the curve, matching IBKR's own return figures.
+  const { flows } = useScopeCashFlows(scope ?? ALL_ACCOUNTS);
+  const dailyPct = useMemo(() => computePctSeries(series, range, flows), [series, range, flows]);
   const intraday = useIntradayPctSeries(scope ?? null, range);
 
   // While an intraday series is expected but its bars are still in flight

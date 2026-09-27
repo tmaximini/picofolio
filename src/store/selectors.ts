@@ -24,7 +24,7 @@ import {
   portfolioBaseOf,
 } from "@/lib/fx";
 import { contractMultiplier, parseOccSymbol } from "@/lib/optionSymbol";
-import { inRange, rangeFor, type DateRangeKey } from "@/lib/dateRange";
+import { inRange, resolveRange, type RangeValue } from "@/lib/dateRange";
 import { computePerformance, type Performance } from "@/lib/performance";
 import { periodReturns, type PeriodReturns } from "@/lib/monthlyReturns";
 import type { PctPoint, PerfRange } from "@/lib/perf";
@@ -966,7 +966,7 @@ export const useIntradayEntry = (
 
 export const useTrades = (): Trade[] => useStore((s) => s.trades);
 export const useSetups = (): TradeSetup[] => useStore((s) => s.setups);
-export const useJournalRange = (): DateRangeKey => useStore((s) => s.journalRange);
+export const useJournalRange = (): RangeValue => useStore((s) => s.journalRange);
 export const useCalendarMonth = (): string => useStore((s) => s.calendarMonth);
 
 export const useAddTrade = () => useStore((s) => s.addTrade);
@@ -1009,7 +1009,7 @@ export const useFilteredNotes = (scope: string = ALL_ACCOUNTS): Note[] => {
   const notes = useScopedNotes(scope);
   const journalRange = useStore((s) => s.journalRange);
   return useMemo(() => {
-    const range = rangeFor(journalRange);
+    const range = resolveRange(journalRange);
     return notes.filter((n) => inRange(localDayKey(n.createdAt), range));
   }, [notes, journalRange]);
 };
@@ -1157,7 +1157,7 @@ export const useFilteredTrades = (scope: string = ALL_ACCOUNTS): Trade[] => {
   const trades = useStore((s) => s.trades);
   const journalRange = useStore((s) => s.journalRange);
   return useMemo(() => {
-    const range = rangeFor(journalRange);
+    const range = resolveRange(journalRange);
     return scopeTrades(trades, scope).filter((t) => {
       const key = tradeDateKey(t);
       return key === "" ? false : inRange(key, range);
@@ -1211,7 +1211,41 @@ export const useTradeStats = (scope: string = ALL_ACCOUNTS): JournalStats => {
  *  scope's daily value series — the same curve the Overview chart draws. */
 export const usePeriodReturns = (scope: string = ALL_ACCOUNTS): PeriodReturns => {
   const series = useScopeValueSeries(scope);
-  return useMemo(() => periodReturns(series), [series]);
+  const { flows } = useScopeCashFlows(scope);
+  return useMemo(() => periodReturns(series, flows), [series, flows]);
+};
+
+/**
+ * Cash flows (deposits, withdrawals, sub-account transfers) for a scope, in
+ * the scope's currency — what time-weighted returns take out. `known` is
+ * false when an account with broker NAV history has no flow data yet (its
+ * Flex query lacks the Cash Transactions / Transfers sections), so the UI can
+ * say its returns still include money moved in and out.
+ */
+export const useScopeCashFlows = (
+  scope: string = ALL_ACCOUNTS,
+): { flows: ValuePoint[]; known: boolean } => {
+  const cashFlows = useStore((s) => s.cashFlows);
+  const navHistory = useStore((s) => s.navHistory);
+  const accounts = useStore((s) => s.accounts);
+  const prices = useStore((s) => s.prices);
+  return useMemo(() => {
+    const scoped = scope === ALL_ACCOUNTS ? accounts : accounts.filter((a) => a.id === scope);
+    const base = scope === ALL_ACCOUNTS ? portfolioBaseOf(accounts) : null;
+    let known = true;
+    const flows: ValuePoint[] = [];
+    for (const a of scoped) {
+      const hasNav = (navHistory[a.id]?.length ?? 0) >= 2;
+      const rec = cashFlows[a.id];
+      if (hasNav && rec == null) known = false;
+      if (!rec?.length) continue;
+      const pts = rec.map((f) => ({ time: f.time, valueCents: f.valueCents }));
+      // Portfolio scope sums across bases — convert at each flow's day rate.
+      const converted = base ? convertCurve(pts, a.baseCurrency ?? "USD", base, prices) : pts;
+      if (converted) flows.push(...converted);
+    }
+    return { flows, known };
+  }, [cashFlows, navHistory, accounts, prices, scope]);
 };
 
 /** Daily value series for a scope: the whole portfolio or one account. */

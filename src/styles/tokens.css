@@ -56,6 +56,11 @@
 
   --neutral:         var(--text-secondary);
 
+  /* Status, not accent: an open position still in play (breathing dot).
+     Muted steel blue — reads as "in progress", never as gain or loss. */
+  --live:            #7FA7D9;
+  --live-glow:       #7FA7D955;
+
   /* ---------- ACCENT (Caravaggio red, used like saffron) ----------
      ONE accent. Use it for: focus rings, key CTAs, brand moments.
      Never for "decoration". Sparingly = premium.

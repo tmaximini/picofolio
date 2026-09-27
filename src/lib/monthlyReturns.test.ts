@@ -36,3 +36,16 @@ describe("periodReturns", () => {
     expect(r.years[0]!.months[0]).toBeCloseTo(0.1);
   });
 });
+
+describe("periodReturns with cash flows", () => {
+  it("takes a mid-year transfer out of the month and the year", () => {
+    const r = periodReturns(
+      [p("2026-05-29", 1000), p("2026-06-12", 700), p("2026-06-30", 770)],
+      [p("2026-06-12", -300)], // cash moved to another sub-account
+    );
+    const jun = r.years[0]!.months[5]!;
+    expect(jun).toBeCloseTo(0.1); // 1000→700 is the transfer; 700→770 is +10%
+    expect(r.years[0]!.monthsCents[5]).toBe(7000);
+    expect(r.ytd).toBeCloseTo(0.1);
+  });
+});

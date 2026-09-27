@@ -16,6 +16,7 @@ import {
   useOpenTradeCount,
   usePerformanceStats,
   usePeriodReturns,
+  useScopeCashFlows,
   useScopeValueSeries,
   useSelectedAccountId,
 } from "@/store/selectors";
@@ -41,6 +42,7 @@ export function Performance() {
   const [dim, setDim] = useState<BreakdownDimension>("tag");
   const periods = usePeriodReturns(scope);
   const valueSeries = useScopeValueSeries(scope);
+  const { known: flowsKnown } = useScopeCashFlows(scope);
   // Size the max drawdown against account value on the day of the peak it
   // fell from — a drop's weight depends on the account, not on the P&L peak.
   const drawdownPct = useMemo(() => {
@@ -66,6 +68,7 @@ export function Performance() {
       closedPositions={s.trades}
       avgHoldMs={avgHoldMs}
       currency={baseCurrency}
+      flowsKnown={flowsKnown}
     />
   );
 
