@@ -32,6 +32,11 @@ export const ReviewPanel = forwardRef<HTMLTextAreaElement, ReviewPanelProps>(fun
   const currency = trade.currency ?? "USD";
   const tone = toneOf(tot.returnCents);
   const done = isReviewed(review);
+  // Size traded: the opening side's quantity (for a closed trade it equals
+  // what was sold/covered). Options count contracts, everything else shares.
+  const openAction = trade.side === "LONG" ? "BUY" : "SELL";
+  const qty = trade.executions.filter((e) => e.action === openAction).reduce((n, e) => n + e.qty, 0);
+  const unit = opt ? (qty === 1 ? "contract" : "contracts") : qty === 1 ? "share" : "shares";
 
   return (
     <section className="reviewPanel">
@@ -72,6 +77,13 @@ export const ReviewPanel = forwardRef<HTMLTextAreaElement, ReviewPanelProps>(fun
           <dd className="num">{formatHold(tot.holdMs).toLowerCase()}</dd>
         </div>
         <div>
+          <dt>Size</dt>
+          <dd className="num">
+            {qty.toLocaleString("en-US")} {unit}
+            <span className="reviewPanel__sub">{formatMoney(tot.entryTotalCents, currency, true)} in</span>
+          </dd>
+        </div>
+        <div>
           <dt>Entry → exit</dt>
           <dd className="num">
             {tot.avgEntryCents != null ? formatMoney(tot.avgEntryCents, currency) : "—"} →{" "}
@@ -103,7 +115,7 @@ export const ReviewPanel = forwardRef<HTMLTextAreaElement, ReviewPanelProps>(fun
         <Button variant="ghost" onClick={onOpenTrade}>
           <ArrowUpRight size={13} strokeWidth={1.75} />
           <span>Trade details</span>
-          <Kbd>O</Kbd>
+          <Kbd>o</Kbd>
         </Button>
         <div className="reviewPanel__footRight">
           {done ? (
