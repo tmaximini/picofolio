@@ -54,8 +54,10 @@ export type EdgeSummary = {
   avgDownDayCents: number;
   /** Largest peak-to-trough drop on the cumulative equity curve (positive cents). */
   maxDrawdownCents: number;
-  /** Max drawdown relative to the peak it fell from. null if peak ≤ 0. */
-  maxDrawdownPct: number | null;
+  /** Day of the equity peak the max drawdown fell from (YYYY-MM-DD) — lets
+   *  the caller size the drop against account value then. A ratio against
+   *  the P&L peak itself is meaningless (a $5k drop off a $1k peak = 500%). */
+  maxDrawdownPeakAt: string | null;
   /** Drop from the all-time peak to the latest equity (positive cents). */
   currentDrawdownCents: number;
 };
@@ -189,16 +191,20 @@ export function computePerformance(
   const equity: EquityPoint[] = [];
   let running = 0;
   let peak = 0;
+  let peakAt: string | null = rows[0] ? dayBeforeKey(rows[0].dateKey) : null;
   let maxDrawdownCents = 0;
-  let maxDrawdownPct: number | null = null;
+  let maxDrawdownPeakAt: string | null = null;
   for (const r of rows) {
     running += r.returnCents;
     equity.push({ at: r.dateKey, value: running / 100, valueCents: running });
-    if (running > peak) peak = running;
+    if (running > peak) {
+      peak = running;
+      peakAt = r.dateKey;
+    }
     const dd = peak - running;
     if (dd > maxDrawdownCents) {
       maxDrawdownCents = dd;
-      maxDrawdownPct = peak > 0 ? dd / peak : null;
+      maxDrawdownPeakAt = peakAt;
     }
   }
   const currentDrawdownCents = peak - running;
@@ -240,7 +246,7 @@ export function computePerformance(
     avgUpDayCents: greenDays > 0 ? Math.round(upSum / greenDays) : 0,
     avgDownDayCents: redDays > 0 ? Math.round(downSum / redDays) : 0,
     maxDrawdownCents,
-    maxDrawdownPct,
+    maxDrawdownPeakAt,
     currentDrawdownCents,
   };
 
@@ -311,4 +317,11 @@ export function breakdownBy(rows: ClosedRow[], dim: BreakdownDimension): Breakdo
       winRate: v.count > 0 ? v.wins / v.count : 0,
     }))
     .sort((a, b) => b.pnlCents - a.pnlCents);
+}
+
+/** The day before a YYYY-MM-DD key — the $0 anchor ahead of the first close. */
+function dayBeforeKey(key: string): string {
+  const d = new Date(`${key}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
 }

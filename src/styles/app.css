@@ -1298,7 +1298,7 @@
 }
 .returns__row {
   display: grid;
-  grid-template-columns: 52px repeat(12, minmax(0, 1fr)) 84px;
+  grid-template-columns: 52px repeat(12, minmax(0, 1fr)) 96px;
   gap: 4px;
   align-items: center;
 }
@@ -1359,4 +1359,16 @@
 }
 @media (max-width: 560px) {
   .returns__stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.returns__heatHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+/* A section heading after a card belongs to what follows it: give it air
+   above so it doesn't read as the previous card's caption. */
+.card + .sectionHead {
+  margin-top: var(--space-10);
 }

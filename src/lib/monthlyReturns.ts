@@ -12,8 +12,12 @@ export type YearReturns = {
   year: number;
   /** Jan…Dec; null where the series has no data for that month. */
   months: (number | null)[];
+  /** Same months as absolute value change, integer cents. */
+  monthsCents: (number | null)[];
   /** Months chained; null if the year has no months. */
   total: number | null;
+  /** Sum of the year's monthly value changes, cents. */
+  totalCents: number | null;
 };
 
 export type PeriodReturns = {
@@ -38,26 +42,34 @@ export function periodReturns(series: ValuePoint[]): PeriodReturns {
   const monthEnds = new Map<string, number>();
   for (const p of pts) monthEnds.set(p.time.slice(0, 7), p.valueCents);
 
-  const byYear = new Map<number, (number | null)[]>();
+  const byYear = new Map<number, { pct: (number | null)[]; cents: (number | null)[] }>();
   // The first month's base is the series' first value (partial month).
   let prev = pts[0]!.valueCents;
   for (const [ym, end] of monthEnds) {
     const year = Number(ym.slice(0, 4));
     const month = Number(ym.slice(5, 7)) - 1;
-    const months = byYear.get(year) ?? Array<number | null>(12).fill(null);
-    months[month] = end / prev - 1;
-    byYear.set(year, months);
+    const row = byYear.get(year) ?? {
+      pct: Array<number | null>(12).fill(null),
+      cents: Array<number | null>(12).fill(null),
+    };
+    row.pct[month] = end / prev - 1;
+    row.cents[month] = end - prev;
+    byYear.set(year, row);
     prev = end;
   }
 
   const years: YearReturns[] = [...byYear.entries()]
     .sort((a, b) => b[0] - a[0])
-    .map(([year, months]) => {
-      const present = months.filter((m): m is number => m != null);
-      const total = present.length
-        ? present.reduce((acc, m) => acc * (1 + m), 1) - 1
-        : null;
-      return { year, months, total };
+    .map(([year, row]) => {
+      const present = row.pct.filter((m): m is number => m != null);
+      const cents = row.cents.filter((m): m is number => m != null);
+      return {
+        year,
+        months: row.pct,
+        monthsCents: row.cents,
+        total: present.length ? present.reduce((acc, m) => acc * (1 + m), 1) - 1 : null,
+        totalCents: cents.length ? cents.reduce((a, b) => a + b, 0) : null,
+      };
     });
 
   const first = pts[0]!.valueCents;

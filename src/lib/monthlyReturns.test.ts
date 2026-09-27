@@ -23,6 +23,11 @@ describe("periodReturns", () => {
     expect(r.ytdYear).toBe(2026);
     expect(r.asOf).toBe("2026-01-30");
     expect(r.inception).toBeCloseTo(0.188);
+    // Absolute: value change in cents, summed per year.
+    expect(y25!.monthsCents[10]).toBe(1000);
+    expect(y25!.monthsCents[11]).toBe(-1100);
+    expect(y25!.totalCents).toBe(-100);
+    expect(y26!.monthsCents[0]).toBe(1980);
   });
 
   it("skips pre-funding zero days and handles too-short series", () => {

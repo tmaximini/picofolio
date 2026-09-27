@@ -1210,10 +1210,15 @@ export const useTradeStats = (scope: string = ALL_ACCOUNTS): JournalStats => {
 /** Calendar-period returns (monthly heatmap, YTD, since inception) from the
  *  scope's daily value series — the same curve the Overview chart draws. */
 export const usePeriodReturns = (scope: string = ALL_ACCOUNTS): PeriodReturns => {
+  const series = useScopeValueSeries(scope);
+  return useMemo(() => periodReturns(series), [series]);
+};
+
+/** Daily value series for a scope: the whole portfolio or one account. */
+export const useScopeValueSeries = (scope: string = ALL_ACCOUNTS): ValuePoint[] => {
   const portfolio = usePortfolioValueSeries();
   const account = useAccountValueSeries(scope);
-  const series = scope === ALL_ACCOUNTS ? portfolio : account;
-  return useMemo(() => periodReturns(series), [series]);
+  return scope === ALL_ACCOUNTS ? portfolio : account;
 };
 
 /** Open positions in scope (trades with no closing execution yet). */

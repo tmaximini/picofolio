@@ -342,3 +342,68 @@
   border-radius: 3px;
   box-shadow: 0 1px 0 var(--border-subtle);
 }
+
+/* ---------- INFO TIP ----------
+   A quiet "?" after a metric label; the explanation floats above on hover
+   or keyboard focus. Resets the caps styling it inherits from .stat__label. */
+.infoTip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: 1px;
+  margin-left: 6px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.infoTip__btn {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  font: 500 9px/1 var(--font-mono);
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  cursor: help;
+  opacity: 0.7;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+.infoTip:hover .infoTip__btn,
+.infoTip__btn:focus-visible {
+  opacity: 1;
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.infoTip__btn:focus-visible { outline-offset: 1px; }
+.infoTip__pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: var(--z-overlay);
+  width: max-content;
+  max-width: 260px;
+  padding: 9px 12px;
+  font: 400 var(--text-xs) / 1.5 var(--font-ui);
+  color: var(--text-secondary);
+  text-align: left;
+  white-space: normal;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--highlight-top), var(--shadow-lg);
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  pointer-events: none;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+.infoTip:hover .infoTip__pop,
+.infoTip__btn:focus-visible + .infoTip__pop {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
