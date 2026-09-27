@@ -13,7 +13,7 @@ import { ALL_ACCOUNTS } from "@/store";
 import {
   useAccountBaseCurrency,
   useAccountById,
-  useOpenTradeCount,
+  useOpenPositionCount,
   usePerformanceStats,
   usePeriodReturns,
   useScopeCashFlows,
@@ -55,7 +55,7 @@ export function Performance() {
     }
     return base > 0 ? s.maxDrawdownCents / base : null;
   }, [s.maxDrawdownPeakAt, s.maxDrawdownCents, valueSeries]);
-  const openCount = useOpenTradeCount(scope);
+  const openCount = useOpenPositionCount(scope);
   const avgHoldMs = useMemo(() => {
     const holds = perf.rows.flatMap((r) => (r.holdMs != null ? [r.holdMs] : []));
     return holds.length ? holds.reduce((a, b) => a + b, 0) / holds.length : null;

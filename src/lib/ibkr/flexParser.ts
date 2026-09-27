@@ -215,7 +215,17 @@ function parseTradeElement(
   }
 
   const priceCents = dollarsStringToCents(el.getAttribute("tradePrice"));
-  if (priceCents <= 0) {
+  // A $0 fill is real for option lifecycle events: IBKR books expirations
+  // (code "Ep"), assignments ("A") and exercises ("Ex") as BookTrade rows at
+  // tradePrice 0. Dropping them left every expired option OPEN forever.
+  const priceRaw = parseFloat(el.getAttribute("tradePrice") ?? "");
+  const codes = `${el.getAttribute("notes") ?? ""};${el.getAttribute("code") ?? ""}`;
+  const isOptionEvent =
+    priceRaw === 0 &&
+    (/^(OPT|FOP)$/i.test(el.getAttribute("assetCategory") ?? "") ||
+      /booktrade/i.test(el.getAttribute("transactionType") ?? "") ||
+      /(^|;)\s*(Ep|A|Ex)\s*(;|$)/.test(codes));
+  if (priceCents <= 0 && !isOptionEvent) {
     warnings.push(`Trade ${tradeID} has invalid tradePrice — skipped`);
     return null;
   }

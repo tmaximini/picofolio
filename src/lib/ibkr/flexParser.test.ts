@@ -142,3 +142,31 @@ describe("parseFlexXml cash flows", () => {
     expect(r.warnings.some((w) => /Cash Transactions/.test(w))).toBe(true);
   });
 });
+
+describe("parseFlexXml option lifecycle", () => {
+  const xml = (rows: string) =>
+    `<FlexQueryResponse><FlexStatements><FlexStatement accountId="U1"><Trades>${rows}</Trades></FlexStatement></FlexStatements></FlexQueryResponse>`;
+  const sym = "NOW   261009P00135000";
+
+  it("closes an option that expires worthless (IBKR books it at tradePrice 0)", () => {
+    const r = parseFlexXml(
+      xml(`
+        <Trade tradeID="1" ibOrderID="11" accountId="U1" symbol="${sym}" assetCategory="OPT" currency="USD"
+          buySell="SELL" quantity="-1" tradePrice="2.00" ibCommission="-1" dateTime="20260901;100000" openCloseIndicator="O" multiplier="100" />
+        <Trade tradeID="2" ibOrderID="" accountId="U1" symbol="${sym}" assetCategory="OPT" currency="USD"
+          buySell="BUY" quantity="1" tradePrice="0" ibCommission="0" dateTime="20261009;162000" openCloseIndicator="C"
+          transactionType="BookTrade" notes="Ep" multiplier="100" />`),
+    );
+    expect(r.warnings.filter((w) => /tradePrice/.test(w))).toEqual([]);
+    expect(r.trades).toHaveLength(1);
+    expect(r.trades[0]!.executions).toHaveLength(2);
+  });
+
+  it("still skips a zero-price stock row", () => {
+    const r = parseFlexXml(
+      xml(`<Trade tradeID="3" ibOrderID="12" accountId="U1" symbol="AAPL" assetCategory="STK" currency="USD"
+        buySell="BUY" quantity="10" tradePrice="0" dateTime="20260901;100000" />`),
+    );
+    expect(r.warnings.some((w) => /invalid tradePrice/.test(w))).toBe(true);
+  });
+});

@@ -1255,12 +1255,19 @@ export const useScopeValueSeries = (scope: string = ALL_ACCOUNTS): ValuePoint[] 
   return scope === ALL_ACCOUNTS ? portfolio : account;
 };
 
-/** Open positions in scope (trades with no closing execution yet). */
-export const useOpenTradeCount = (scope: string = ALL_ACCOUNTS): number => {
-  const trades = useStore((s) => s.trades);
+/** Open positions in scope — the current holdings (IBKR's position snapshot
+ *  for synced accounts, options included), not journal trades flagged OPEN,
+ *  which can overcount when a closing fill never reached the journal. */
+export const useOpenPositionCount = (scope: string = ALL_ACCOUNTS): number => {
+  const holdings = useStore((s) => s.holdings);
   return useMemo(
-    () => scopeTrades(trades, scope).filter((t) => deriveTotals(t).status === "OPEN").length,
-    [trades, scope],
+    () =>
+      new Set(
+        holdings
+          .filter((h) => scope === ALL_ACCOUNTS || h.accountId === scope)
+          .map((h) => `${h.accountId}|${h.symbol}`),
+      ).size,
+    [holdings, scope],
   );
 };
 
