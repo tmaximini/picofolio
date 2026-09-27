@@ -328,6 +328,8 @@
 /* ---------- KBD ---------- */
 
 .kbd {
+  /* Slashed zero: a "0" key and an "O" key must never look alike. */
+  font-feature-settings: "zero" 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
