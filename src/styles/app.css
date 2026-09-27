@@ -1389,3 +1389,19 @@
   text-underline-offset: 3px;
 }
 .returns__fix:hover { color: var(--text-primary); }
+
+/* Quiet count on a nav item (Review). Gives way to the g-chord on hover. */
+.nav__badge {
+  min-width: 18px;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  color: var(--text-secondary);
+  background: var(--glass-thick);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.nav__item:hover .nav__badge,
+.nav__item:focus-visible .nav__badge { display: none; }

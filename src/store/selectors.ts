@@ -28,6 +28,7 @@ import { inRange, resolveRange, type RangeValue } from "@/lib/dateRange";
 import { computePerformance, type Performance } from "@/lib/performance";
 import { periodReturns, type PeriodReturns } from "@/lib/monthlyReturns";
 import { dailyReturns } from "@/lib/twr";
+import { computeReviewInsights, isReviewed, type ReviewInsights } from "@/lib/review";
 import type { PctPoint, PerfRange } from "@/lib/perf";
 
 export type DeltaPeriod = "1D" | "1W" | "1M" | "YTD" | "1Y";
@@ -1094,6 +1095,44 @@ export const useRestoreDemoTrades = () => useStore((s) => s.restoreDemoTrades);
 export const useClearDemoPortfolio = () => useStore((s) => s.clearDemoPortfolio);
 export const useRestoreDemoPortfolio = () => useStore((s) => s.restoreDemoPortfolio);
 export const useSeedDemoData = () => useStore((s) => s.seedDemoData);
+
+// ---------- trade review ----------
+
+export const useReviewLabels = () => useStore((s) => s.reviewLabels);
+export const useReviews = () => useStore((s) => s.reviews);
+export const useSetTradeReview = () => useStore((s) => s.setTradeReview);
+export const useAddReviewLabel = () => useStore((s) => s.addReviewLabel);
+export const useUpdateReviewLabel = () => useStore((s) => s.updateReviewLabel);
+export const useRemoveReviewLabel = () => useStore((s) => s.removeReviewLabel);
+
+/** The sidebar badge's window: only recent trades nag. Older ones stay
+ *  reviewable without turning the badge into a 200-item backlog. */
+const REVIEW_BADGE_DAYS = 30;
+
+/** Closed trades in scope, closed in the last 30 days, not yet reviewed. */
+export const useUnreviewedCount = (scope: string = ALL_ACCOUNTS): number => {
+  const trades = useStore((s) => s.trades);
+  const reviews = useStore((s) => s.reviews);
+  return useMemo(() => {
+    const cutoff = new Date(Date.now() - REVIEW_BADGE_DAYS * 86_400_000).toISOString().slice(0, 10);
+    return scopeTrades(trades, scope).filter((t) => {
+      if (deriveTotals(t).status === "OPEN") return false;
+      if (tradeDateKey(t) < cutoff) return false;
+      return !isReviewed(reviews[t.id]);
+    }).length;
+  }, [trades, reviews, scope]);
+};
+
+/** Review insights over the scope's closed trades (P&L in the scope base). */
+export const useReviewInsights = (scope: string = ALL_ACCOUNTS): ReviewInsights => {
+  const perf = usePerformanceStats(scope);
+  const reviews = useStore((s) => s.reviews);
+  const labels = useStore((s) => s.reviewLabels);
+  return useMemo(
+    () => computeReviewInsights(perf.rows.map((r) => ({ id: r.id, returnCents: r.returnCents })), reviews, labels),
+    [perf.rows, reviews, labels],
+  );
+};
 
 // ---------- watchlist ----------
 

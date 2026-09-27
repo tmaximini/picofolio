@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Topbar } from "@/components/layout";
 import { Card, InfoTip, Stat } from "@/components/primitives";
 import {
   BreakdownBars,
   PerformanceChart,
   ReturnsOverview,
+  ReviewInsights,
   type BreakdownBar,
 } from "@/components/ui";
 import { formatMoney, formatPct, toneOf } from "@/lib/money";
@@ -16,6 +18,7 @@ import {
   useOpenPositionCount,
   usePerformanceStats,
   usePeriodReturns,
+  useReviewInsights,
   useScopeCashFlows,
   useScopeValueSeries,
   useSelectedAccountId,
@@ -41,6 +44,7 @@ export function Performance() {
   const s = perf.summary;
   const [dim, setDim] = useState<BreakdownDimension>("tag");
   const periods = usePeriodReturns(scope);
+  const insights = useReviewInsights(scope);
   const valueSeries = useScopeValueSeries(scope);
   const { known: flowsKnown } = useScopeCashFlows(scope);
   // Size the max drawdown against account value on the day of the peak it
@@ -290,6 +294,13 @@ export function Performance() {
             } value={<span style={colorFor(-1)}>{formatMoney(s.avgDownDayCents, baseCurrency, true)}</span>} />
         </div>
       </Card>
+
+      {/* What the trade reviews say — mistakes that cost, habits that pay. */}
+      <div className="sectionHead">
+        <h2 className="sectionTitle">Review insights</h2>
+        <Link to="/review" className="sectionHead__link">Review trades →</Link>
+      </div>
+      <ReviewInsights insights={insights} currency={baseCurrency} />
 
       {/* Breakdown by dimension */}
       <div className="sectionHead">

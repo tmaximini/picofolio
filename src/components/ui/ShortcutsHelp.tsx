@@ -21,6 +21,7 @@ const GROUPS: ShortcutGroup[] = [
       { keys: ["g", "h"], label: "Holdings" },
       { keys: ["g", "w"], label: "Watchlist" },
       { keys: ["g", "p"], label: "Performance" },
+      { keys: ["g", "r"], label: "Trade review" },
       { keys: ["g", "s"], label: "Settings" },
       { keys: ["⌘K"], label: "Command palette" },
     ],

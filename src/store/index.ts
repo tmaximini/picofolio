@@ -16,6 +16,7 @@ import { extractNoteTokens, type Note } from "@/lib/notes";
 import type { PricePoint } from "@/lib/priceHistory";
 import type { Trade, TradeSetup } from "@/lib/trades";
 import type { WatchItem } from "@/lib/watchlist";
+import { DEFAULT_REVIEW_LABELS, type ReviewLabel, type TradeReview } from "@/lib/review";
 import { DEFAULT_DATE_RANGE, type RangeValue } from "@/lib/dateRange";
 import {
   fetchYahooDaily,
@@ -157,6 +158,10 @@ type StoreState = {
   notes: Note[];
   /** Symbols followed but not held — newest first. */
   watchlist: WatchItem[];
+  /** Trade review: labels available for tagging (user-editable)… */
+  reviewLabels: ReviewLabel[];
+  /** …and per-trade reviews, keyed by trade id. */
+  reviews: Record<string, TradeReview>;
   journalRange: RangeValue;
   /** Calendar viewing month — first-of-month ISO date. */
   calendarMonth: string;
@@ -288,6 +293,14 @@ type StoreState = {
    *  on demand — wired to the landing page's "Start with Demo Data" CTA.
    *  Merges by id so it's idempotent and never clobbers real entries. */
   seedDemoData: () => void;
+
+  // Trade review
+  /** Merge a patch into a trade's review (creating it if needed). */
+  setTradeReview: (tradeId: string, patch: Partial<TradeReview>) => void;
+  addReviewLabel: (label: Omit<ReviewLabel, "id">) => string;
+  updateReviewLabel: (id: string, patch: Partial<Omit<ReviewLabel, "id">>) => void;
+  /** Delete a label and strip it from every review. */
+  removeReviewLabel: (id: string) => void;
 
   // Watchlist
   /** Add a symbol (no-op if already watched) and warm its price series. */
@@ -490,6 +503,8 @@ export const useStore = create<StoreState>()(
       setups: [],
       notes: [],
       watchlist: [],
+      reviewLabels: DEFAULT_REVIEW_LABELS,
+      reviews: {},
       journalRange: DEFAULT_DATE_RANGE,
       calendarMonth: firstOfThisMonthISO(),
       ibkrConnections: [],
@@ -1055,6 +1070,31 @@ export const useStore = create<StoreState>()(
           };
         }),
 
+      setTradeReview: (tradeId, patch) =>
+        set((s) => {
+          const prev = s.reviews[tradeId] ?? { labelIds: [], note: "" };
+          return { reviews: { ...s.reviews, [tradeId]: { ...prev, ...patch } } };
+        }),
+
+      addReviewLabel: (label) => {
+        const id = genId("lbl");
+        set((s) => ({ reviewLabels: [...s.reviewLabels, { ...label, id }] }));
+        return id;
+      },
+
+      updateReviewLabel: (id, patch) =>
+        set((s) => ({
+          reviewLabels: s.reviewLabels.map((l) => (l.id === id ? { ...l, ...patch } : l)),
+        })),
+
+      removeReviewLabel: (id) =>
+        set((s) => ({
+          reviewLabels: s.reviewLabels.filter((l) => l.id !== id),
+          reviews: Object.fromEntries(
+            Object.entries(s.reviews).map(([k, r]) => [k, { ...r, labelIds: r.labelIds.filter((x) => x !== id) }]),
+          ),
+        })),
+
       addToWatchlist: ({ symbol, name }) => {
         const sym = symbol.trim().toUpperCase();
         if (!sym || get().watchlist.some((w) => w.symbol === sym)) return;
@@ -1083,6 +1123,8 @@ export const useStore = create<StoreState>()(
           setups: [],
           notes: [],
           watchlist: [],
+          reviewLabels: DEFAULT_REVIEW_LABELS,
+          reviews: {},
           journalRange: DEFAULT_DATE_RANGE,
           calendarMonth: firstOfThisMonthISO(),
           ibkrConnections: [],
@@ -1547,6 +1589,9 @@ export const useStore = create<StoreState>()(
         notes: s.notes,
         // Additive key — the default shallow merge fills `watchlist: []`.
         watchlist: s.watchlist,
+        // Additive keys — shallow merge fills the defaults for older states.
+        reviewLabels: s.reviewLabels,
+        reviews: s.reviews,
         selectedAccountId: s.selectedAccountId,
         // A "loading" entry persisted mid-flight would rehydrate as a permanent
         // block (loadPrice early-returns on loading) — freeze the symbol's

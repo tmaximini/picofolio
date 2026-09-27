@@ -15,6 +15,7 @@ import "./styles/switcher.css";
 import "./styles/mobile.css";
 import "./styles/landing.css";
 import "./styles/watchlist.css";
+import "./styles/review.css";
 
 const root = document.getElementById("root")!;
 const app = (

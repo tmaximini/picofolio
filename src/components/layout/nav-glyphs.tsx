@@ -66,6 +66,18 @@ export function GlyphWatchlist({ className }: GlyphProps) {
   );
 }
 
+/** Review — a checklist; the tick redraws on hover. */
+export function GlyphReview({ className }: GlyphProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M7.5 4.5 H13.5" />
+      <path d="M7.5 8 H13.5" />
+      <path d="M7.5 11.5 H11.5" />
+      <path className="navGlyph__draw" d="M2.25 8.2 L3.6 9.5 L5.6 6.6" pathLength={1} />
+    </svg>
+  );
+}
+
 /** Calendar — frame + today-dot; the dot steps to the next day on hover. */
 export function GlyphCalendar({ className }: GlyphProps) {
   return (
