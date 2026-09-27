@@ -15,6 +15,7 @@ import { setupsSeed, tradesSeed } from "@/lib/mockTrades";
 import { extractNoteTokens, type Note } from "@/lib/notes";
 import type { PricePoint } from "@/lib/priceHistory";
 import type { Trade, TradeSetup } from "@/lib/trades";
+import type { WatchItem } from "@/lib/watchlist";
 import { DEFAULT_DATE_RANGE, type DateRangeKey } from "@/lib/dateRange";
 import {
   fetchYahooDaily,
@@ -75,6 +76,8 @@ export type IbkrConnection = {
   token: string;
   queryId: string;
   lastSyncAt: number | null;
+  /** Last pull attempt, successful or not — throttles the automatic sync. */
+  lastAttemptAt?: number | null;
   status: IbkrStatus;
   error: string | null;
   lastSummary: {
@@ -111,7 +114,23 @@ export type Toast = {
   body?: string;
   /** Auto-dismiss after this many ms. Omit = sticky (errors). */
   duration?: number;
+  /** Toasts sharing a key replace each other in place instead of stacking.
+   *  Defaults to kind + title + body, so exact repeats always merge. */
+  key?: string;
+  /** How many times this toast has fired (shown as ×N when > 1). */
+  count?: number;
+  /** Bumped on every repeat — restarts the dismiss timer. */
+  seq?: number;
 };
+
+/** The on-load auto-sync skips a connection pulled (or tried) this recently.
+ *  Flex statements are end-of-day data and IBKR rate-limits pulls (1018);
+ *  re-pulling on every reload only burns quota and replays failures. An
+ *  explicit sync (button / r) always runs. */
+const AUTO_SYNC_MIN_INTERVAL_MS = 15 * 60_000;
+
+/** More than this and the oldest toast makes room. */
+const MAX_TOASTS = 3;
 
 type StoreState = {
   // Raw, seeded from mock; real data via actions
@@ -126,6 +145,8 @@ type StoreState = {
   trades: Trade[];
   setups: TradeSetup[];
   notes: Note[];
+  /** Symbols followed but not held — newest first. */
+  watchlist: WatchItem[];
   journalRange: DateRangeKey;
   /** Calendar viewing month — first-of-month ISO date. */
   calendarMonth: string;
@@ -161,12 +182,9 @@ type StoreState = {
   /** Transient: a full sync (IBKR pulls + prices) is in flight. */
   syncingAll: boolean;
 
-  /** First-run gate. False until the user picks a path in the welcome screen
+  /** First-run gate. False until the user picks a path on the landing page
    *  (demo data or empty). Persisted so it only shows once. */
   onboarded: boolean;
-  /** Transient (not persisted): the welcome screen was re-opened via "About"
-   *  after onboarding. The screen is visible when `!onboarded || welcomeOpen`. */
-  welcomeOpen: boolean;
 
   // Price actions
   loadPrice: (symbol: string, opts?: { force?: boolean }) => Promise<void>;
@@ -253,17 +271,20 @@ type StoreState = {
   clearDemoPortfolio: () => void;
   restoreDemoPortfolio: () => void;
   /** Load the full demo seed (accounts, holdings, trades, setups, weekly P&L)
-   *  on demand — wired to the welcome screen's "Start with Demo Data" CTA.
+   *  on demand — wired to the landing page's "Start with Demo Data" CTA.
    *  Merges by id so it's idempotent and never clobbers real entries. */
   seedDemoData: () => void;
 
-  // Onboarding / welcome
+  // Watchlist
+  /** Add a symbol (no-op if already watched) and warm its price series. */
+  addToWatchlist: (item: { symbol: string; name?: string }) => void;
+  removeFromWatchlist: (symbol: string) => void;
+
+  // Onboarding / landing
   completeOnboarding: () => void;
-  openWelcome: () => void;
-  dismissWelcome: () => void;
   /** Wipe every local slice (accounts, trades, notes, connections, prices,
    *  tokens, settings) back to the fresh first-run state. Persisted storage is
-   *  overwritten with the empty state, so the welcome screen shows again. */
+   *  overwritten with the empty state, so the landing page shows again. */
   clearAllData: () => void;
 
   // IBKR actions — per-connection
@@ -325,6 +346,20 @@ function buildIbkrHoldings(accountId: string, positions: ParsedPosition[]): Hold
  * one Picofolio account); fresh dates overwrite, older history outside the
  * query window is kept — so a 365-day query never erodes a longer record.
  */
+/** Demo watchlist — names the demo portfolio doesn't hold, staggered add
+ *  dates so "since added" has something to say. */
+function watchlistSeed(): WatchItem[] {
+  const daysAgo = (n: number) =>
+    new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+  return [
+    { symbol: "NVDA", name: "NVIDIA Corporation", addedAt: daysAgo(12), source: "demo" },
+    { symbol: "COST", name: "Costco Wholesale", addedAt: daysAgo(40), source: "demo" },
+    { symbol: "0700.HK", name: "Tencent Holdings", addedAt: daysAgo(75), source: "demo" },
+    { symbol: "SAP.DE", name: "SAP SE", addedAt: daysAgo(110), source: "demo" },
+    { symbol: "UBER", name: "Uber Technologies", addedAt: daysAgo(160), source: "demo" },
+  ];
+}
+
 function mergeNavHistory(prev: NavPoint[] | undefined, rows: ParsedNavPoint[]): NavPoint[] {
   const fresh = new Map<string, number>();
   for (const r of rows) fresh.set(r.time, (fresh.get(r.time) ?? 0) + r.valueCents);
@@ -407,7 +442,7 @@ function isFresh(entry: PriceEntry | undefined): boolean {
 export const useStore = create<StoreState>()(
   persist(
     (set, get) => ({
-      // Start empty: a brand-new user lands on the welcome screen and chooses
+      // Start empty: a brand-new user lands on the landing page and chooses
       // demo data or an empty portfolio. Demo seeds load on demand via
       // seedDemoData(); existing users keep their data (migrate sets onboarded).
       accounts: [],
@@ -417,6 +452,7 @@ export const useStore = create<StoreState>()(
       trades: [],
       setups: [],
       notes: [],
+      watchlist: [],
       journalRange: DEFAULT_DATE_RANGE,
       calendarMonth: firstOfThisMonthISO(),
       ibkrConnections: [],
@@ -430,7 +466,6 @@ export const useStore = create<StoreState>()(
       syncing: false,
       syncingAll: false,
       onboarded: false,
-      welcomeOpen: false,
 
       loadPrice: async (symbol, opts) => {
         // Option (OCC) symbols have no Yahoo daily history — they'd just 404.
@@ -599,9 +634,10 @@ export const useStore = create<StoreState>()(
         // (no daily history) and dedupe symbols held in multiple accounts.
         const symbols = [
           ...new Set(
-            get()
-              .holdings.map((h) => h.symbol)
-              .filter((s) => parseOccSymbol(s) == null),
+            [
+              ...get().holdings.map((h) => h.symbol),
+              ...get().watchlist.map((w) => w.symbol),
+            ].filter((s) => parseOccSymbol(s) == null),
           ),
         ];
         // Eagerly prefetch live marks for open option positions too. The
@@ -637,11 +673,19 @@ export const useStore = create<StoreState>()(
           const scoped = opts?.accountId
             ? accounts.filter((a) => a.id === opts.accountId)
             : accounts;
+          const now = Date.now();
           const connIds = scoped
             .map((a) => a.flexConnectionId)
-            .filter((id): id is string => Boolean(id));
+            .filter((id): id is string => Boolean(id))
+            .filter((id) => {
+              if (!opts?.quiet) return true;
+              const c = get().ibkrConnections.find((x) => x.id === id);
+              const last = c?.lastAttemptAt ?? c?.lastSyncAt ?? null;
+              return last == null || now - last > AUTO_SYNC_MIN_INTERVAL_MS;
+            });
           if (connIds.length > 0 && !opts?.quiet) {
             pushToast({
+              key: "sync:progress",
               kind: "info",
               title:
                 connIds.length === 1
@@ -924,6 +968,7 @@ export const useStore = create<StoreState>()(
         set((s) => ({
           accounts: s.accounts.filter((a) => a.source !== "demo"),
           holdings: s.holdings.filter((h) => h.source !== "demo"),
+          watchlist: s.watchlist.filter((w) => w.source !== "demo"),
         })),
       restoreDemoPortfolio: () =>
         set((s) => {
@@ -965,14 +1010,28 @@ export const useStore = create<StoreState>()(
             trades: [...s.trades, ...tradesSeed.filter((t) => !tradeIds.has(t.id))],
             setups: [...s.setups, ...setupsSeed.filter((x) => !setupIds.has(x.id))],
             weeklyPnl: s.weeklyPnl.length ? s.weeklyPnl : weeklyPnlSeed,
+            watchlist: s.watchlist.length ? s.watchlist : watchlistSeed(),
             onboarded: true,
-            welcomeOpen: false,
           };
         }),
 
-      completeOnboarding: () => set({ onboarded: true, welcomeOpen: false }),
-      openWelcome: () => set({ welcomeOpen: true }),
-      dismissWelcome: () => set({ welcomeOpen: false }),
+      addToWatchlist: ({ symbol, name }) => {
+        const sym = symbol.trim().toUpperCase();
+        if (!sym || get().watchlist.some((w) => w.symbol === sym)) return;
+        const item: WatchItem = {
+          symbol: sym,
+          ...(name ? { name } : {}),
+          addedAt: new Date().toISOString().slice(0, 10),
+          source: "manual",
+        };
+        set((s) => ({ watchlist: [item, ...s.watchlist] }));
+        void get().loadPrice(sym);
+      },
+
+      removeFromWatchlist: (symbol) =>
+        set((s) => ({ watchlist: s.watchlist.filter((w) => w.symbol !== symbol) })),
+
+      completeOnboarding: () => set({ onboarded: true }),
 
       clearAllData: () =>
         set({
@@ -983,6 +1042,7 @@ export const useStore = create<StoreState>()(
           trades: [],
           setups: [],
           notes: [],
+          watchlist: [],
           journalRange: DEFAULT_DATE_RANGE,
           calendarMonth: firstOfThisMonthISO(),
           ibkrConnections: [],
@@ -993,9 +1053,8 @@ export const useStore = create<StoreState>()(
           marketDataToken: null,
           lastSyncAt: null,
           syncing: false,
-          // Drop straight back to the first-run welcome.
+          // Drop straight back to the first-run landing page.
           onboarded: false,
-          welcomeOpen: false,
         }),
 
       // ---------- IBKR (multi-connection) ----------
@@ -1166,13 +1225,14 @@ export const useStore = create<StoreState>()(
         if (!conn.token || !conn.queryId) {
           patch({ status: "error", error: "Missing token or Query ID" });
           pushToast({
+            key: `sync:${conn.id}`,
             kind: "error",
             title: `${conn.label}: missing credentials`,
             body: "Add a Flex token and Query ID before syncing.",
           });
           return;
         }
-        patch({ status: "sending", error: null });
+        patch({ status: "sending", error: null, lastAttemptAt: Date.now() });
         try {
           patch({ status: "polling" });
           const xml = await fetchFlexStatement(conn.token, conn.queryId);
@@ -1300,6 +1360,7 @@ export const useStore = create<StoreState>()(
                 ? `synced ${summary.added} trade${summary.added === 1 ? "" : "s"}`
                 : `updated ${updated.length} trade${updated.length === 1 ? "" : "s"}`;
             pushToast({
+              key: `sync:${conn.id}`,
               kind: "success",
               title: `${conn.label}: ${headline}`,
               body: join(
@@ -1313,6 +1374,7 @@ export const useStore = create<StoreState>()(
             });
           } else if (!quiet) {
             pushToast({
+              key: `sync:${conn.id}`,
               kind: "info",
               title: `${conn.label}: up to date`,
               body: join(
@@ -1328,6 +1390,7 @@ export const useStore = create<StoreState>()(
           const msg = err instanceof Error ? err.message : String(err);
           patch({ status: "error", error: msg });
           pushToast({
+            key: `sync:${conn.id}`,
             kind: "error",
             title: `${conn.label}: sync failed`,
             body: msg,
@@ -1343,8 +1406,25 @@ export const useStore = create<StoreState>()(
       },
 
       pushToast: (t) => {
+        const key = t.key ?? `${t.kind}|${t.title}|${t.body ?? ""}`;
+        const existing = get().toasts.find((x) => x.key === key);
+        if (existing) {
+          // Same toast again (a retry loop, repeated auto-syncs, a newer
+          // status for the same connection): update it in place. An identical
+          // message counts up; a changed one replaces the text and resets.
+          const same = existing.title === t.title && existing.body === t.body && existing.kind === t.kind;
+          const next: Toast = {
+            ...t,
+            id: existing.id,
+            key,
+            count: same ? (existing.count ?? 1) + 1 : 1,
+            seq: (existing.seq ?? 0) + 1,
+          };
+          set((s) => ({ toasts: s.toasts.map((x) => (x.id === existing.id ? next : x)) }));
+          return existing.id;
+        }
         const id = `toast-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-        set((s) => ({ toasts: [...s.toasts, { ...t, id }] }));
+        set((s) => ({ toasts: [...s.toasts, { ...t, id, key, count: 1, seq: 0 }].slice(-MAX_TOASTS) }));
         return id;
       },
       dismissToast: (id) =>
@@ -1367,6 +1447,8 @@ export const useStore = create<StoreState>()(
         // Additive v7 key — zustand's default shallow merge fills `notes: []`
         // for older persisted states, so no version bump/migration needed.
         notes: s.notes,
+        // Additive key — the default shallow merge fills `watchlist: []`.
+        watchlist: s.watchlist,
         selectedAccountId: s.selectedAccountId,
         // A "loading" entry persisted mid-flight would rehydrate as a permanent
         // block (loadPrice early-returns on loading) — freeze the symbol's

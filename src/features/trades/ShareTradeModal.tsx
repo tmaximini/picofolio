@@ -13,6 +13,7 @@ import { formatCents, formatDelta, formatPct, toneOf } from "@/lib/money";
 import { formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import { deriveTotals, formatHold, tradeDateKey } from "@/lib/tradeMath";
 import type { Trade } from "@/lib/trades";
+import { BrandMark } from "@/components/primitives";
 import { usePushToast } from "@/store/selectors";
 import { ShareCardChart } from "./ShareCardChart";
 
@@ -217,10 +218,8 @@ export function ShareTradeModal({ trade, onClose }: ShareTradeModalProps) {
                   </div>
 
                   <div className="shareCard__watermark">
-                    <span className="brand__mark" aria-hidden>
-                      <span className="brand__markGlyph">P</span>
-                    </span>
-                    <span className="shareCard__wordmark">picofolio</span>
+                    <BrandMark size={22} className="brand__mark" />
+                    <span className="shareCard__wordmark wordmark">picofolio</span>
                   </div>
                 </div>
               </div>

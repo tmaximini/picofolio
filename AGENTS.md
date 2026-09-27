@@ -37,6 +37,7 @@ The bias is always toward restraint: darker, calmer, more typographic.
    - Calendar of realized P&L by day
    - Trade list with setups/tags
 4. **Holdings table**: combined, sortable, with day/unrealized deltas and expandable charts
+   - **Watchlist**: followed-not-held symbols (day / 1M / since-added, 52W range, sparkline)
 5. **Local persistence**: everything lives in browser local storage today; snapshots on each sync
 
 **Out of scope**, no matter how tempting:
@@ -69,7 +70,8 @@ Single source of truth: `src/styles/tokens.css`. Read it before writing any UI c
 
 ### Typography rules
 
-- Display font: **Fraunces** (variable serif) for page titles, hero headlines, brand. Italic optical-size variant has personality without being precious.
+- Brand font: **Newsreader** (`--font-brand`), italic for the wordmark — the lowercase `picofolio` wordmark and landing-page headlines only. The mark is `BrandMark` (a "p" whose bowl ends in the red live-price dot).
+- Display font: **Fraunces** (variable serif) for in-app page titles and hero numbers. Italic optical-size variant has personality without being precious.
 - UI font: **Geist** for buttons, labels, body. **Never Inter** — it screams "AI-generated SaaS dashboard."
 - Mono font: **Berkeley Mono** if licensed, else **JetBrains Mono**. Used for ALL numbers, all the time.
 - Small caps with letter-spacing for category labels (`--tracking-caps`). Bloomberg-terminal energy.
@@ -91,7 +93,7 @@ Every meaningful action must have a keyboard shortcut. Patterns to follow:
 
 - `⌘K` / `Ctrl K` opens the command palette (Raycast-style fuzzy search across symbols, accounts, actions)
 - `n` new trade
-- `g`-prefix navigation (Linear-style): `g o` Overview, `g a` Activity/journal, `g c` Calendar, `g h` Holdings, `g s` Settings
+- `g`-prefix navigation (Linear-style): `g o` Overview, `g a` Activity/journal, `g c` Calendar, `g h` Holdings, `g w` Watchlist, `g p` Performance, `g s` Settings
 - `?` opens the shortcut help overlay
 - `/` focuses any visible filter input
 
@@ -134,12 +136,14 @@ src/
     mock.ts            # demo data — keeps the UI alive without a broker
   store/               # Zustand store + selectors (persisted to local storage)
   pages/
+    Landing.tsx        # "/" — marketing front door; the app lives at /overview etc.
     Overview.tsx
     Trading.tsx
     Calendar.tsx
     Holdings.tsx
     Performance.tsx
     Settings.tsx
+    Watchlist.tsx
 ```
 
 ## When in doubt

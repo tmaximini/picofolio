@@ -26,6 +26,7 @@ import {
 import { contractMultiplier, parseOccSymbol } from "@/lib/optionSymbol";
 import { inRange, rangeFor, type DateRangeKey } from "@/lib/dateRange";
 import { computePerformance, type Performance } from "@/lib/performance";
+import { periodReturns, type PeriodReturns } from "@/lib/monthlyReturns";
 import type { PctPoint, PerfRange } from "@/lib/perf";
 
 export type DeltaPeriod = "1D" | "1W" | "1M" | "YTD" | "1Y";
@@ -1061,17 +1062,18 @@ export const useClearDemoPortfolio = () => useStore((s) => s.clearDemoPortfolio)
 export const useRestoreDemoPortfolio = () => useStore((s) => s.restoreDemoPortfolio);
 export const useSeedDemoData = () => useStore((s) => s.seedDemoData);
 
-// ---------- onboarding / welcome ----------
+// ---------- watchlist ----------
 
-/** The welcome screen is visible on first run, or when re-opened via "About". */
-export const useWelcomeVisible = (): boolean =>
-  useStore((s) => !s.onboarded || s.welcomeOpen);
-/** True only on genuine first run (no path chosen yet) — drives whether the
- *  welcome screen shows a dismiss affordance vs. forcing a choice. */
+export const useWatchlist = () => useStore((s) => s.watchlist);
+export const useAddToWatchlist = () => useStore((s) => s.addToWatchlist);
+export const useRemoveFromWatchlist = () => useStore((s) => s.removeFromWatchlist);
+
+// ---------- onboarding / landing ----------
+
+/** True only on genuine first run (no path chosen yet) — the landing page
+ *  stands in for the app until the user picks demo data or an empty start. */
 export const useIsFirstRun = (): boolean => useStore((s) => !s.onboarded);
 export const useCompleteOnboarding = () => useStore((s) => s.completeOnboarding);
-export const useOpenWelcome = () => useStore((s) => s.openWelcome);
-export const useDismissWelcome = () => useStore((s) => s.dismissWelcome);
 export const useClearAllData = () => useStore((s) => s.clearAllData);
 
 export const useDemoCounts = (): { demo: number; real: number } => {
@@ -1202,6 +1204,29 @@ export const useTradeStats = (scope: string = ALL_ACCOUNTS): JournalStats => {
   return useMemo(
     () => computeStats(trades, scopeBaseOf(accounts, scope), prices),
     [trades, accounts, prices, scope],
+  );
+};
+
+/** Calendar-period returns (monthly heatmap, YTD, since inception) from the
+ *  scope's daily value series — the same curve the Overview chart draws. */
+export const usePeriodReturns = (scope: string = ALL_ACCOUNTS): PeriodReturns => {
+  const series = useScopeValueSeries(scope);
+  return useMemo(() => periodReturns(series), [series]);
+};
+
+/** Daily value series for a scope: the whole portfolio or one account. */
+export const useScopeValueSeries = (scope: string = ALL_ACCOUNTS): ValuePoint[] => {
+  const portfolio = usePortfolioValueSeries();
+  const account = useAccountValueSeries(scope);
+  return scope === ALL_ACCOUNTS ? portfolio : account;
+};
+
+/** Open positions in scope (trades with no closing execution yet). */
+export const useOpenTradeCount = (scope: string = ALL_ACCOUNTS): number => {
+  const trades = useStore((s) => s.trades);
+  return useMemo(
+    () => scopeTrades(trades, scope).filter((t) => deriveTotals(t).status === "OPEN").length,
+    [trades, scope],
   );
 };
 

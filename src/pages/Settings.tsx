@@ -201,7 +201,7 @@ function MarketDataCard() {
             <a
               href="https://www.marketdata.app/"
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               style={{ color: "var(--accent)" }}
             >
               MarketData.app
@@ -223,7 +223,10 @@ function MarketDataCard() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="paste your token"
-            autoComplete="off"
+            // Keep API tokens out of browser password managers.
+            autoComplete="new-password"
+            data-1p-ignore
+            data-lpignore="true"
             spellCheck={false}
           />
           <button
@@ -596,7 +599,9 @@ function ConnectionControls({ connection }: { connection: IbkrConnection }) {
               value={tokenDraft}
               onChange={(e) => setTokenDraft(e.target.value)}
               placeholder="123456789012345678901"
-              autoComplete="off"
+              autoComplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
               spellCheck={false}
             />
             <button

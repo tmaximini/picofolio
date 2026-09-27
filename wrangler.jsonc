@@ -12,8 +12,16 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
+    // Navigations reach the Worker so app routes can get the plain shell
+    // (app.html) while "/" serves the prerendered landing page. Hashed
+    // bundles skip the Worker entirely.
+    "run_worker_first": ["/*", "!/assets/*"],
   },
+  // Invocation logs record full request URLs. No token travels in a URL any
+  // more (see worker/index.ts), but keep request-level logging off anyway —
+  // this app proxies users' broker traffic and has no business retaining it.
   "observability": {
     "enabled": true,
+    "logs": { "invocation_logs": false },
   },
 }

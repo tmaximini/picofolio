@@ -1,14 +1,22 @@
 import { useMemo, useState } from "react";
 import { Topbar } from "@/components/layout";
-import { Card, Stat } from "@/components/primitives";
-import { BreakdownBars, PerformanceChart, type BreakdownBar } from "@/components/ui";
+import { Card, InfoTip, Stat } from "@/components/primitives";
+import {
+  BreakdownBars,
+  PerformanceChart,
+  ReturnsOverview,
+  type BreakdownBar,
+} from "@/components/ui";
 import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import { breakdownBy, type BreakdownDimension } from "@/lib/performance";
 import { ALL_ACCOUNTS } from "@/store";
 import {
   useAccountBaseCurrency,
   useAccountById,
+  useOpenTradeCount,
   usePerformanceStats,
+  usePeriodReturns,
+  useScopeValueSeries,
   useSelectedAccountId,
 } from "@/store/selectors";
 
@@ -21,7 +29,7 @@ const DIMENSIONS: { key: BreakdownDimension; label: string }[] = [
   { key: "hold", label: "Hold" },
 ];
 
-/** Trading edge & risk analytics — all-time, range-independent. The aggregate
+/** Period returns, then trading edge & risk analytics — all-time, range-independent. The aggregate
  *  "where does my edge come from" view that the descriptive tabs don't cover. */
 export function Performance() {
   const scope = useSelectedAccountId();
@@ -31,6 +39,35 @@ export function Performance() {
   const baseCurrency = useAccountBaseCurrency(scope);
   const s = perf.summary;
   const [dim, setDim] = useState<BreakdownDimension>("tag");
+  const periods = usePeriodReturns(scope);
+  const valueSeries = useScopeValueSeries(scope);
+  // Size the max drawdown against account value on the day of the peak it
+  // fell from — a drop's weight depends on the account, not on the P&L peak.
+  const drawdownPct = useMemo(() => {
+    const at = s.maxDrawdownPeakAt;
+    if (!at || s.maxDrawdownCents <= 0 || valueSeries.length === 0) return null;
+    let base = valueSeries[0]!.valueCents;
+    for (const p of valueSeries) {
+      if (p.time > at) break;
+      base = p.valueCents;
+    }
+    return base > 0 ? s.maxDrawdownCents / base : null;
+  }, [s.maxDrawdownPeakAt, s.maxDrawdownCents, valueSeries]);
+  const openCount = useOpenTradeCount(scope);
+  const avgHoldMs = useMemo(() => {
+    const holds = perf.rows.flatMap((r) => (r.holdMs != null ? [r.holdMs] : []));
+    return holds.length ? holds.reduce((a, b) => a + b, 0) / holds.length : null;
+  }, [perf.rows]);
+
+  const overview = (
+    <ReturnsOverview
+      returns={periods}
+      openPositions={openCount}
+      closedPositions={s.trades}
+      avgHoldMs={avgHoldMs}
+      currency={baseCurrency}
+    />
+  );
 
   // Collapse the per-trade equity to one point per day (last cumulative) and
   // anchor at $0 the day before the first close — Lightweight Charts needs
@@ -74,6 +111,7 @@ export function Performance() {
     return (
       <>
         <Topbar title="Performance" subtitle={subtitle} />
+        {overview}
         <Card>
           <div className="emptyState">
             <div className="emptyState__title">No closed trades yet</div>
@@ -91,6 +129,9 @@ export function Performance() {
     <>
       <Topbar title="Performance" subtitle={subtitle} />
 
+      {/* Period returns: headline figures + the month-by-year heatmap. */}
+      {overview}
+
       {/* Hero: all-time equity curve + the headline edge/risk figures. Net P&L
           is the one number that matters most — it leads at display scale; the
           rest support it a tier down. */}
@@ -107,11 +148,16 @@ export function Performance() {
           </div>
           <div className="perfHero__secondary">
             <Stat
-              label="Max Drawdown"
+              label={
+              <>
+                Max Drawdown
+                <InfoTip>Largest fall in cumulative realized P&L from a high point to a later low. The percentage sizes that drop against your account value on the day of the high.</InfoTip>
+              </>
+            }
               value={<span style={colorFor(-1)}>−{formatMoney(s.maxDrawdownCents, baseCurrency)}</span>}
               delta={
-                s.maxDrawdownPct != null
-                  ? { value: formatPct(s.maxDrawdownPct), tone: "loss" }
+                drawdownPct != null
+                  ? { value: `${formatPct(-drawdownPct)} of account`, tone: "loss" }
                   : undefined
               }
             />
@@ -121,7 +167,12 @@ export function Performance() {
               delta={{ value: `${s.wins}W · ${s.losses}L`, tone: "neutral" }}
             />
             <Stat
-              label="Expectancy"
+              label={
+              <>
+                Expectancy
+                <InfoTip>Average net P&L per closed trade — roughly what one more trade has been worth, on past form.</InfoTip>
+              </>
+            }
               value={
                 <span style={colorFor(s.expectancyCents)}>
                   {formatMoney(s.expectancyCents, baseCurrency, true)}
@@ -140,7 +191,12 @@ export function Performance() {
       <Card>
         <div className="perfGrid perfGrid--detail">
           <Stat
-            label="Profit Factor"
+            label={
+              <>
+                Profit Factor
+                <InfoTip>Gross profit ÷ gross loss. Above 1× you make money overall; 2× means every $1 lost was matched by $2 won.</InfoTip>
+              </>
+            }
             value={
               s.profitFactor != null ? (
                 <span style={colorFor(s.profitFactor >= 1 ? 1 : -1)}>
@@ -152,11 +208,21 @@ export function Performance() {
             }
           />
           <Stat
-            label="Payoff Ratio"
+            label={
+              <>
+                Payoff Ratio
+                <InfoTip>Average win ÷ average loss. At 3× a typical win is three times a typical loss, so you can be right less than half the time and still come out ahead.</InfoTip>
+              </>
+            }
             value={s.payoffRatio != null ? `${s.payoffRatio.toFixed(2)}×` : <Dash />}
           />
           <Stat
-            label="Avg R"
+            label={
+              <>
+                Avg R
+                <InfoTip>Average result in R, where 1R is the risk you planned — entry to stop. Only trades with a stop set are counted.</InfoTip>
+              </>
+            }
             value={
               s.avgR != null ? (
                 <span style={colorFor(s.avgR)}>{`${s.avgR >= 0 ? "+" : ""}${s.avgR.toFixed(2)}R`}</span>
@@ -198,12 +264,27 @@ export function Performance() {
           <Stat label="Longest Win" value={<span style={colorFor(1)}>{`${s.longestWinStreak}W`}</span>} />
           <Stat label="Longest Loss" value={<span style={colorFor(-1)}>{`${s.longestLossStreak}L`}</span>} />
           <Stat
-            label="Green Days"
+            label={
+              <>
+                Green Days
+                <InfoTip>Share of trading days that closed with net realized profit.</InfoTip>
+              </>
+            }
             value={`${Math.round(s.pctGreenDays * 100)}%`}
             delta={{ value: `${s.greenDays} / ${s.greenDays + s.redDays}`, tone: "neutral" }}
           />
-          <Stat label="Avg Up Day" value={<span style={colorFor(1)}>{formatMoney(s.avgUpDayCents, baseCurrency, true)}</span>} />
-          <Stat label="Avg Down Day" value={<span style={colorFor(-1)}>{formatMoney(s.avgDownDayCents, baseCurrency, true)}</span>} />
+          <Stat label={
+              <>
+                Avg Up Day
+                <InfoTip>Average realized P&L on days that closed green.</InfoTip>
+              </>
+            } value={<span style={colorFor(1)}>{formatMoney(s.avgUpDayCents, baseCurrency, true)}</span>} />
+          <Stat label={
+              <>
+                Avg Down Day
+                <InfoTip>Average realized P&L on days that closed red.</InfoTip>
+              </>
+            } value={<span style={colorFor(-1)}>{formatMoney(s.avgDownDayCents, baseCurrency, true)}</span>} />
         </div>
       </Card>
 

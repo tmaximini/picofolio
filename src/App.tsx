@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bookmark, CircleHelp, Info, Plus, Terminal } from "lucide-react";
 import {
   BrowserRouter,
@@ -16,6 +16,7 @@ import {
   GlyphOverview,
   GlyphPerformance,
   GlyphSettings,
+  GlyphWatchlist,
 } from "@/components/layout/nav-glyphs";
 import { Kbd } from "@/components/primitives";
 import {
@@ -24,14 +25,15 @@ import {
   CommandPalette,
   ShortcutsHelp,
   Toaster,
-  Welcome,
 } from "@/components/ui";
+import { Landing } from "@/pages/Landing";
 import { Overview } from "@/pages/Overview";
 import { Trading } from "@/pages/Trading";
 import { Holdings } from "@/pages/Holdings";
 import { Calendar } from "@/pages/Calendar";
 import { Performance } from "@/pages/Performance";
 import { Settings } from "@/pages/Settings";
+import { Watchlist } from "@/pages/Watchlist";
 import { NewTradeModal } from "@/features/trades";
 import { NewSetupModal } from "@/features/setups";
 import { NewNoteModal } from "@/features/notes";
@@ -40,10 +42,8 @@ import type { Note } from "@/lib/notes";
 import { ALL_ACCOUNTS } from "@/store";
 import {
   useIsFirstRun,
-  useOpenWelcome,
   useSelectedAccountId,
   useSyncAll,
-  useWelcomeVisible,
 } from "@/store/selectors";
 
 // Nav grouped into lenses, not a flat list. Trading and Investing are two
@@ -54,11 +54,14 @@ import {
 const NAV_SECTIONS = [
   {
     label: "Portfolio",
-    items: [{ id: "/", label: "Overview", icon: <GlyphOverview />, shortcut: "g o" }],
+    items: [{ id: "/overview", label: "Overview", icon: <GlyphOverview />, shortcut: "g o" }],
   },
   {
     label: "Investing",
-    items: [{ id: "/holdings", label: "Holdings", icon: <GlyphHoldings />, shortcut: "g h" }],
+    items: [
+      { id: "/holdings", label: "Holdings", icon: <GlyphHoldings />, shortcut: "g h" },
+      { id: "/watchlist", label: "Watchlist", icon: <GlyphWatchlist />, shortcut: "g w" },
+    ],
   },
   {
     label: "Trading",
@@ -76,20 +79,19 @@ const NAV_SECTIONS = [
 
 /**
  * Pick which sidebar item is "active" based on the current pathname.
- * Longest-id-first match supports nested routes. The "/" item only matches
- * the literal root path.
+ * Longest-id-first match supports nested routes.
  */
 function activeIdFor(pathname: string, ids: string[]): string | null {
   const sorted = [...ids].sort((a, b) => b.length - a.length);
   for (const id of sorted) {
-    if (id === "/") {
-      if (pathname === "/") return id;
-      continue;
-    }
     if (pathname === id || pathname.startsWith(id + "/")) return id;
   }
   return null;
 }
+
+/** Router state the sidebar's About link sets, so "/" shows the landing page
+ *  instead of forwarding a set-up user into the app. */
+export type LandingState = { about?: boolean };
 
 export function App() {
   return (
@@ -99,7 +101,27 @@ export function App() {
   );
 }
 
-function AppInner() {
+/**
+ * "/" is the landing page; the app lives at top-level routes (/overview,
+ * /holdings, …). New visitors always get the landing page — deep links
+ * included. Set-up users hitting "/" go straight to /overview, unless they
+ * came via About.
+ */
+export function AppInner() {
+  const firstRun = useIsFirstRun();
+  const location = useLocation();
+  const atRoot = location.pathname === "/";
+  if (firstRun) {
+    return atRoot ? <Landing mode="first-run" /> : <Navigate to="/" replace />;
+  }
+  if (atRoot) {
+    const about = (location.state as LandingState | null)?.about === true;
+    return about ? <Landing mode="about" /> : <Navigate to="/overview" replace />;
+  }
+  return <Workspace />;
+}
+
+function Workspace() {
   const navigate = useNavigate();
   const location = useLocation();
   const [newTradeOpen, setNewTradeOpen] = useState(false);
@@ -112,9 +134,6 @@ function AppInner() {
   const syncAll = useSyncAll();
   const scope = useSelectedAccountId();
   const scopedAccountId = scope === ALL_ACCOUNTS ? undefined : scope;
-  const firstRun = useIsFirstRun();
-  const welcomeVisible = useWelcomeVisible();
-  const openWelcome = useOpenWelcome();
   // undefined = closed; { editId?: string } = open (create when editId absent).
   const [accountModal, setAccountModal] = useState<{ editId?: string } | null>(null);
   // Sidebar visibility — open on desktop, collapsed (drawer) on small screens.
@@ -134,22 +153,22 @@ function AppInner() {
     () => NAV_SECTIONS.flatMap((s) => s.items.map((i) => i.id)),
     [],
   );
-  const normalizedActive = activeIdFor(location.pathname, allNavIds) ?? "/";
+  const normalizedActive = activeIdFor(location.pathname, allNavIds) ?? "/overview";
 
-  const openNewTrade = (symbol?: string) => {
+  const openNewTrade = useCallback((symbol?: string) => {
     setNewTradeSymbol(symbol);
     setNewTradeOpen(true);
-  };
+  }, []);
   const closeNewTrade = () => {
     setNewTradeOpen(false);
     setNewTradeSymbol(undefined);
   };
 
-  // Auto-sync on load: every linked account + prices, once the user is past
-  // the first-run screen. Quiet — only real outcomes (new trades, errors) toast.
+  // Auto-sync on load: every linked account + prices. The workspace only
+  // mounts past first run. Quiet — only real outcomes (new trades, errors) toast.
   useEffect(() => {
-    if (!firstRun) void syncAll({ quiet: true });
-  }, [firstRun, syncAll]);
+    void syncAll({ quiet: true });
+  }, [syncAll]);
 
   const bindings = useMemo(
     () => [
@@ -162,14 +181,15 @@ function AppInner() {
       { combo: "?", handler: () => setHelpOpen((v) => !v) },
       { combo: "cmd+k", handler: () => setPaletteOpen((v) => !v) },
       { combo: "ctrl+k", handler: () => setPaletteOpen((v) => !v) },
-      { combo: "g o", handler: () => navigate("/") },
+      { combo: "g o", handler: () => navigate("/overview") },
       { combo: "g a", handler: () => navigate("/activity") },
       { combo: "g c", handler: () => navigate("/calendar") },
       { combo: "g h", handler: () => navigate("/holdings") },
+      { combo: "g w", handler: () => navigate("/watchlist") },
       { combo: "g p", handler: () => navigate("/performance") },
       { combo: "g s", handler: () => navigate("/settings") },
     ],
-    [navigate, syncAll, scopedAccountId],
+    [navigate, syncAll, scopedAccountId, openNewTrade],
   );
   useHotkeys(bindings);
 
@@ -230,7 +250,7 @@ function AppInner() {
               <button
                 type="button"
                 className="sidebarCta sidebarCta--ghost"
-                onClick={openWelcome}
+                onClick={() => navigate("/", { state: { about: true } satisfies LandingState })}
               >
                 <Info size={13} strokeWidth={1.75} />
                 <span>About</span>
@@ -241,16 +261,18 @@ function AppInner() {
       }
     >
       <Routes>
-        <Route path="/" element={<Overview />} />
+        <Route path="/overview" element={<Overview />} />
         <Route path="/activity" element={<Trading />} />
         <Route path="/calendar" element={<Calendar />} />
         <Route path="/holdings" element={<Holdings />} />
+        <Route path="/watchlist" element={<Watchlist onNewTrade={openNewTrade} />} />
         <Route path="/performance" element={<Performance />} />
         <Route path="/settings" element={<Settings />} />
         {/* Legacy paths → new IA */}
         <Route path="/trading" element={<Navigate to="/activity" replace />} />
-        <Route path="/accounts/*" element={<Navigate to="/" replace />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/accounts/*" element={<Navigate to="/overview" replace />} />
+        <Route path="/about" element={<Navigate to="/" replace state={{ about: true }} />} />
+        <Route path="*" element={<Navigate to="/overview" replace />} />
       </Routes>
 
       {newTradeOpen && (
@@ -282,7 +304,6 @@ function AppInner() {
         />
       )}
       <Toaster />
-      {welcomeVisible && <Welcome />}
     </Shell>
   );
 }

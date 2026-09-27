@@ -1,8 +1,10 @@
 export { Badge } from "./Badge";
+export { BrandMark } from "./BrandMark";
 export { Button } from "./Button";
 export { Card } from "./Card";
 export { EmptyState } from "./EmptyState";
 export { Eyebrow } from "./Eyebrow";
+export { InfoTip } from "./InfoTip";
 export { Kbd } from "./Kbd";
 export { Modal } from "./Modal";
 export { Delta, Stat } from "./Stat";

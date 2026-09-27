@@ -86,6 +86,9 @@
      Mono:    tabular financial data. Always.
   */
   --font-display: "Fraunces", "Tiempos Headline", Georgia, serif;
+  /* Brand: Newsreader — the wordmark (italic) and landing-page headlines.
+     Sturdy strokes that hold up light-on-dark at display sizes. */
+  --font-brand:   "Newsreader", "Iowan Old Style", Georgia, serif;
   --font-ui:      "Geist", "Söhne", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono:    "Berkeley Mono", "JetBrains Mono", "SF Mono", ui-monospace, monospace;
 

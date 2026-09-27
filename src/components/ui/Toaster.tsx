@@ -9,7 +9,8 @@ import { useDismissToast, useToasts } from "@/store/selectors";
  * store slice and renders a stack in the bottom-right. Toasts with a
  * `duration` auto-dismiss after that many ms; toasts without a duration
  * (typically errors) stay until clicked. Hovering or focusing a toast
- * pauses its dismiss timer so it can be read in full.
+ * pauses its dismiss timer so it can be read in full. Repeats of the same
+ * toast merge into one (×N) and restart its timer — see pushToast.
  */
 export function Toaster() {
   const toasts = useToasts();
@@ -33,6 +34,11 @@ function ToastItem({ toast }: { toast: Toast }) {
   const [paused, setPaused] = useState(false);
   const remainingRef = useRef(toast.duration ?? Infinity);
 
+  // A repeat (seq bump) earns the full duration again.
+  useEffect(() => {
+    remainingRef.current = toast.duration ?? Infinity;
+  }, [toast.seq, toast.duration]);
+
   useEffect(() => {
     if (toast.duration == null || paused) return;
     const start = Date.now();
@@ -41,7 +47,7 @@ function ToastItem({ toast }: { toast: Toast }) {
       window.clearTimeout(t);
       remainingRef.current -= Date.now() - start;
     };
-  }, [toast.id, toast.duration, dismiss, paused]);
+  }, [toast.id, toast.duration, toast.seq, dismiss, paused]);
 
   return (
     <button
@@ -56,7 +62,13 @@ function ToastItem({ toast }: { toast: Toast }) {
     >
       <span className="toast__icon">{iconFor(toast.kind)}</span>
       <span className="toast__body">
-        <span className="toast__title">{toast.title}</span>
+        <span className="toast__title">
+          {toast.title}
+          {(toast.count ?? 1) > 1 && (
+            // Re-keyed so the pulse replays on each repeat.
+            <span className="toast__count num" key={toast.count}>×{toast.count}</span>
+          )}
+        </span>
         {toast.body && <span className="toast__text">{toast.body}</span>}
       </span>
       <span className="toast__close">
