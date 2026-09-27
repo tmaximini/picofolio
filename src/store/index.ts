@@ -16,7 +16,7 @@ import { extractNoteTokens, type Note } from "@/lib/notes";
 import type { PricePoint } from "@/lib/priceHistory";
 import type { Trade, TradeSetup } from "@/lib/trades";
 import type { WatchItem } from "@/lib/watchlist";
-import { DEFAULT_DATE_RANGE, type DateRangeKey } from "@/lib/dateRange";
+import { DEFAULT_DATE_RANGE, type RangeValue } from "@/lib/dateRange";
 import {
   fetchYahooDaily,
   fetchYahooIntraday,
@@ -147,7 +147,7 @@ type StoreState = {
   notes: Note[];
   /** Symbols followed but not held — newest first. */
   watchlist: WatchItem[];
-  journalRange: DateRangeKey;
+  journalRange: RangeValue;
   /** Calendar viewing month — first-of-month ISO date. */
   calendarMonth: string;
 
@@ -262,7 +262,7 @@ type StoreState = {
   /** Body patches re-extract inline $symbols/#tags and stamp updatedAt. */
   updateNote: (id: string, patch: Partial<Pick<Note, "body" | "accountId">>) => void;
   deleteNote: (id: string) => void;
-  setJournalRange: (key: DateRangeKey) => void;
+  setJournalRange: (range: RangeValue) => void;
   setCalendarMonth: (iso: string) => void;
   clearDemoTrades: () => void;
   restoreDemoTrades: () => void;

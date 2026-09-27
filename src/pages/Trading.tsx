@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { Topbar } from "@/components/layout";
 import { Button, Kbd } from "@/components/primitives";
 import {
-  DateRangePills,
+  DateRangeControl,
   JournalStats,
   NoteRow,
   TradeSetupRow,
@@ -16,9 +16,9 @@ import type { Note } from "@/lib/notes";
 import {
   DEFAULT_DATE_RANGE,
   labelForRange,
-  paramToRangeKey,
-  rangeKeyToParam,
-  type DateRangeKey,
+  paramToRange,
+  rangeToParam,
+  type RangeValue,
 } from "@/lib/dateRange";
 import { deriveTotals } from "@/lib/tradeMath";
 import type { TradeSetup, TradeStatus } from "@/lib/trades";
@@ -56,21 +56,22 @@ export function Trading() {
   const account = useAccountById(isAll ? undefined : scope);
   const accounts = useAccounts();
 
-  // The selected range lives in the URL (`?range=last-30-days`) so it's
+  // The selected range lives in the URL (`?range=last-30-days`, `2026-08`,
+  // `2026-01-01_2026-03-31`) so it's
   // shareable and survives reload; default is a rolling 30-day window. The
   // store's journalRange is what the trade/note selectors filter by, so we
   // mirror the URL into it.
   const [searchParams, setSearchParams] = useSearchParams();
   const setStoreRange = useSetJournalRange();
-  const range = paramToRangeKey(searchParams.get("range")) ?? DEFAULT_DATE_RANGE;
+  const range = paramToRange(searchParams.get("range")) ?? DEFAULT_DATE_RANGE;
   useEffect(() => {
     setStoreRange(range);
   }, [range, setStoreRange]);
-  const setRange = (key: DateRangeKey) =>
+  const setRange = (value: RangeValue) =>
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        next.set("range", rangeKeyToParam(key));
+        next.set("range", rangeToParam(value));
         return next;
       },
       { replace: true },
@@ -133,7 +134,7 @@ export function Trading() {
         }
       />
 
-      <DateRangePills value={range} onChange={setRange} />
+      <DateRangeControl value={range} onChange={setRange} />
 
       <JournalStats scope={scope} onOpenTrade={setViewTradeId} />
 

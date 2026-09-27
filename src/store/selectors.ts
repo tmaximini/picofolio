@@ -24,7 +24,7 @@ import {
   portfolioBaseOf,
 } from "@/lib/fx";
 import { contractMultiplier, parseOccSymbol } from "@/lib/optionSymbol";
-import { inRange, rangeFor, type DateRangeKey } from "@/lib/dateRange";
+import { inRange, resolveRange, type RangeValue } from "@/lib/dateRange";
 import { computePerformance, type Performance } from "@/lib/performance";
 import { periodReturns, type PeriodReturns } from "@/lib/monthlyReturns";
 import type { PctPoint, PerfRange } from "@/lib/perf";
@@ -966,7 +966,7 @@ export const useIntradayEntry = (
 
 export const useTrades = (): Trade[] => useStore((s) => s.trades);
 export const useSetups = (): TradeSetup[] => useStore((s) => s.setups);
-export const useJournalRange = (): DateRangeKey => useStore((s) => s.journalRange);
+export const useJournalRange = (): RangeValue => useStore((s) => s.journalRange);
 export const useCalendarMonth = (): string => useStore((s) => s.calendarMonth);
 
 export const useAddTrade = () => useStore((s) => s.addTrade);
@@ -1009,7 +1009,7 @@ export const useFilteredNotes = (scope: string = ALL_ACCOUNTS): Note[] => {
   const notes = useScopedNotes(scope);
   const journalRange = useStore((s) => s.journalRange);
   return useMemo(() => {
-    const range = rangeFor(journalRange);
+    const range = resolveRange(journalRange);
     return notes.filter((n) => inRange(localDayKey(n.createdAt), range));
   }, [notes, journalRange]);
 };
@@ -1157,7 +1157,7 @@ export const useFilteredTrades = (scope: string = ALL_ACCOUNTS): Trade[] => {
   const trades = useStore((s) => s.trades);
   const journalRange = useStore((s) => s.journalRange);
   return useMemo(() => {
-    const range = rangeFor(journalRange);
+    const range = resolveRange(journalRange);
     return scopeTrades(trades, scope).filter((t) => {
       const key = tradeDateKey(t);
       return key === "" ? false : inRange(key, range);

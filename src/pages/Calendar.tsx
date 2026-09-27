@@ -603,7 +603,8 @@ function DayTradeCard({ trade, onClick }: { trade: Trade; onClick: () => void })
       }}
     >
       <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
-        <span style={{ color: "var(--accent)", fontWeight: 500 }}>
+        {/* Neutral: red is reserved for losses (and the brand accent). */}
+        <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>
           {opt ? opt.underlying : trade.symbol}
         </span>
         {opt && (
@@ -627,7 +628,11 @@ function DayTradeCard({ trade, onClick }: { trade: Trade; onClick: () => void })
           fontWeight: 500,
         }}
       >
-        {tot.status === "OPEN" ? "—" : formatMoney(tot.returnCents, trade.currency ?? "USD")}
+        {tot.status === "OPEN" ? (
+          <span className="breathDot" title="Open" aria-label="Open" role="img" style={{ display: "inline-block" }} />
+        ) : (
+          formatMoney(tot.returnCents, trade.currency ?? "USD")
+        )}
       </span>
     </button>
   );

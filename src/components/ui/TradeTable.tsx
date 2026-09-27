@@ -218,9 +218,7 @@ function TradeRow({
           ) : (
             formatPct(returnPct)
           )
-        ) : tot.status === "OPEN" ? (
-          <OpenTag />
-        ) : (
+        ) : tot.status === "OPEN" ? null : (
           <Dash />
         )}
       </td>
@@ -304,9 +302,15 @@ function Dash() {
   return <span className="tradeTable__dash">—</span>;
 }
 
-/** Open position with no live price yet — reads as "in progress", not broken. */
+/** Open position with no live price yet — a breathing dot reads as "in
+ *  progress", not broken or missing. */
 function OpenTag() {
-  return <span className="tradeTable__live">live</span>;
+  return (
+    <span className="tradeTable__live" title="Open — no live price yet">
+      <span className="breathDot" aria-hidden />
+      <span className="srOnly">Open, no live price yet</span>
+    </span>
+  );
 }
 
 /** Live unrealized P/L on an OPEN row — tone hue is kept (glanceable

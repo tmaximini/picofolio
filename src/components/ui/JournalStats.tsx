@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { CalendarDays, ChevronRight } from "lucide-react";
 import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import { parseOccSymbol } from "@/lib/optionSymbol";
-import { eachDayKey, rangeFor, todayKey, type DateRangeKey } from "@/lib/dateRange";
+import { eachDayKey, resolveRange, todayKey, type RangeValue } from "@/lib/dateRange";
 import { useAccountBaseCurrency, useJournalRange, useTradeStats } from "@/store/selectors";
 import { PerformanceChart, type PerfPoint } from "./PerformanceChart";
 
@@ -64,7 +64,7 @@ type JournalStatsProps = {
   /** Open a trade's detail modal — makes the Best/Worst cards clickable. */
   onOpenTrade?: (id: string) => void;
   /** Jump to the full journal at the current range — makes the Trades card clickable. */
-  onOpenJournal?: (rangeKey: DateRangeKey) => void;
+  onOpenJournal?: (range: RangeValue) => void;
 };
 
 export function JournalStats({ scope, onOpenTrade, onOpenJournal }: JournalStatsProps) {
@@ -143,7 +143,7 @@ export function JournalStats({ scope, onOpenTrade, onOpenJournal }: JournalStats
     // active days. Anchor the cumulative curve at $0 the day before the start.
     let days = dayKeys;
     if (showEmpty) {
-      const { fromKey, toKey } = rangeFor(rangeKey);
+      const { fromKey, toKey } = resolveRange(rangeKey);
       const tk = todayKey();
       const startKey = fromKey && fromKey < firstDay ? fromKey : firstDay;
       let endKey = toKey && toKey < tk ? toKey : tk;
