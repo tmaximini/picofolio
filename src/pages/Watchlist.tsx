@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { ArrowDown, ArrowUp, X } from "lucide-react";
 import { Topbar } from "@/components/layout";
 import { Badge, Card } from "@/components/primitives";
-import { Sparkline, SymbolChartModal, SymbolSearch, SyncButton } from "@/components/ui";
+import { Sparkline, SymbolChartModal, SymbolSearch } from "@/components/ui";
 import { useHotkeys } from "@/lib/hotkeys";
 import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import { watchMetrics, type WatchItem, type WatchMetrics } from "@/lib/watchlist";
@@ -129,7 +129,6 @@ export function Watchlist({ onNewTrade }: WatchlistProps) {
       <Topbar
         title="Watchlist"
         subtitle="Symbols you follow, not hold"
-        actions={<SyncButton />}
       />
 
       <div className="sectionHead watch__head">

@@ -81,7 +81,10 @@ The app ships with demo data so the UI is alive immediately. To use real data, o
 
 ### 🔌 Getting the tokens
 
-- **IBKR Flex Query** — in IBKR Client Portal: _Performance & Reports → Flex Queries_. Create an Activity/Positions query, then generate a Flex Web Service token. You'll paste the token + the Query ID into Settings.
+- **IBKR Flex Query** — on the IBKR website (Client Portal; the mobile app and TWS can't edit Flex queries): _Performance & Reports → Flex Queries_.
+  1. In **Flex Web Service Configuration**, enable the service and generate a token (longest validity; no IP restriction).
+  2. Create an **Activity Flex Query** — Format **XML**, Period **Last 365 Calendar Days** — with these six sections, all fields ticked: **Trades**, **Open Positions**, **Cash Report**, **Net Asset Value (NAV) in Base**, **Cash Transactions**, **Transfers**. The last two let returns leave out deposits, withdrawals and moves between sub-accounts, matching IBKR's time-weighted figures.
+  3. Paste the token + the numeric Query ID into _Settings → your account → Interactive Brokers sync_ and press **Sync now**. The in-app setup guide has the same steps, and the sync card lists any section your query is missing.
 - **MarketData.app** — sign up at [marketdata.app](https://www.marketdata.app/) (free tier, no card) and paste the token into Settings → Options pricing. Optional.
 
 ## ⌨️ Keyboard shortcuts

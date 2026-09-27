@@ -644,3 +644,77 @@
   .acctFacts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .demoNotice { flex-direction: column; align-items: flex-start; }
 }
+
+/* ---------- setup guide + missing sections ---------- */
+
+.ibkrGuide__intro {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.ibkrGuide__update {
+  margin-bottom: var(--space-4);
+  padding: 12px 14px;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  background: var(--glass-thin);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+.ibkrGuide__updateTitle {
+  margin-bottom: 2px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.ibkrGuide__sections li { margin-bottom: 2px; }
+
+.syncMissing {
+  margin-bottom: var(--space-3);
+  padding: 12px 14px;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text-secondary);
+  background: var(--glass-medium);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+.syncMissing__title {
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.syncMissing ul { margin: 0 0 8px; padding-left: 18px; }
+.syncMissing p { margin: 0; }
+
+.linkBtn {
+  padding: 0;
+  font: inherit;
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.linkBtn:hover { text-decoration-color: var(--text-primary); }
+
+.flowTable {
+  width: calc(100% - 28px);
+  margin: 0 14px 12px;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+.flowTable td {
+  padding: 6px 8px 6px 0;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+.flowTable td.mono { white-space: nowrap; color: var(--text-tertiary); }
+.flowTable__note { color: var(--text-tertiary); }
+.flowTable td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.flowTable__in { color: var(--text-primary) !important; }
+.flowTable__out { color: var(--text-secondary) !important; }

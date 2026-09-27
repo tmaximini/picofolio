@@ -1,88 +1,83 @@
 import type { ReactNode } from "react";
+import { FLEX_SECTIONS, type FlexSectionLabel } from "@/lib/ibkr/flexParser";
+
+/** What each Flex section powers in Picofolio — shown in the guide and in the
+ *  sync card's "missing sections" callout. */
+export const SECTION_PURPOSE: Record<FlexSectionLabel, string> = {
+  Trades: "your fills — the journal, calendar and realized P&L",
+  "Open Positions": "holdings and account value (without it the account shows 0)",
+  "Cash Report": "your cash balance",
+  "Net Asset Value (NAV) in Base": "IBKR's daily account value — the performance chart and returns",
+  "Cash Transactions": "deposits and withdrawals, so they don't count as gains or losses",
+  Transfers: "money and positions moved between your sub-accounts, same reason",
+};
 
 /** Step-by-step: from IBKR Client Portal to a working Flex token + Query ID. */
 export function IbkrSetupGuide() {
   return (
-    <ol className="ibkrHelp">
-      <Step n={1} title="Sign in to Client Portal">
-        Open{" "}
-        <a
-          href="https://www.interactivebrokers.com/sso/Login"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          interactivebrokers.com/sso/Login
-        </a>
-        . For a <strong>paper account</strong>, log in with your paper
-        credentials. Paper accounts work identically with Flex; their IDs start
-        with <code>DU</code> instead of <code>U</code>.
-      </Step>
-      <Step n={2} title="Open the Flex Queries page">
-        Menu → <strong>Performance &amp; Reports</strong> →{" "}
-        <strong>Flex Queries</strong>.
-      </Step>
-      <Step n={3} title="Enable the Flex Web Service + generate a token">
-        In the <strong>Flex Web Service Configuration</strong> panel, set Status
-        to <strong>Enabled</strong>, save, then <strong>Generate token</strong>.
-        Copy the long alphanumeric string — that's your <strong>Flex Token</strong>.
-      </Step>
-      <Step n={4} title="Create an Activity Flex Query">
-        Under <strong>Activity Flex Query</strong>, hit <strong>+</strong> and
-        name it anything (e.g. <code>picofolio</code>). Set Format{" "}
-        <strong>XML</strong> and Period{" "}
-        <strong>Last 365 Calendar Days</strong> — the full year backfills your
-        account-value chart on the first sync.
-      </Step>
-      <Step n={5} title="Tick exactly six sections">
-        In each section's popup, tick the topmost box to select all fields.
-        Leave every other section off and all date/time formats at their
-        defaults.
-        <ul>
-          <li>
-            <strong>Trades</strong> — fills the Activity journal.
-          </li>
-          <li>
-            <strong>Open Positions</strong> — Holdings &amp; live account
-            value. Without it the account shows $0.
-          </li>
-          <li>
-            <strong>Cash Report</strong> — your cash balance.
-          </li>
-          <li>
-            <strong>Net Asset Value (NAV) in Base</strong> — IBKR's official
-            daily account value. This is what makes the performance chart
-            match IBKR exactly.
-          </li>
-          <li>
-            <strong>Cash Transactions</strong> — deposits and withdrawals.
-          </li>
-          <li>
-            <strong>Transfers</strong> — moves between your sub-accounts.
-            With these two, returns are time-weighted like IBKR's: moving
-            money in, out or between accounts never counts as a gain or loss.
-          </li>
-        </ul>
-        Already have a query? Edit it, tick the missing sections, save — the
-        next sync picks them up.
-      </Step>
-      <Step n={6} title="Find the Query ID, paste, sync">
-        Save the query — it appears in the list with a numeric{" "}
-        <strong>Query ID</strong>. Paste the token + Query ID into the
-        fields above, save, then <strong>Sync now</strong>.
-      </Step>
-    </ol>
+    <div className="ibkrGuide">
+      <p className="ibkrGuide__intro">
+        About five minutes, on the IBKR <strong>website</strong> (Client Portal) — the
+        IBKR mobile app and TWS can't create or edit Flex queries. Paper accounts
+        work the same way; their IDs start with <code>DU</code>.
+      </p>
+
+      <div className="ibkrGuide__update">
+        <div className="ibkrGuide__updateTitle">Already connected? Update your query</div>
+        Client Portal → <strong>Performance &amp; Reports → Flex Queries</strong> → click the
+        pencil next to your query (its Query ID matches the one above) → tick any
+        section from step 4 that's missing → <strong>Save</strong> → <strong>Sync now</strong> here.
+        The Query ID and token stay the same.
+      </div>
+
+      <ol className="ibkrHelp">
+        <Step n={1} title="Open Flex Queries in Client Portal">
+          Sign in at{" "}
+          <a href="https://www.interactivebrokers.com/sso/Login" target="_blank" rel="noopener noreferrer">
+            interactivebrokers.com
+          </a>
+          , then in the top menu choose <strong>Performance &amp; Reports → Flex Queries</strong>.
+        </Step>
+        <Step n={2} title="Get a Flex Web Service token">
+          In the <strong>Flex Web Service Configuration</strong> panel, turn the service on,
+          then <strong>Generate token</strong> and copy it.
+          <ul>
+            <li>Pick the longest validity offered — when it runs out, sync says the token expired and you generate a new one here.</li>
+            <li>Leave any <strong>IP restriction</strong> empty: requests come from Picofolio's relay, not your computer.</li>
+          </ul>
+        </Step>
+        <Step n={3} title="Create an Activity Flex Query">
+          Under <strong>Activity Flex Query</strong>, press <strong>+</strong> and name it
+          (e.g. <code>picofolio</code>). In the delivery settings choose Format{" "}
+          <strong>XML</strong> and Period <strong>Last 365 Calendar Days</strong> — a full year
+          backfills your charts on the first sync. Leave date and time formats at their defaults.
+        </Step>
+        <Step n={4} title="Tick these six sections">
+          In each section's popup, tick the box at the top to select all its fields. Leave
+          the other sections off.
+          <ul className="ibkrGuide__sections">
+            {FLEX_SECTIONS.map((s) => (
+              <li key={s.tag}>
+                <strong>{s.label}</strong> — {SECTION_PURPOSE[s.label]}
+              </li>
+            ))}
+          </ul>
+        </Step>
+        <Step n={5} title="Save and copy the Query ID">
+          Save the query. It appears in the list with a number next to it — that's the{" "}
+          <strong>Query ID</strong>.
+        </Step>
+        <Step n={6} title="Paste both here and sync">
+          Paste the token and Query ID into the fields above and press <strong>Sync now</strong>.
+          The first sync can take a minute while IBKR builds the statement; Picofolio waits
+          and retries on its own.
+        </Step>
+      </ol>
+    </div>
   );
 }
 
-function Step({
-  n,
-  title,
-  children,
-}: {
-  n: number;
-  title: string;
-  children: ReactNode;
-}) {
+function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
   return (
     <li className="ibkrHelp__step">
       <span className="ibkrHelp__num">{n}</span>
@@ -93,4 +88,3 @@ function Step({
     </li>
   );
 }
-

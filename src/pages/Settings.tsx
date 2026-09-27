@@ -56,7 +56,7 @@ export function Settings() {
 
   return (
     <>
-      <Topbar title="Settings" subtitle="Accounts, broker sync and app data" />
+      <Topbar title="Settings" subtitle="Accounts, broker sync and app data" sync={false} />
 
       <div className="settingsLayout">
         <nav className="settingsNav" aria-label="Settings sections">

@@ -2,7 +2,7 @@ import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Topbar } from "@/components/layout";
 import { Badge, Button, Card } from "@/components/primitives";
-import { HoldingFormModal, HoldingsTable, SyncButton } from "@/components/ui";
+import { HoldingFormModal, HoldingsTable } from "@/components/ui";
 import { ALL_ACCOUNTS } from "@/store";
 import {
   useAccountById,
@@ -39,7 +39,6 @@ export function Holdings() {
                 <span>Add position</span>
               </Button>
             )}
-            <SyncButton />
           </>
         }
       />

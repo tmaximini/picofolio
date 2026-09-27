@@ -1215,6 +1215,10 @@ export const usePeriodReturns = (scope: string = ALL_ACCOUNTS): PeriodReturns =>
   return useMemo(() => periodReturns(series, flows), [series, flows]);
 };
 
+/** Raw cash-flow record for one account (undefined = never reported). */
+export const useAccountCashFlows = (accountId: string) =>
+  useStore((s) => s.cashFlows[accountId]);
+
 /**
  * Cash flows (deposits, withdrawals, sub-account transfers) for a scope, in
  * the scope's currency — what time-weighted returns take out. `known` is
