@@ -1093,6 +1093,7 @@ export const useClearDemoTrades = () => useStore((s) => s.clearDemoTrades);
 export const useClearDemoForAccount = () => useStore((s) => s.clearDemoForAccount);
 export const useRestoreDemoTrades = () => useStore((s) => s.restoreDemoTrades);
 export const useClearDemoPortfolio = () => useStore((s) => s.clearDemoPortfolio);
+export const useClearNonIbkrForAccount = () => useStore((s) => s.clearNonIbkrForAccount);
 export const useRestoreDemoPortfolio = () => useStore((s) => s.restoreDemoPortfolio);
 export const useSeedDemoData = () => useStore((s) => s.seedDemoData);
 

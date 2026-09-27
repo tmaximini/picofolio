@@ -287,6 +287,10 @@ type StoreState = {
   restoreDemoTrades: () => void;
   /** Drop demo-sourced trades + holdings for a single account. */
   clearDemoForAccount: (accountId: string) => void;
+  /** Remove every trade and position in the account that didn't come from
+   *  IBKR (sample + hand-entered), plus sample setups — used when an account
+   *  is connected to IBKR and the user chooses a clean start. */
+  clearNonIbkrForAccount: (accountId: string) => void;
   clearDemoPortfolio: () => void;
   restoreDemoPortfolio: () => void;
   /** Load the full demo seed (accounts, holdings, trades, setups, weekly P&L)
@@ -366,6 +370,9 @@ function buildIbkrHoldings(accountId: string, positions: ParsedPosition[]): Hold
       source: "ibkr" as const,
     }));
 }
+
+/** Seed setups carry no source tag — recognise them by id. */
+const DEMO_SETUP_IDS = new Set(setupsSeed.map((sp) => sp.id));
 
 /** Demo watchlist — names the demo portfolio doesn't hold, staggered add
  *  dates so "since added" has something to say. */
@@ -1011,6 +1018,14 @@ export const useStore = create<StoreState>()(
           holdings: s.holdings.filter(
             (h) => !(h.source === "demo" && h.accountId === accountId),
           ),
+          setups: s.setups.filter((sp) => !(DEMO_SETUP_IDS.has(sp.id) && sp.accountId === accountId)),
+        })),
+
+      clearNonIbkrForAccount: (accountId) =>
+        set((s) => ({
+          trades: s.trades.filter((t) => !(t.accountId === accountId && t.source !== "ibkr")),
+          holdings: s.holdings.filter((h) => !(h.accountId === accountId && h.source !== "ibkr")),
+          setups: s.setups.filter((sp) => !(DEMO_SETUP_IDS.has(sp.id) && sp.accountId === accountId)),
         })),
       restoreDemoTrades: () =>
         set((s) => {
@@ -1448,6 +1463,13 @@ export const useStore = create<StoreState>()(
             }));
             get().updateAccount(accountId, { cashCents: result.cashCents });
           }
+          // Sample data doesn't belong next to real broker data: once the
+          // account syncs from IBKR, its demo trades/positions/setups go.
+          const demoLeft =
+            get().trades.filter((t) => t.accountId === accountId && t.source === "demo").length +
+            get().holdings.filter((h) => h.accountId === accountId && h.source === "demo").length;
+          if (demoLeft > 0) get().clearDemoForAccount(accountId);
+
           // Options that expired before the Flex window (IBKR can't report
           // those) and still read OPEN close at $0 on their expiry day.
           const held = new Set(
@@ -1487,6 +1509,7 @@ export const useStore = create<StoreState>()(
           if (expiry.closed > 0) {
             posNote += ` Closed ${expiry.closed} expired option${expiry.closed === 1 ? "" : "s"}.`;
           }
+          if (demoLeft > 0) posNote += " Removed the sample data from this account.";
           const join = (a: string | undefined, b: string) => (a ? `${a} ${b}` : b);
 
           const updatedNote =
