@@ -5,4 +5,5 @@ export { PaletteDemo } from "./PaletteDemo";
 export { PnlCalendar } from "./PnlCalendar";
 export { ProductWindow } from "./ProductWindow";
 export { Reveal } from "./Reveal";
+export { ReviewDemo } from "./ReviewDemo";
 export { WeeklyBars } from "./WeeklyBars";
