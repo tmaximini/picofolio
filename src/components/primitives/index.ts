@@ -2,6 +2,7 @@ export { Badge } from "./Badge";
 export { BrandMark } from "./BrandMark";
 export { Button } from "./Button";
 export { Card } from "./Card";
+export { ConfirmButton } from "./ConfirmButton";
 export { EmptyState } from "./EmptyState";
 export { Eyebrow } from "./Eyebrow";
 export { InfoTip } from "./InfoTip";
