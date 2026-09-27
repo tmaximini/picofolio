@@ -15,7 +15,7 @@ html:has(.landing) {
 
 .landing {
   --gutter: 32px;
-  --reveal: 900ms;
+  --reveal: 600ms;
   position: relative;
   min-height: 100vh;
   overflow-x: clip;
@@ -67,7 +67,7 @@ html:has(.landing) {
   transition:
     background var(--duration-base) var(--ease-out),
     border-color var(--duration-base) var(--ease-out);
-  animation: fadeIn 800ms var(--ease-out) both;
+  animation: fadeIn 533ms var(--ease-out) both;
 }
 
 .lnav--scrolled {
@@ -257,7 +257,7 @@ html:has(.landing) {
   filter: blur(24px);
   transform-origin: 0 0;
   animation:
-    fadeIn 2400ms var(--ease-out) 200ms both,
+    fadeIn 1600ms var(--ease-out) 133ms both,
     beam 11s var(--ease-in-out) 2.6s infinite alternate;
 }
 
@@ -287,7 +287,7 @@ html:has(.landing) {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
   box-shadow: var(--highlight-top);
-  animation: rise 900ms var(--ease-out) 60ms both;
+  animation: rise 600ms var(--ease-out) 40ms both;
 }
 .hero__kicker .num { font-size: 10.5px; color: var(--text-tertiary); }
 
@@ -305,7 +305,7 @@ html:has(.landing) {
   inset: -4px;
   border-radius: 50%;
   border: 1px solid var(--accent);
-  animation: ping 2.4s var(--ease-out) 1.2s infinite;
+  animation: ping 2.4s var(--ease-out) 0.8s infinite;
 }
 
 .hero__kickerSep {
@@ -351,8 +351,8 @@ html:has(.landing) {
   transform-origin: 0 100%;
   filter: blur(6px);
   opacity: 0;
-  animation: wordIn 1200ms var(--ease-out) forwards;
-  animation-delay: calc(var(--w) * 75ms + 160ms);
+  animation: wordIn 800ms var(--ease-out) forwards;
+  animation-delay: calc(var(--w) * 50ms + 107ms);
 }
 
 @keyframes wordIn {
@@ -377,9 +377,9 @@ html:has(.landing) {
   -webkit-background-clip: text;
   background-clip: text;
   animation:
-    wordIn 1200ms var(--ease-out) forwards,
+    wordIn 800ms var(--ease-out) forwards,
     glint 7s var(--ease-in-out) 1.4s infinite;
-  animation-delay: calc(var(--w) * 75ms + 160ms), 1.6s;
+  animation-delay: calc(var(--w) * 50ms + 107ms), 1.07s;
 }
 
 @keyframes glint {
@@ -394,7 +394,7 @@ html:has(.landing) {
   line-height: 1.6;
   color: var(--text-secondary);
   text-wrap: pretty;
-  animation: rise 1000ms var(--ease-out) 720ms both;
+  animation: rise 667ms var(--ease-out) 480ms both;
 }
 
 .hero__ctas {
@@ -403,14 +403,14 @@ html:has(.landing) {
   justify-content: center;
   gap: var(--space-3);
   margin-top: 36px;
-  animation: rise 1000ms var(--ease-out) 860ms both;
+  animation: rise 667ms var(--ease-out) 573ms both;
 }
 
 .hero__window {
   position: relative;
   margin: 88px auto 0;
   max-width: 1140px;
-  animation: rise 1400ms var(--ease-out) 1000ms both;
+  animation: rise 933ms var(--ease-out) 667ms both;
 }
 
 /* A pool of light under the window, as if it sits on a lit desk. */
@@ -467,8 +467,8 @@ html:has(.landing) {
 .odo__reel {
   display: block;
   transform: translateY(calc(var(--d) * -1.15em));
-  transition: transform 1800ms var(--ease-out);
-  transition-delay: calc(var(--i) * 55ms + 250ms);
+  transition: transform 1200ms var(--ease-out);
+  transition-delay: calc(var(--i) * 37ms + 167ms);
 }
 .odo__reel::before {
   content: "0\A 1\A 2\A 3\A 4\A 5\A 6\A 7\A 8\A 9";
@@ -810,7 +810,7 @@ html:has(.landing) {
   font-size: 28px;
   color: var(--text-tertiary);
   opacity: 0;
-  transition: opacity 800ms var(--ease-out) 1600ms;
+  transition: opacity 533ms var(--ease-out) 1067ms;
 }
 .pw__frame--on .pw__cents { opacity: 1; }
 
@@ -858,10 +858,10 @@ html:has(.landing) {
   opacity: 0;
   transform: translateY(6px);
   transition:
-    opacity 700ms var(--ease-out),
-    transform 700ms var(--ease-out),
+    opacity 467ms var(--ease-out),
+    transform 467ms var(--ease-out),
     background var(--duration-fast) var(--ease-out);
-  transition-delay: calc(var(--i, 0) * 80ms + 1300ms), calc(var(--i, 0) * 80ms + 1300ms), 0ms;
+  transition-delay: calc(var(--i, 0) * 53ms + 867ms), calc(var(--i, 0) * 53ms + 867ms), 0ms;
 }
 .pw__frame--on .pw__row { opacity: 1; transform: none; }
 .pw__row:not(.pw__row--head):hover { background: var(--glass-thin); }
@@ -874,7 +874,7 @@ html:has(.landing) {
   text-transform: uppercase;
   letter-spacing: var(--tracking-caps);
   color: var(--text-tertiary);
-  transition-delay: 1200ms;
+  transition-delay: 800ms;
 }
 
 .pw__sym {
@@ -921,7 +921,7 @@ html:has(.landing) {
   height: 100%;
   overflow: visible;
   clip-path: inset(-10px 100% -10px 0);
-  transition: clip-path 2600ms var(--ease-in-out) 350ms;
+  transition: clip-path 1733ms var(--ease-in-out) 233ms;
 }
 .curve--on svg { clip-path: inset(-10px 0 -10px 0); }
 
@@ -953,7 +953,7 @@ html:has(.landing) {
   background: currentColor;
   box-shadow: 0 0 0 3px var(--surface-base), 0 0 12px currentColor;
   transform: translate(-50%, -50%) scale(0);
-  transition: transform 500ms var(--ease-spring) 2900ms;
+  transition: transform 333ms var(--ease-spring) 1933ms;
 }
 .curve--on .curve__dot { transform: translate(-50%, -50%) scale(1); }
 .curve__dot::after {
@@ -962,7 +962,7 @@ html:has(.landing) {
   inset: -6px;
   border-radius: 50%;
   border: 1px solid currentColor;
-  animation: ping 2.2s var(--ease-out) 3.4s infinite;
+  animation: ping 2.2s var(--ease-out) 2.27s infinite;
   opacity: 0;
 }
 
@@ -1082,7 +1082,7 @@ html:has(.landing) {
     opacity var(--reveal) var(--ease-out),
     translate var(--reveal) var(--ease-out),
     filter var(--reveal) var(--ease-out);
-  transition-delay: calc(var(--delay, 0) * 90ms);
+  transition-delay: calc(var(--delay, 0) * 60ms);
 }
 .reveal--on {
   opacity: 1;
@@ -1179,8 +1179,8 @@ html:has(.landing) {
   left: 0;
   right: 0;
   transform: scaleY(0);
-  transition: transform 1000ms var(--ease-out);
-  transition-delay: calc(var(--i) * 55ms + 200ms);
+  transition: transform 667ms var(--ease-out);
+  transition-delay: calc(var(--i) * 37ms + 133ms);
 }
 .wbars--on .wbars__bar { transform: scaleY(1); }
 
@@ -1264,8 +1264,8 @@ html:has(.landing) {
 .alloc__seg {
   width: 0;
   border-radius: 3px;
-  transition: width 900ms var(--ease-out);
-  transition-delay: calc(var(--i) * 50ms);
+  transition: width 600ms var(--ease-out);
+  transition-delay: calc(var(--i) * 33ms);
 }
 .alloc--on .alloc__seg { width: calc(var(--w) * (100% - 15px)); }
 
@@ -1285,8 +1285,8 @@ html:has(.landing) {
   padding: 7px 0;
   border-bottom: 1px solid var(--border-subtle);
   font-size: var(--text-sm);
-  animation: legendIn 500ms var(--ease-out) both;
-  animation-delay: calc(var(--i) * 40ms);
+  animation: legendIn 333ms var(--ease-out) both;
+  animation-delay: calc(var(--i) * 27ms);
 }
 .alloc__swatch {
   width: 8px;
@@ -1360,8 +1360,8 @@ html:has(.landing) {
     transform var(--duration-fast) var(--ease-out);
 }
 .cal--on .cal__cell {
-  animation: cellIn 700ms var(--ease-out) forwards;
-  animation-delay: calc(var(--w, 0) * 60ms + 150ms);
+  animation: cellIn 467ms var(--ease-out) forwards;
+  animation-delay: calc(var(--w, 0) * 40ms + 100ms);
 }
 .cal__cell--blank { background: transparent; border-color: transparent; }
 
@@ -1466,8 +1466,8 @@ html:has(.landing) {
   opacity: 0;
   transform: translateY(4px);
   transition:
-    opacity 400ms var(--ease-out),
-    transform 400ms var(--ease-out);
+    opacity 267ms var(--ease-out),
+    transform 267ms var(--ease-out);
 }
 .keys__caption[data-on="true"] { opacity: 1; transform: none; }
 
