@@ -51,3 +51,30 @@ export function tradingViewEmbedUrl(
   });
   return `https://s.tradingview.com/widgetembed/?${params.toString()}`;
 }
+
+/** Yahoo exchange suffix → TradingView exchange prefix. */
+const YAHOO_SUFFIX_TO_TV: Record<string, string> = {
+  HK: "HKEX",
+  DE: "XETR",
+  F: "FWB",
+  L: "LSE",
+  PA: "EURONEXT",
+  AS: "EURONEXT",
+  BR: "EURONEXT",
+  MI: "MIL",
+  SW: "SIX",
+  T: "TSE",
+  KS: "KRX",
+  TO: "TSX",
+  AX: "ASX",
+};
+
+/** "0700.HK" → "HKEX:700", "SAP.DE" → "XETR:SAP", "BRK-B" → "BRK.B". US
+ *  tickers pass through — TradingView resolves them without a prefix. */
+export function yahooToTradingView(symbol: string): string {
+  const m = symbol.match(/^(.+)\.([A-Z]{1,2})$/);
+  const exchange = m ? YAHOO_SUFFIX_TO_TV[m[2]!] : undefined;
+  if (!m || !exchange) return symbol.replace(/-(?=[A-Z]$)/, ".");
+  const ticker = exchange === "HKEX" ? m[1]!.replace(/^0+(?=\d)/, "") : m[1]!;
+  return `${exchange}:${ticker}`;
+}

@@ -13,6 +13,7 @@ import "./styles/toast.css";
 import "./styles/switcher.css";
 import "./styles/mobile.css";
 import "./styles/landing.css";
+import "./styles/watchlist.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

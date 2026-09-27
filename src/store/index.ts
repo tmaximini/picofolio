@@ -15,6 +15,7 @@ import { setupsSeed, tradesSeed } from "@/lib/mockTrades";
 import { extractNoteTokens, type Note } from "@/lib/notes";
 import type { PricePoint } from "@/lib/priceHistory";
 import type { Trade, TradeSetup } from "@/lib/trades";
+import type { WatchItem } from "@/lib/watchlist";
 import { DEFAULT_DATE_RANGE, type DateRangeKey } from "@/lib/dateRange";
 import {
   fetchYahooDaily,
@@ -126,6 +127,8 @@ type StoreState = {
   trades: Trade[];
   setups: TradeSetup[];
   notes: Note[];
+  /** Symbols followed but not held — newest first. */
+  watchlist: WatchItem[];
   journalRange: DateRangeKey;
   /** Calendar viewing month — first-of-month ISO date. */
   calendarMonth: string;
@@ -254,6 +257,11 @@ type StoreState = {
    *  Merges by id so it's idempotent and never clobbers real entries. */
   seedDemoData: () => void;
 
+  // Watchlist
+  /** Add a symbol (no-op if already watched) and warm its price series. */
+  addToWatchlist: (item: { symbol: string; name?: string }) => void;
+  removeFromWatchlist: (symbol: string) => void;
+
   // Onboarding / landing
   completeOnboarding: () => void;
   /** Wipe every local slice (accounts, trades, notes, connections, prices,
@@ -320,6 +328,20 @@ function buildIbkrHoldings(accountId: string, positions: ParsedPosition[]): Hold
  * one Picofolio account); fresh dates overwrite, older history outside the
  * query window is kept — so a 365-day query never erodes a longer record.
  */
+/** Demo watchlist — names the demo portfolio doesn't hold, staggered add
+ *  dates so "since added" has something to say. */
+function watchlistSeed(): WatchItem[] {
+  const daysAgo = (n: number) =>
+    new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+  return [
+    { symbol: "NVDA", name: "NVIDIA Corporation", addedAt: daysAgo(12), source: "demo" },
+    { symbol: "COST", name: "Costco Wholesale", addedAt: daysAgo(40), source: "demo" },
+    { symbol: "0700.HK", name: "Tencent Holdings", addedAt: daysAgo(75), source: "demo" },
+    { symbol: "SAP.DE", name: "SAP SE", addedAt: daysAgo(110), source: "demo" },
+    { symbol: "UBER", name: "Uber Technologies", addedAt: daysAgo(160), source: "demo" },
+  ];
+}
+
 function mergeNavHistory(prev: NavPoint[] | undefined, rows: ParsedNavPoint[]): NavPoint[] {
   const fresh = new Map<string, number>();
   for (const r of rows) fresh.set(r.time, (fresh.get(r.time) ?? 0) + r.valueCents);
@@ -412,6 +434,7 @@ export const useStore = create<StoreState>()(
       trades: [],
       setups: [],
       notes: [],
+      watchlist: [],
       journalRange: DEFAULT_DATE_RANGE,
       calendarMonth: firstOfThisMonthISO(),
       ibkrConnections: [],
@@ -593,9 +616,10 @@ export const useStore = create<StoreState>()(
         // (no daily history) and dedupe symbols held in multiple accounts.
         const symbols = [
           ...new Set(
-            get()
-              .holdings.map((h) => h.symbol)
-              .filter((s) => parseOccSymbol(s) == null),
+            [
+              ...get().holdings.map((h) => h.symbol),
+              ...get().watchlist.map((w) => w.symbol),
+            ].filter((s) => parseOccSymbol(s) == null),
           ),
         ];
         // Eagerly prefetch live marks for open option positions too. The
@@ -918,6 +942,7 @@ export const useStore = create<StoreState>()(
         set((s) => ({
           accounts: s.accounts.filter((a) => a.source !== "demo"),
           holdings: s.holdings.filter((h) => h.source !== "demo"),
+          watchlist: s.watchlist.filter((w) => w.source !== "demo"),
         })),
       restoreDemoPortfolio: () =>
         set((s) => {
@@ -959,9 +984,26 @@ export const useStore = create<StoreState>()(
             trades: [...s.trades, ...tradesSeed.filter((t) => !tradeIds.has(t.id))],
             setups: [...s.setups, ...setupsSeed.filter((x) => !setupIds.has(x.id))],
             weeklyPnl: s.weeklyPnl.length ? s.weeklyPnl : weeklyPnlSeed,
+            watchlist: s.watchlist.length ? s.watchlist : watchlistSeed(),
             onboarded: true,
           };
         }),
+
+      addToWatchlist: ({ symbol, name }) => {
+        const sym = symbol.trim().toUpperCase();
+        if (!sym || get().watchlist.some((w) => w.symbol === sym)) return;
+        const item: WatchItem = {
+          symbol: sym,
+          ...(name ? { name } : {}),
+          addedAt: new Date().toISOString().slice(0, 10),
+          source: "manual",
+        };
+        set((s) => ({ watchlist: [item, ...s.watchlist] }));
+        void get().loadPrice(sym);
+      },
+
+      removeFromWatchlist: (symbol) =>
+        set((s) => ({ watchlist: s.watchlist.filter((w) => w.symbol !== symbol) })),
 
       completeOnboarding: () => set({ onboarded: true }),
 
@@ -974,6 +1016,7 @@ export const useStore = create<StoreState>()(
           trades: [],
           setups: [],
           notes: [],
+          watchlist: [],
           journalRange: DEFAULT_DATE_RANGE,
           calendarMonth: firstOfThisMonthISO(),
           ibkrConnections: [],
@@ -1357,6 +1400,8 @@ export const useStore = create<StoreState>()(
         // Additive v7 key — zustand's default shallow merge fills `notes: []`
         // for older persisted states, so no version bump/migration needed.
         notes: s.notes,
+        // Additive key — the default shallow merge fills `watchlist: []`.
+        watchlist: s.watchlist,
         selectedAccountId: s.selectedAccountId,
         // A "loading" entry persisted mid-flight would rehydrate as a permanent
         // block (loadPrice early-returns on loading) — freeze the symbol's

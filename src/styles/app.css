@@ -217,6 +217,12 @@
 .nav__item:hover .navGlyph__dot {
   transform: translateX(3.5px);
 }
+.navGlyph__pupil {
+  transition: transform var(--duration-slow) var(--ease-out);
+}
+.nav__item:hover .navGlyph__pupil {
+  transform: translateX(2.5px);
+}
 .navGlyph__knob {
   transition: transform var(--duration-slow) var(--ease-out);
 }

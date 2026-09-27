@@ -30,6 +30,7 @@ const NAV_TARGETS: ReadonlyArray<{ path: string; label: string; shortcut?: strin
   { path: "/activity", label: "Go to Journal", shortcut: "g a" },
   { path: "/calendar", label: "Go to Calendar", shortcut: "g c" },
   { path: "/holdings", label: "Go to Holdings", shortcut: "g h" },
+  { path: "/watchlist", label: "Go to Watchlist", shortcut: "g w" },
   { path: "/performance", label: "Go to Performance" },
   { path: "/settings", label: "Go to Settings", shortcut: "g s" },
 ];

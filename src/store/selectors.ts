@@ -1062,6 +1062,12 @@ export const useClearDemoPortfolio = () => useStore((s) => s.clearDemoPortfolio)
 export const useRestoreDemoPortfolio = () => useStore((s) => s.restoreDemoPortfolio);
 export const useSeedDemoData = () => useStore((s) => s.seedDemoData);
 
+// ---------- watchlist ----------
+
+export const useWatchlist = () => useStore((s) => s.watchlist);
+export const useAddToWatchlist = () => useStore((s) => s.addToWatchlist);
+export const useRemoveFromWatchlist = () => useStore((s) => s.removeFromWatchlist);
+
 // ---------- onboarding / landing ----------
 
 /** True only on genuine first run (no path chosen yet) — the landing page

@@ -19,6 +19,8 @@ const GROUPS: ShortcutGroup[] = [
       { keys: ["g", "a"], label: "Journal" },
       { keys: ["g", "c"], label: "Calendar" },
       { keys: ["g", "h"], label: "Holdings" },
+      { keys: ["g", "w"], label: "Watchlist" },
+      { keys: ["g", "p"], label: "Performance" },
       { keys: ["g", "s"], label: "Settings" },
       { keys: ["⌘K"], label: "Command palette" },
     ],
@@ -35,6 +37,7 @@ const GROUPS: ShortcutGroup[] = [
     title: "Actions",
     rows: [
       { keys: ["r"], label: "Sync (IBKR + prices)" },
+      { keys: ["/"], label: "Focus search / add symbol" },
       { keys: ["?"], label: "This overlay" },
     ],
   },

@@ -56,6 +56,16 @@ export function GlyphHoldings({ className }: GlyphProps) {
   );
 }
 
+/** Watchlist — an eye; the pupil glances across on hover. */
+export function GlyphWatchlist({ className }: GlyphProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M1.5 8 C3.4 4.6 5.6 3.25 8 3.25 C10.4 3.25 12.6 4.6 14.5 8 C12.6 11.4 10.4 12.75 8 12.75 C5.6 12.75 3.4 11.4 1.5 8 Z" />
+      <circle className="navGlyph__pupil" cx="8" cy="8" r="1.9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 /** Calendar — frame + today-dot; the dot steps to the next day on hover. */
 export function GlyphCalendar({ className }: GlyphProps) {
   return (

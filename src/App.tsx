@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bookmark, CircleHelp, Info, Plus, Terminal } from "lucide-react";
 import {
   BrowserRouter,
@@ -16,6 +16,7 @@ import {
   GlyphOverview,
   GlyphPerformance,
   GlyphSettings,
+  GlyphWatchlist,
 } from "@/components/layout/nav-glyphs";
 import { Kbd } from "@/components/primitives";
 import {
@@ -32,6 +33,7 @@ import { Holdings } from "@/pages/Holdings";
 import { Calendar } from "@/pages/Calendar";
 import { Performance } from "@/pages/Performance";
 import { Settings } from "@/pages/Settings";
+import { Watchlist } from "@/pages/Watchlist";
 import { NewTradeModal } from "@/features/trades";
 import { NewSetupModal } from "@/features/setups";
 import { NewNoteModal } from "@/features/notes";
@@ -56,7 +58,10 @@ const NAV_SECTIONS = [
   },
   {
     label: "Investing",
-    items: [{ id: "/holdings", label: "Holdings", icon: <GlyphHoldings />, shortcut: "g h" }],
+    items: [
+      { id: "/holdings", label: "Holdings", icon: <GlyphHoldings />, shortcut: "g h" },
+      { id: "/watchlist", label: "Watchlist", icon: <GlyphWatchlist />, shortcut: "g w" },
+    ],
   },
   {
     label: "Trading",
@@ -150,10 +155,10 @@ function Workspace() {
   );
   const normalizedActive = activeIdFor(location.pathname, allNavIds) ?? "/overview";
 
-  const openNewTrade = (symbol?: string) => {
+  const openNewTrade = useCallback((symbol?: string) => {
     setNewTradeSymbol(symbol);
     setNewTradeOpen(true);
-  };
+  }, []);
   const closeNewTrade = () => {
     setNewTradeOpen(false);
     setNewTradeSymbol(undefined);
@@ -180,10 +185,11 @@ function Workspace() {
       { combo: "g a", handler: () => navigate("/activity") },
       { combo: "g c", handler: () => navigate("/calendar") },
       { combo: "g h", handler: () => navigate("/holdings") },
+      { combo: "g w", handler: () => navigate("/watchlist") },
       { combo: "g p", handler: () => navigate("/performance") },
       { combo: "g s", handler: () => navigate("/settings") },
     ],
-    [navigate, syncAll, scopedAccountId],
+    [navigate, syncAll, scopedAccountId, openNewTrade],
   );
   useHotkeys(bindings);
 
@@ -259,6 +265,7 @@ function Workspace() {
         <Route path="/activity" element={<Trading />} />
         <Route path="/calendar" element={<Calendar />} />
         <Route path="/holdings" element={<Holdings />} />
+        <Route path="/watchlist" element={<Watchlist onNewTrade={openNewTrade} />} />
         <Route path="/performance" element={<Performance />} />
         <Route path="/settings" element={<Settings />} />
         {/* Legacy paths → new IA */}
