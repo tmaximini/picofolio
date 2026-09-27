@@ -88,11 +88,58 @@ export type IbkrConnection = {
     accountIds: string[];
     /** Flex sections the last statement lacked (see FLEX_SECTIONS). */
     missingSections?: string[];
+    /** What the last statement contained per raw IBKR account (ids masked) —
+     *  for the "Copy diagnostics" button when returns disagree with IBKR. */
+    diagnostics?: SyncDiagnostics;
   } | null;
 };
 
 /** One day of broker-reported account value (IBKR NAV-in-Base). */
 export type NavPoint = { time: string; valueCents: number };
+export type SyncDiagnostics = {
+  periodFrom: string | null;
+  accounts: {
+    account: string;
+    navDays: number;
+    navFrom: string | null;
+    navTo: string | null;
+    navFirstCents: number | null;
+    navLastCents: number | null;
+    flows: number;
+    flowsNetCents: number;
+  }[];
+};
+
+/** "U1234567" → "U•••4567" — enough to tell sub-accounts apart, no more. */
+function maskAccountId(id: string): string {
+  return id.length > 5 ? `${id.slice(0, 1)}•••${id.slice(-4)}` : id || "(none)";
+}
+
+function buildDiagnostics(result: {
+  periodFrom: string | null;
+  nav: { accountId: string; time: string; valueCents: number }[];
+  cashFlows: { accountId: string; valueCents: number }[];
+}): SyncDiagnostics {
+  const ids = [...new Set([...result.nav.map((n) => n.accountId), ...result.cashFlows.map((f) => f.accountId)])];
+  return {
+    periodFrom: result.periodFrom,
+    accounts: ids.map((id) => {
+      const nav = result.nav.filter((n) => n.accountId === id).sort((a, b) => a.time.localeCompare(b.time));
+      const flows = result.cashFlows.filter((f) => f.accountId === id);
+      return {
+        account: maskAccountId(id),
+        navDays: nav.length,
+        navFrom: nav[0]?.time ?? null,
+        navTo: nav[nav.length - 1]?.time ?? null,
+        navFirstCents: nav[0]?.valueCents ?? null,
+        navLastCents: nav[nav.length - 1]?.valueCents ?? null,
+        flows: flows.length,
+        flowsNetCents: flows.reduce((a, f) => a + f.valueCents, 0),
+      };
+    }),
+  };
+}
+
 export type CashFlowRecord = {
   id: string;
   time: string;
@@ -1424,6 +1471,7 @@ export const useStore = create<StoreState>()(
             warnings: result.warnings,
             accountIds: result.accountIds,
             missingSections: result.missingSections,
+            diagnostics: buildDiagnostics(result),
           };
           patch({
             status: "idle",

@@ -6,6 +6,8 @@ import { formatRelativeTime } from "@/lib/dateRange";
 import type { Account } from "@/lib/mock";
 import type { IbkrConnection } from "@/store/index";
 import { formatMoneyDelta } from "@/lib/money";
+import { periodReturns } from "@/lib/monthlyReturns";
+import { useStore } from "@/store";
 import {
   useAccountCashFlows,
   useAccounts,
@@ -231,6 +233,7 @@ function Connected({
       )}
 
       <CashFlowList account={account} />
+      <DiagnosticsButton account={account} connection={connection} />
 
       {warnings.length > 0 && (
         <details className="syncWarnings">
@@ -298,6 +301,80 @@ function CashFlowList({ account }: { account: Account }) {
         </>
       )}
     </details>
+  );
+}
+
+/** Masks IBKR account numbers anywhere in a string (U1234567 → U•••4567). */
+function maskIds(text: string): string {
+  return text.replace(/\b([A-Z]{1,3})(\d{3,})(\d{4})\b/g, (_m, p: string, _mid: string, tail: string) => `${p}•••${tail}`);
+}
+
+/**
+ * Copies a masked JSON snapshot of what drives this account's returns — per
+ * sub-account NAV coverage, month-end values, large day-over-day jumps, flows
+ * and the resulting monthly returns — so a mismatch with IBKR can be
+ * diagnosed without sharing the statement itself. No token, no full ids.
+ */
+function DiagnosticsButton({ account, connection }: { account: Account; connection: IbkrConnection }) {
+  const nav = useStore((s) => s.navHistory[account.id]);
+  const flows = useStore((s) => s.cashFlows[account.id]);
+  const pushToast = usePushToast();
+
+  const build = () => {
+    const series = (nav ?? []).filter((p) => p.valueCents > 0);
+    const monthEnds: Record<string, number> = {};
+    for (const p of series) monthEnds[p.time.slice(0, 7)] = p.valueCents;
+    const flowByDay = new Map<string, number>();
+    for (const f of flows ?? []) flowByDay.set(f.time, (flowByDay.get(f.time) ?? 0) + f.valueCents);
+    const jumps = series.flatMap((p, i) => {
+      if (i === 0) return [];
+      const prev = series[i - 1]!;
+      const change = p.valueCents - prev.valueCents;
+      return Math.abs(change) > prev.valueCents * 0.05
+        ? [{ from: prev.time, to: p.time, prevCents: prev.valueCents, cents: p.valueCents, flowOnDayCents: flowByDay.get(p.time) ?? 0 }]
+        : [];
+    });
+    const returns = periodReturns(series, flows ?? []);
+    const plain = periodReturns(series);
+    return {
+      app: "picofolio",
+      generatedAt: new Date().toISOString(),
+      baseCurrency: account.baseCurrency ?? "USD",
+      lastSync: connection.lastSyncAt ? new Date(connection.lastSyncAt).toISOString() : null,
+      missingSections: connection.lastSummary?.missingSections ?? null,
+      statement: connection.lastSummary?.diagnostics ?? null,
+      navStored: { days: series.length, from: series[0]?.time ?? null, to: series.at(-1)?.time ?? null },
+      monthEndsCents: monthEnds,
+      largeDailyMoves: jumps,
+      flows: (flows ?? []).map((f) => ({ time: f.time, kind: f.kind ?? null, cents: f.valueCents, note: f.note ? maskIds(f.note) : null })),
+      returnsTimeWeighted: returns.years.map((y) => ({ year: y.year, months: y.months, total: y.total })),
+      returnsPlainValueChange: plain.years.map((y) => ({ year: y.year, months: y.months, total: y.total })),
+    };
+  };
+
+  const onCopy = async () => {
+    const text = JSON.stringify(build(), null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      pushToast({ kind: "success", title: "Diagnostics copied", body: "Account numbers are masked; no token is included.", duration: 4000 });
+    } catch {
+      // Clipboard blocked (permissions / insecure context) — download instead.
+      const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+      const a = Object.assign(document.createElement("a"), { href: url, download: "picofolio-diagnostics.json" });
+      a.click();
+      URL.revokeObjectURL(url);
+      pushToast({ kind: "info", title: "Diagnostics downloaded", duration: 4000 });
+    }
+  };
+
+  if (!nav?.length) return null;
+  return (
+    <div className="diagRow">
+      <span>Returns don't match IBKR?</span>
+      <Button size="sm" variant="ghost" onClick={() => void onCopy()}>
+        Copy diagnostics
+      </Button>
+    </div>
   );
 }
 
