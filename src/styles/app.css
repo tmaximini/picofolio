@@ -311,6 +311,16 @@
   left: var(--space-5);
   z-index: var(--z-overlay);
 }
+/* Indent the page header just enough to clear the floating button: button
+   edge (inset + 36px) + a gap, minus where the content already starts —
+   main's padding plus the centring margin once the viewport exceeds main's
+   1400px max-width (then the indent drops to 0). Phones override this. */
+.app--nav-collapsed .topbar {
+  padding-left: max(
+    0px,
+    calc(var(--space-5) + 36px + var(--space-3) - var(--space-10) - max(0px, (100vw - 1400px) / 2))
+  );
+}
 
 .topbar {
   display: flex;
