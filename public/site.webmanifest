@@ -1,7 +1,7 @@
 {
   "name": "Picofolio",
   "short_name": "Picofolio",
-  "description": "A trading journal & portfolio tracker for IBKR.",
+  "description": "Portfolio tracker & trading journal.",
   "start_url": "/overview",
   "display": "standalone",
   "background_color": "#07080A",

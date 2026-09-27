@@ -99,14 +99,14 @@
   transform: translateY(-1px); /* optical: italic x-height sits low */
 }
 
-/* Wordmark: Bodoni Moda italic, lowercase, one weight. Used wherever the
+/* Wordmark: Newsreader italic, lowercase, one weight. Used wherever the
    name is set as a brand (sidebar, landing page) — never as body copy. */
 .wordmark {
   font-family: var(--font-brand);
   font-style: italic;
   font-weight: 500;
-  font-variation-settings: "opsz" 96;
-  letter-spacing: -0.01em;
+  font-variation-settings: "opsz" 72;
+  letter-spacing: -0.015em;
   line-height: 1;
 }
 

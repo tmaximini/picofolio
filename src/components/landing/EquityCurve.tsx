@@ -6,6 +6,7 @@ type EquityCurveProps = {
   data: number[];
   /** Line draws itself in once active. */
   active: boolean;
+  tone?: "gain" | "loss";
 };
 
 const W = 1000;
@@ -17,7 +18,7 @@ const PAD = 12;
  * and the live-price dot at the end (the same dot as the brand mark).
  * Hover scrubs a crosshair — the page is a demo, so it should feel like one.
  */
-export function EquityCurve({ data, active }: EquityCurveProps) {
+export function EquityCurve({ data, active, tone = "gain" }: EquityCurveProps) {
   const [hover, setHover] = useState<number | null>(null);
 
   const { line, area, pts, zeroY } = useMemo(() => {
@@ -40,22 +41,22 @@ export function EquityCurve({ data, active }: EquityCurveProps) {
 
   return (
     <div
-      className={active ? "curve curve--on" : "curve"}
+      className={`curve curve--${tone}${active ? " curve--on" : ""}`}
       onPointerMove={onMove}
       onPointerLeave={() => setHover(null)}
     >
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden>
         <defs>
-          <linearGradient id="curve-wash" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="var(--gain)" stopOpacity="0.22" />
-            <stop offset="1" stopColor="var(--gain)" stopOpacity="0" />
+          <linearGradient id={`curve-wash-${tone}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="currentColor" stopOpacity="0.22" />
+            <stop offset="1" stopColor="currentColor" stopOpacity="0" />
           </linearGradient>
         </defs>
         {[0.25, 0.5, 0.75].map((f) => (
           <line key={f} className="curve__grid" x1="0" x2={W} y1={H * f} y2={H * f} />
         ))}
         <line className="curve__zero" x1="0" x2={W} y1={zeroY} y2={zeroY} />
-        <path className="curve__area" d={area} fill="url(#curve-wash)" />
+        <path className="curve__area" d={area} fill={`url(#curve-wash-${tone})`} />
         <path className="curve__line" d={line} pathLength={1} />
       </svg>
       <span

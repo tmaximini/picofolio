@@ -4,7 +4,7 @@ import { useInView } from "@/lib/useInView";
 const NODES = [
   { icon: HardDrive, title: "Your browser", body: "Accounts, trades, tokens, snapshots — all in local storage." },
   { icon: Waypoints, title: "Stateless relay", body: "Forwards the calls brokers refuse from a browser. No database, no accounts." },
-  { icon: Landmark, title: "IBKR · prices", body: "Flex Query, public quotes, MarketData.app — with your own keys." },
+  { icon: Landmark, title: "Broker · prices", body: "IBKR Flex Query, public quotes, MarketData.app — with your own keys." },
 ];
 
 /** Where your data goes: request packets out, data packets home, no database in between. */

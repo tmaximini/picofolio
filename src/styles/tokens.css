@@ -86,9 +86,9 @@
      Mono:    tabular financial data. Always.
   */
   --font-display: "Fraunces", "Tiempos Headline", Georgia, serif;
-  /* Brand: Bodoni Moda italic — the wordmark and landing-page headlines only.
-     High-contrast Italian didone; pairs with the Caravaggio palette. */
-  --font-brand:   "Bodoni Moda", "Didot", "Bodoni 72", Georgia, serif;
+  /* Brand: Newsreader — the wordmark (italic) and landing-page headlines.
+     Sturdy strokes that hold up light-on-dark at display sizes. */
+  --font-brand:   "Newsreader", "Iowan Old Style", Georgia, serif;
   --font-ui:      "Geist", "Söhne", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono:    "Berkeley Mono", "JetBrains Mono", "SF Mono", ui-monospace, monospace;
 

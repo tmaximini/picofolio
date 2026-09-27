@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, ArrowUpRight, Github, Trash2 } from "lucide-react";
 import { BrandMark, Kbd } from "@/components/primitives";
@@ -14,7 +14,6 @@ import {
 } from "@/components/landing";
 import { useHotkeys } from "@/lib/hotkeys";
 import { ACCOUNT_LONG_TERM_COLOR, ACCOUNT_TRADING_COLOR } from "@/lib/mock";
-import { prefersReducedMotion } from "@/lib/useInView";
 import {
   useClearAllData,
   useCompleteOnboarding,
@@ -43,7 +42,8 @@ const FACTS = [
 ];
 
 const SPECS: { k: string; v: string }[] = [
-  { k: "Broker", v: "Interactive Brokers, via Flex Query" },
+  { k: "Broker sync", v: "Interactive Brokers (Flex Query) — more to come" },
+  { k: "Manual entry", v: "Any stock, ETF or option, any broker" },
   { k: "Accounts", v: "1 trading + N long-term, one switcher" },
   { k: "Positions", v: "Stocks, ETFs and options, multi-exchange" },
   { k: "Currencies", v: "Native prices, daily FX into your base" },
@@ -71,7 +71,6 @@ export function Landing({ mode }: LandingProps) {
   const clearAllData = useClearAllData();
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
   const firstRun = mode === "first-run";
 
   // Seed, then hard-load the overview: the store persists synchronously, so
@@ -106,35 +105,6 @@ export function Landing({ mode }: LandingProps) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // The lamp: a pool of warm light that trails the pointer, eased so it
-  // drifts rather than snaps. Written straight to CSS vars — no re-renders.
-  useEffect(() => {
-    const el = rootRef.current;
-    if (!el || prefersReducedMotion()) return;
-    let tx = 0.5;
-    let ty = 0.2;
-    let x = tx;
-    let y = ty;
-    let raf = 0;
-    const loop = () => {
-      x += (tx - x) * 0.06;
-      y += (ty - y) * 0.06;
-      el.style.setProperty("--mx", `${(x * 100).toFixed(2)}%`);
-      el.style.setProperty("--my", `${(y * 100).toFixed(2)}%`);
-      raf = Math.abs(tx - x) + Math.abs(ty - y) > 0.0005 ? requestAnimationFrame(loop) : 0;
-    };
-    const onMove = (e: PointerEvent) => {
-      tx = e.clientX / window.innerWidth;
-      ty = e.clientY / window.innerHeight;
-      if (!raf) raf = requestAnimationFrame(loop);
-    };
-    window.addEventListener("pointermove", onMove, { passive: true });
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      cancelAnimationFrame(raf);
-    };
-  }, []);
-
   const primaryCtas = firstRun ? (
     <>
       <button type="button" className="lcta lcta--primary" onClick={startWithDemo}>
@@ -156,7 +126,7 @@ export function Landing({ mode }: LandingProps) {
   let word = 0;
 
   return (
-    <div className="landing" ref={rootRef}>
+    <div className="landing">
       <div className="landing__grain" aria-hidden />
 
       <header className={scrolled ? "lnav lnav--scrolled" : "lnav"}>
@@ -190,12 +160,11 @@ export function Landing({ mode }: LandingProps) {
         {/* ---------------- HERO ---------------- */}
         <section className="hero" id="top">
           <div className="hero__beam" aria-hidden />
-          <div className="hero__lamp" aria-hidden />
 
           <div className="hero__copy">
             <p className="hero__kicker">
               <span className="hero__kickerDot" />
-              For Interactive Brokers investors
+              Portfolio tracker &amp; trading journal
               <span className="hero__kickerSep" />
               <span className="num">Local-first</span>
             </p>
@@ -221,9 +190,10 @@ export function Landing({ mode }: LandingProps) {
             </h1>
 
             <p className="hero__sub">
-              Picofolio turns your IBKR accounts into one calm, keyboard-driven
-              view — a trading journal and a long-term book, side by side. No
-              sign-up, no cloud, just your numbers, set properly.
+              One calm, keyboard-driven view of everything you own and trade —
+              a journal for the trading book, allocation for the long-term one.
+              Syncs automatically with Interactive Brokers. No sign-up, no
+              cloud, just your numbers, set properly.
             </p>
 
             <div className="hero__ctas">
@@ -250,7 +220,7 @@ export function Landing({ mode }: LandingProps) {
               Trade the week. <em>Hold the decade.</em>
             </Reveal>
             <Reveal as="p" className="lsec__lede" delay={2}>
-              Most investors run two strategies out of one broker. Picofolio
+              Most investors run two strategies at once. Picofolio
               keeps them apart where it matters — a journal for the trading
               sleeve, an allocation view for the long-term book — and adds them
               up where it counts.
@@ -339,8 +309,9 @@ export function Landing({ mode }: LandingProps) {
             </Reveal>
             <Reveal as="p" className="lsec__lede" delay={2}>
               There's no Picofolio account, because there's no Picofolio server
-              holding your data. Bring your own Flex token; positions, fills and
-              notes live in your browser — and leave with you.
+              holding your data. Enter positions by hand or bring your own broker
+              token; positions, fills and notes live in your browser — and leave
+              with you.
             </Reveal>
           </div>
           <Reveal delay={2}>
@@ -366,7 +337,7 @@ export function Landing({ mode }: LandingProps) {
               The details <em>are the product.</em>
             </Reveal>
             <Reveal as="p" className="lsec__lede" delay={2}>
-              One broker, done properly, beats five done badly. What's in the
+              Fewer features, each done properly. What's in the
               box — and just as deliberately, what isn't: no news feed, no
               social, no AI, no crypto-green.
             </Reveal>

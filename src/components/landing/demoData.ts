@@ -67,19 +67,68 @@ export function calendarMonth(seed = 11): number[] {
   });
 }
 
+export type DemoAccountId = "all" | "trading" | "long";
+
+export const DEMO_ACCOUNTS: { id: DemoAccountId; label: string; color: string | null }[] = [
+  { id: "all", label: "All accounts", color: null },
+  { id: "trading", label: "Trading", color: "#D9A86C" },
+  { id: "long", label: "Long-term", color: "#7D77C3" },
+];
+
+/** Cash per account, EUR cents. */
+export const DEMO_CASH: Record<Exclude<DemoAccountId, "all">, number> = {
+  trading: 1284012,
+  long: 432950,
+};
+
+/** Curve seed per account — each book gets its own shape. */
+export const DEMO_CURVE_SEED: Record<DemoAccountId, number> = { all: 7, trading: 21, long: 4 };
+
+/** Fixed EUR rates for the illustration (no network on the landing page). */
+export const DEMO_FX_TO_EUR: Record<string, number> = { EUR: 1, USD: 0.92, HKD: 0.118 };
+
 export type DemoHolding = {
   symbol: string;
   name: string;
+  account: Exclude<DemoAccountId, "all">;
   qty: number;
   /** Price in cents (native currency). */
   price: number;
   currency: string;
   dayPct: number;
+  /** Unrealized, fraction of cost. */
+  unrealPct: number;
 };
 
 export const HOLDINGS: DemoHolding[] = [
-  { symbol: "NVDA", name: "NVIDIA", qty: 120, price: 18342, currency: "USD", dayPct: 0.0212 },
-  { symbol: "ASML", name: "ASML Holding", qty: 18, price: 71460, currency: "EUR", dayPct: -0.0064 },
-  { symbol: "0700.HK", name: "Tencent", qty: 300, price: 43660, currency: "HKD", dayPct: 0.0138 },
-  { symbol: "MSFT", name: "Microsoft", qty: 40, price: 50112, currency: "USD", dayPct: 0.0041 },
+  { symbol: "VWCE", name: "Vanguard FTSE All-World", account: "long", qty: 420, price: 13842, currency: "EUR", dayPct: 0.0031, unrealPct: 0.214 },
+  { symbol: "NVDA", name: "NVIDIA", account: "trading", qty: 120, price: 18342, currency: "USD", dayPct: 0.0212, unrealPct: 0.384 },
+  { symbol: "ASML", name: "ASML Holding", account: "long", qty: 18, price: 71460, currency: "EUR", dayPct: -0.0064, unrealPct: -0.052 },
+  { symbol: "0700.HK", name: "Tencent", account: "long", qty: 300, price: 43660, currency: "HKD", dayPct: 0.0138, unrealPct: 0.117 },
+  { symbol: "MSFT", name: "Microsoft", account: "long", qty: 40, price: 50112, currency: "USD", dayPct: 0.0041, unrealPct: 0.262 },
+  { symbol: "AMD", name: "Advanced Micro Devices", account: "trading", qty: 150, price: 16288, currency: "USD", dayPct: -0.0187, unrealPct: -0.071 },
+  { symbol: "PLTR", name: "Palantir", account: "trading", qty: 200, price: 17904, currency: "USD", dayPct: 0.0325, unrealPct: 0.529 },
+];
+
+export type DemoTrade = {
+  date: string;
+  symbol: string;
+  side: "Long" | "Short";
+  setup: string;
+  r: number;
+  /** Realized, EUR cents. */
+  pnl: number;
+};
+
+export const RECENT_TRADES: DemoTrade[] = [
+  { date: "Sep 25", symbol: "PLTR", side: "Long", setup: "breakout", r: 2.4, pnl: 81240 },
+  { date: "Sep 24", symbol: "TSLA", side: "Short", setup: "failed-bounce", r: -1.0, pnl: -32110 },
+  { date: "Sep 22", symbol: "AMD", side: "Long", setup: "pullback", r: 1.3, pnl: 44780 },
+  { date: "Sep 18", symbol: "META", side: "Long", setup: "earnings-gap", r: 3.1, pnl: 126300 },
+  { date: "Sep 16", symbol: "COIN", side: "Long", setup: "breakout", r: -0.6, pnl: -18950 },
+];
+
+/** 2026 monthly returns for the performance view (Jan…Sep). */
+export const MONTHLY_2026: number[] = [
+  0.032, 0.008, -0.041, 0.063, 0.074, -0.012, -0.028, 0.046, 0.021,
 ];
