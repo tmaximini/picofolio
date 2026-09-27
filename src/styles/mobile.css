@@ -359,25 +359,12 @@
   }
 
   /* ---------- Settings ---------- */
-  .settingsTabs {
-    flex-wrap: wrap;
-    margin-bottom: var(--space-4);
-  }
   .settingsCard__head {
     flex-direction: column;
     gap: var(--space-3);
   }
   .ibkrGrid {
     grid-template-columns: 1fr;
-  }
-  .ibkrConn {
-    padding: var(--space-3);
-  }
-  .ibkrConn__head {
-    flex-wrap: wrap;
-  }
-  .ibkrSummary {
-    flex-wrap: wrap;
   }
   .dangerRow {
     flex-direction: column;

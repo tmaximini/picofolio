@@ -154,3 +154,29 @@ export function paramToRangeKey(param: string | null): DateRangeKey | null {
   const key = param.toUpperCase().replace(/-/g, "_") as DateRangeKey;
   return DATE_RANGE_OPTIONS.some((o) => o.key === key) ? key : null;
 }
+
+const relativeFmt = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+
+/** "just now", "5 minutes ago", "3 months ago" — for last-sync style labels. */
+export function formatRelativeTime(ms: number, now = Date.now()): string {
+  const s = Math.round((ms - now) / 1000);
+  const abs = Math.abs(s);
+  if (abs < 45) return "just now";
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ["minute", 60],
+    ["hour", 3600],
+    ["day", 86_400],
+    ["week", 604_800],
+    ["month", 2_629_800],
+    ["year", 31_557_600],
+  ];
+  let unit: Intl.RelativeTimeFormatUnit = "minute";
+  let size = 60;
+  for (const [u, n] of units) {
+    if (abs >= n * (u === "minute" ? 1 : 0.9)) {
+      unit = u;
+      size = n;
+    }
+  }
+  return relativeFmt.format(Math.round(s / size), unit);
+}
