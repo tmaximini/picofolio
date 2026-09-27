@@ -1303,7 +1303,7 @@ export const useStore = create<StoreState>()(
             const r = closeExpiredOptions(trades, {
               accountId,
               heldSymbols: new Set([...held].filter((k) => k.startsWith(`${accountId}|`)).map((k) => k.slice(accountId.length + 1))),
-              today: new Date().toISOString().slice(0, 10),
+              windowStart: result.periodFrom,
             });
             trades = r.trades;
             closedTotal += r.closed;
@@ -1448,16 +1448,15 @@ export const useStore = create<StoreState>()(
             }));
             get().updateAccount(accountId, { cashCents: result.cashCents });
           }
-          // Options past expiry that still read OPEN (expired CSPs etc. outside
-          // the Flex window, or from builds that dropped IBKR's $0 rows) close
-          // at $0 on their expiry day.
+          // Options that expired before the Flex window (IBKR can't report
+          // those) and still read OPEN close at $0 on their expiry day.
           const held = new Set(
             get().holdings.filter((h) => h.accountId === accountId).map((h) => h.symbol),
           );
           const expiry = closeExpiredOptions(get().trades, {
             accountId,
             heldSymbols: held,
-            today: new Date().toISOString().slice(0, 10),
+            windowStart: result.periodFrom,
           });
           if (expiry.closed > 0) set({ trades: expiry.trades });
           const summary = {
@@ -1641,13 +1640,6 @@ export const useStore = create<StoreState>()(
         for (const e of Object.values(state.prices)) {
           if (e.status === "loading") e.status = "idle";
         }
-        // Close IBKR options past expiry that older builds left OPEN (IBKR's
-        // $0 expiration rows used to be dropped). A contract can't be held
-        // past expiry, so this needs no positions snapshot.
-        const expiry = closeExpiredOptions(state.trades, {
-          today: new Date().toISOString().slice(0, 10),
-        });
-        if (expiry.closed > 0) state.trades = expiry.trades;
       },
       migrate: (persistedState, version) => {
         // v1 → v2: collapse the single ibkrToken/ibkrQueryId/ibkrLastSyncAt

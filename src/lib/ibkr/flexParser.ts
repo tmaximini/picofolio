@@ -538,17 +538,22 @@ function parseCashFlows(doc: Document): { flows: ParsedCashFlow[]; present: bool
  *   - When quantity returns to 0, emit the Trade and reset
  *   - Anything left over at the end is an OPEN trade
  */
-function groupIntoTrades(execs: ParsedExecution[]): Trade[] {
-  const bySymbol = new Map<string, ParsedExecution[]>();
+function groupIntoTrades(execs: ParsedExecution[], warnings: string[] = []): Trade[] {
+  // Per account AND symbol: fills in two sub-accounts are two positions, even
+  // when one statement carries both.
+  const byKey = new Map<string, ParsedExecution[]>();
   for (const ex of execs) {
-    const arr = bySymbol.get(ex.symbol) ?? [];
+    const key = `${ex.accountId}|${ex.symbol}`;
+    const arr = byKey.get(key) ?? [];
     arr.push(ex);
-    bySymbol.set(ex.symbol, arr);
+    byKey.set(key, arr);
   }
 
   const out: Trade[] = [];
+  let orphanCloses = 0;
 
-  for (const [symbol, list] of bySymbol) {
+  for (const list of byKey.values()) {
+    const symbol = list[0]!.symbol;
     list.sort((a, b) => a.at.localeCompare(b.at));
 
     let side: Side | null = null;
@@ -565,6 +570,13 @@ function groupIntoTrades(execs: ParsedExecution[]): Trade[] {
 
     for (const ex of list) {
       if (side == null) {
+        // A closing fill with nothing open closes a position opened before
+        // the statement window. Starting a trade from it would invent the
+        // opposite position (a sale of old shares read as a "short").
+        if (ex.openClose === "C") {
+          orphanCloses++;
+          continue;
+        }
         side = ex.action === "BUY" ? "LONG" : "SHORT";
         netQty = ex.qty;
         bucket = [ex];
@@ -594,6 +606,11 @@ function groupIntoTrades(execs: ParsedExecution[]): Trade[] {
     }
   }
 
+  if (orphanCloses > 0) {
+    warnings.push(
+      `Skipped ${orphanCloses} closing fill${orphanCloses === 1 ? "" : "s"} for positions opened before this statement's date range — their entry isn't in the statement, so P&L can't be computed.`,
+    );
+  }
   return out;
 }
 
@@ -772,7 +789,7 @@ export function parseFlexXml(xml: string): FlexParseResult {
     warnings.push("No <Trade> or <OpenPosition> rows found in XML — nothing to import.");
   }
 
-  const trades = groupIntoTrades(executions);
+  const trades = groupIntoTrades(executions, warnings);
 
   const fromAttrs = Array.from(doc.getElementsByTagName("FlexStatement"))
     .map((el) => flexDateKey(el.getAttribute("fromDate")))

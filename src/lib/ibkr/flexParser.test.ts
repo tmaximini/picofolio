@@ -195,3 +195,31 @@ describe("parseFlexXml cash-flow dedupe", () => {
   });
 });
 
+
+describe("parseFlexXml trade grouping", () => {
+  const xml = (rows: string) =>
+    `<FlexQueryResponse><FlexStatements><FlexStatement accountId="U1"><Trades>${rows}</Trades></FlexStatement></FlexStatements></FlexQueryResponse>`;
+  const row = (id: string, acct: string, buySell: string, qty: number, price: number, date: string, oc: string) =>
+    `<Trade tradeID="${id}" ibOrderID="o${id}" accountId="${acct}" symbol="UBER" assetCategory="STK" currency="USD"
+      buySell="${buySell}" quantity="${buySell === "SELL" ? -qty : qty}" tradePrice="${price}" ibCommission="-1"
+      dateTime="${date};100000" openCloseIndicator="${oc}" />`;
+
+  it("doesn't invent a short from a sale of shares bought before the statement window", () => {
+    const r = parseFlexXml(
+      xml(
+        row("1", "U1", "SELL", 100, 95.6, "20251002", "C") + // old shares sold
+          row("2", "U1", "BUY", 100, 75, "20260629", "O"), // put assignment, new long
+      ),
+    );
+    expect(r.trades).toHaveLength(1);
+    expect(r.trades[0]).toMatchObject({ side: "LONG" });
+    expect(r.warnings.some((w) => /before this statement's date range/.test(w))).toBe(true);
+  });
+
+  it("keeps two sub-accounts' fills in the same symbol apart", () => {
+    const r = parseFlexXml(
+      xml(row("3", "U1", "BUY", 10, 80, "20260101", "O") + row("4", "U2", "SELL", 10, 90, "20260102", "O")),
+    );
+    expect(r.trades.map((t) => t.side).sort()).toEqual(["LONG", "SHORT"]);
+  });
+});
