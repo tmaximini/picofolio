@@ -27,6 +27,7 @@ import { fetchFlexStatement, parseFlexXml } from "@/lib/ibkr";
 import type { ParsedCashFlow, ParsedNavPoint, ParsedPosition } from "@/lib/ibkr/flexParser";
 import { fxPairsNeeded, portfolioBaseOf } from "@/lib/fx";
 import { parseOccSymbol } from "@/lib/optionSymbol";
+import { closeExpiredOptions } from "@/lib/optionExpiry";
 import { optionsPriceProvider, OptionsNotFoundError } from "@/lib/options";
 
 export type PriceStatus = "idle" | "loading" | "ready" | "error";
@@ -1226,6 +1227,23 @@ export const useStore = create<StoreState>()(
             return { cashFlows };
           });
         }
+        // Same expired-option clean-up as a sync (see closeExpiredOptions).
+        {
+          const touched = new Set(result.trades.map((t) => resolve(t.accountId ?? "")));
+          const held = new Set(get().holdings.map((h) => `${h.accountId}|${h.symbol}`));
+          let trades = get().trades;
+          let closedTotal = 0;
+          for (const accountId of touched) {
+            const r = closeExpiredOptions(trades, {
+              accountId,
+              heldSymbols: new Set([...held].filter((k) => k.startsWith(`${accountId}|`)).map((k) => k.slice(accountId.length + 1))),
+              today: new Date().toISOString().slice(0, 10),
+            });
+            trades = r.trades;
+            closedTotal += r.closed;
+          }
+          if (closedTotal > 0) set({ trades });
+        }
         // Imported positions/trades may introduce currencies whose FX pairs
         // aren't loaded yet — fetch them so conversions don't sit on "—".
         void get().loadFxPairs();
@@ -1364,6 +1382,18 @@ export const useStore = create<StoreState>()(
             }));
             get().updateAccount(accountId, { cashCents: result.cashCents });
           }
+          // Options past expiry that still read OPEN (expired CSPs etc. outside
+          // the Flex window, or from builds that dropped IBKR's $0 rows) close
+          // at $0 on their expiry day.
+          const held = new Set(
+            get().holdings.filter((h) => h.accountId === accountId).map((h) => h.symbol),
+          );
+          const expiry = closeExpiredOptions(get().trades, {
+            accountId,
+            heldSymbols: held,
+            today: new Date().toISOString().slice(0, 10),
+          });
+          if (expiry.closed > 0) set({ trades: expiry.trades });
           const summary = {
             added: fresh.length,
             skipped: result.trades.length - fresh.length - updated.length,
@@ -1388,6 +1418,9 @@ export const useStore = create<StoreState>()(
               ? `${stockPositions} position${stockPositions === 1 ? "" : "s"} updated.`
               : "No Open Positions in this query — add that section for Holdings & value.";
           if (navDays > 0) posNote += ` ${navDays} days of NAV history.`;
+          if (expiry.closed > 0) {
+            posNote += ` Closed ${expiry.closed} expired option${expiry.closed === 1 ? "" : "s"}.`;
+          }
           const join = (a: string | undefined, b: string) => (a ? `${a} ${b}` : b);
 
           const updatedNote =
@@ -1538,6 +1571,13 @@ export const useStore = create<StoreState>()(
         for (const e of Object.values(state.prices)) {
           if (e.status === "loading") e.status = "idle";
         }
+        // Close IBKR options past expiry that older builds left OPEN (IBKR's
+        // $0 expiration rows used to be dropped). A contract can't be held
+        // past expiry, so this needs no positions snapshot.
+        const expiry = closeExpiredOptions(state.trades, {
+          today: new Date().toISOString().slice(0, 10),
+        });
+        if (expiry.closed > 0) state.trades = expiry.trades;
       },
       migrate: (persistedState, version) => {
         // v1 → v2: collapse the single ibkrToken/ibkrQueryId/ibkrLastSyncAt
