@@ -16,8 +16,8 @@ const csp = (symbol: string, over: Partial<Trade> = {}): Trade => ({
 });
 
 describe("closeExpiredOptions", () => {
-  it("closes an expired cash-secured put at $0 — the premium is the win", () => {
-    const { trades, closed } = closeExpiredOptions([csp("NOW 260821P00135000")], { today: "2026-09-27" });
+  it("closes a put that expired before the statement window at $0 — the premium is the win", () => {
+    const { trades, closed } = closeExpiredOptions([csp("NOW 260821P00135000")], { windowStart: "2026-09-01" });
     expect(closed).toBe(1);
     const t = trades[0]!;
     expect(t.executions.at(-1)).toMatchObject({ action: "BUY", qty: 1, priceCents: 0, at: "2026-08-21T20:20:00.000Z" });
@@ -35,9 +35,16 @@ describe("closeExpiredOptions", () => {
     ];
     const { closed } = closeExpiredOptions(input, {
       accountId: "a1",
-      today: "2026-09-27",
+      windowStart: "2026-09-01",
       heldSymbols: new Set(["WDC 260821P00420000"]),
     });
+    expect(closed).toBe(0);
+  });
+
+  it("never fabricates a close for an expiry inside the statement window", () => {
+    // IBKR would have sent the expiration row; none means it didn't expire in
+    // this account (bought back, rolled, or another sub-account's position).
+    const { closed } = closeExpiredOptions([csp("BABA 260918C00165000")], { windowStart: "2025-09-28" });
     expect(closed).toBe(0);
   });
 });

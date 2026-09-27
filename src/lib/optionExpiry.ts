@@ -19,14 +19,19 @@ const EXPIRY_TIME_UTC = "T20:20:00.000Z";
 
 export function closeExpiredOptions(
   trades: Trade[],
-  opts: { accountId?: string; heldSymbols?: ReadonlySet<string>; today: string },
+  opts: {
+    accountId?: string;
+    heldSymbols?: ReadonlySet<string>;
+    /** First day the statement covers — only earlier expiries are closed. */
+    windowStart: string | null;
+  },
 ): { trades: Trade[]; closed: number } {
   let closed = 0;
   const out = trades.map((t) => {
     if (opts.accountId && t.accountId !== opts.accountId) return t;
     if (t.source !== "ibkr") return t; // manual trades are the user's to close
     const opt = parseOccSymbol(t.symbol);
-    if (!opt || opt.expiry >= opts.today) return t;
+    if (!opt || !opts.windowStart || opt.expiry >= opts.windowStart) return t;
     if (opts.heldSymbols?.has(t.symbol)) return t;
     if (deriveTotals(t).status !== "OPEN") return t;
 
