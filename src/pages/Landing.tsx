@@ -10,6 +10,7 @@ import {
   PnlCalendar,
   ProductWindow,
   Reveal,
+  ReviewDemo,
   WeeklyBars,
 } from "@/components/landing";
 import { useHotkeys } from "@/lib/hotkeys";
@@ -25,6 +26,7 @@ const REPO = "https://github.com/tmaximini/picofolio";
 const NAV_LINKS = [
   { href: "#journal", label: "Journal" },
   { href: "#calendar", label: "Calendar" },
+  { href: "#review", label: "Review" },
   { href: "#keys", label: "Keyboard" },
   { href: "#privacy", label: "Privacy" },
   { href: "#faq", label: "FAQ" },
@@ -89,6 +91,7 @@ const SPECS: { k: string; v: string }[] = [
   { k: "Currencies", v: "Native prices, daily FX into your base" },
   { k: "Option marks", v: "MarketData.app, bring your own key" },
   { k: "Journal", v: "Setups, tags and notes per trade or day" },
+  { k: "Review", v: "Tag mistakes and habits, see what each one costs" },
   { k: "Storage", v: "Browser local storage, snapshot per sync" },
   { k: "Numerals", v: "Tabular, monospaced, right-aligned — always" },
   { k: "Price", v: "€0.00" },
@@ -315,11 +318,32 @@ export function Landing({ mode }: LandingProps) {
           </Reveal>
         </section>
 
+        {/* ---------------- TRADE REVIEW ---------------- */}
+        <section className="lsec" id="review">
+          <div className="lsec__intro">
+            <Reveal as="p" className="lsec__eyebrow">
+              <span className="num">03</span> Trade review
+            </Reveal>
+            <Reveal as="h2" className="lsec__title" delay={1}>
+              Learn what your <em>mistakes cost.</em>
+            </Reveal>
+            <Reveal as="p" className="lsec__lede" delay={2}>
+              Step through every closed trade and tag what really happened — FOMO entry,
+              missed stop, disciplined exit. Picofolio adds it up: which habits lose you
+              money, which ones pay, and how your win rate changes when you break your own
+              rules.
+            </Reveal>
+          </div>
+          <Reveal className="lsec__stage lsec__stage--wide" delay={2}>
+            <ReviewDemo />
+          </Reveal>
+        </section>
+
         {/* ---------------- KEYBOARD ---------------- */}
         <section className="lsec lsec--split lsec--flip" id="keys">
           <div className="lsec__intro">
             <Reveal as="p" className="lsec__eyebrow">
-              <span className="num">03</span> Keyboard first
+              <span className="num">04</span> Keyboard first
             </Reveal>
             <Reveal as="h2" className="lsec__title" delay={1}>
               Your hands never <em>leave the keys.</em>
@@ -342,7 +366,7 @@ export function Landing({ mode }: LandingProps) {
         <section className="lsec" id="privacy">
           <div className="lsec__intro lsec__intro--center">
             <Reveal as="p" className="lsec__eyebrow">
-              <span className="num">04</span> Local-first
+              <span className="num">05</span> Local-first
             </Reveal>
             <Reveal as="h2" className="lsec__title" delay={1}>
               Your keys. <em>Your machine.</em>
@@ -371,7 +395,7 @@ export function Landing({ mode }: LandingProps) {
         <section className="lsec lsec--split">
           <div className="lsec__intro">
             <Reveal as="p" className="lsec__eyebrow">
-              <span className="num">05</span> The fine print
+              <span className="num">06</span> The fine print
             </Reveal>
             <Reveal as="h2" className="lsec__title" delay={1}>
               The details <em>are the product.</em>
@@ -396,7 +420,7 @@ export function Landing({ mode }: LandingProps) {
         <section className="lsec lsec--split lsec--top" id="faq">
           <div className="lsec__intro">
             <Reveal as="p" className="lsec__eyebrow">
-              <span className="num">06</span> Questions
+              <span className="num">07</span> Questions
             </Reveal>
             <Reveal as="h2" className="lsec__title" delay={1}>
               Asked, <em>answered.</em>
