@@ -107,3 +107,38 @@ describe("parseBaseCurrencies fallbacks", () => {
     expect(r.positions[0]?.symbol).toBe("MSFT  260529C00465000");
   });
 });
+
+describe("parseFlexXml cash flows", () => {
+  const wrap = (inner: string) =>
+    `<FlexQueryResponse><FlexStatements><FlexStatement accountId="U1">${inner}</FlexStatement></FlexStatements></FlexQueryResponse>`;
+
+  it("reads deposits/withdrawals and internal transfers in base currency", () => {
+    const xml = wrap(`
+      <EquitySummaryInBase>
+        <EquitySummaryByReportDateInBase accountId="U1" reportDate="20260601" total="1000" />
+      </EquitySummaryInBase>
+      <CashTransactions>
+        <CashTransaction accountId="U1" type="Deposits/Withdrawals" amount="500" currency="USD" fxRateToBase="0.9" reportDate="20260105" transactionID="11" levelOfDetail="DETAIL" />
+        <CashTransaction accountId="U1" type="Deposits/Withdrawals" amount="500" currency="USD" fxRateToBase="0.9" reportDate="20260105" levelOfDetail="SUMMARY" />
+        <CashTransaction accountId="U1" type="Dividends" amount="12" currency="USD" reportDate="20260110" />
+      </CashTransactions>
+      <Transfers>
+        <Transfer accountId="U1" type="INTERNAL" direction="OUT" assetCategory="CASH" cashTransfer="-3000" currency="EUR" fxRateToBase="1" reportDate="20260612" transactionID="22" />
+        <Transfer accountId="U1" type="INTERNAL" direction="IN" assetCategory="STK" symbol="MSFT" positionAmountInBase="4200" reportDate="20260615" transactionID="23" />
+      </Transfers>`);
+    const r = parseFlexXml(xml);
+    expect(r.hasCashFlowData).toBe(true);
+    expect(r.cashFlows.map((f) => [f.time, f.valueCents])).toEqual([
+      ["2026-01-05", 45000],
+      ["2026-06-12", -300000],
+      ["2026-06-15", 420000],
+    ]);
+  });
+
+  it("warns when NAV is present but cash-flow sections are missing", () => {
+    const xml = wrap(`<EquitySummaryInBase><EquitySummaryByReportDateInBase accountId="U1" reportDate="20260601" total="1000" /></EquitySummaryInBase>`);
+    const r = parseFlexXml(xml);
+    expect(r.hasCashFlowData).toBe(false);
+    expect(r.warnings.some((w) => /Cash Transactions/.test(w))).toBe(true);
+  });
+});

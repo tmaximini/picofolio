@@ -75,6 +75,19 @@ export type ParsedNavPoint = {
   valueCents: number;
 };
 
+/** An external cash flow into/out of an IBKR account, in base currency.
+ *  Deposits/withdrawals (Cash Transactions) and transfers between accounts
+ *  (Transfers — e.g. moving cash between sub-accounts). */
+export type ParsedCashFlow = {
+  accountId: string;
+  /** YYYY-MM-DD report date (aligns with the NAV rows). */
+  time: string;
+  /** + money in, − money out; base-currency cents. */
+  valueCents: number;
+  /** Stable id for merge/dedupe across syncs. */
+  id: string;
+};
+
 export type FlexParseResult = {
   trades: Trade[];
   /** Underlying executions in document order — useful for debugging or future re-grouping. */
@@ -85,6 +98,11 @@ export type FlexParseResult = {
   cashCents: number;
   /** Daily NAV history (from the NAV-in-Base section), date-ascending. Empty if absent. */
   nav: ParsedNavPoint[];
+  /** Deposits, withdrawals and inter-account transfers, date-ascending. */
+  cashFlows: ParsedCashFlow[];
+  /** True when the statement carries a Cash Transactions or Transfers
+   *  section — i.e. an empty `cashFlows` means "none", not "unknown". */
+  hasCashFlowData: boolean;
   warnings: string[];
   accountIds: string[];
   /** Detected account base currency per raw IBKR accountId. "" key =
@@ -382,6 +400,74 @@ function parseNavHistory(doc: Document, warnings: string[]): ParsedNavPoint[] {
   return out;
 }
 
+/** "YYYYMMDD", "YYYY-MM-DD" or "YYYYMMDD;HHMMSS" → "YYYY-MM-DD". */
+function flexDateKey(raw: string | null): string | null {
+  const m = (raw ?? "").match(/^(\d{4})-?(\d{2})-?(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+
+/**
+ * External cash flows, in base currency:
+ *  - <CashTransaction type="Deposits/Withdrawals"> — amount is signed.
+ *  - <Transfer> — internal (sub-account) and external transfers of cash or
+ *    positions; direction IN/OUT sets the sign, value is the cash amount or
+ *    the position's base-currency value.
+ * Summary rows are skipped so detail + summary never double-count.
+ */
+function parseCashFlows(doc: Document): { flows: ParsedCashFlow[]; present: boolean } {
+  const flows: ParsedCashFlow[] = [];
+  const cashTx = Array.from(doc.getElementsByTagName("CashTransaction"));
+  const transfers = Array.from(doc.getElementsByTagName("Transfer"));
+  const present =
+    doc.getElementsByTagName("CashTransactions").length > 0 ||
+    doc.getElementsByTagName("Transfers").length > 0;
+
+  const isSummary = (el: Element) => /summary/i.test(el.getAttribute("levelOfDetail") ?? "");
+  const num = (v: string | null) => {
+    const n = parseFloat(v ?? "");
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  for (const el of cashTx) {
+    if (isSummary(el)) continue;
+    if (!/deposit|withdraw/i.test(el.getAttribute("type") ?? "")) continue;
+    const time = flexDateKey(el.getAttribute("reportDate")) ?? flexDateKey(el.getAttribute("dateTime"));
+    const amount = num(el.getAttribute("amount"));
+    if (!time || amount === 0) continue;
+    const fx = num(el.getAttribute("fxRateToBase")) || 1;
+    flows.push({
+      accountId: el.getAttribute("accountId") ?? "",
+      time,
+      valueCents: Math.round(amount * fx * 100),
+      id: `ct:${el.getAttribute("transactionID") || `${time}:${amount}:${el.getAttribute("currency") ?? ""}`}`,
+    });
+  }
+
+  for (const el of transfers) {
+    if (isSummary(el)) continue;
+    const time =
+      flexDateKey(el.getAttribute("reportDate")) ??
+      flexDateKey(el.getAttribute("date")) ??
+      flexDateKey(el.getAttribute("dateTime"));
+    if (!time) continue;
+    const fx = num(el.getAttribute("fxRateToBase")) || 1;
+    const cash = num(el.getAttribute("cashTransfer"));
+    const base = cash !== 0 ? Math.abs(cash) * fx : Math.abs(num(el.getAttribute("positionAmountInBase")));
+    if (base === 0) continue;
+    const dir = (el.getAttribute("direction") ?? "").toUpperCase();
+    const sign = dir === "OUT" ? -1 : dir === "IN" ? 1 : Math.sign(cash || num(el.getAttribute("quantity")) || 1);
+    flows.push({
+      accountId: el.getAttribute("accountId") ?? "",
+      time,
+      valueCents: Math.round(sign * base * 100),
+      id: `tr:${el.getAttribute("transactionID") || `${time}:${el.getAttribute("symbol") ?? ""}:${sign * base}`}`,
+    });
+  }
+
+  flows.sort((a, b) => a.time.localeCompare(b.time));
+  return { flows, present };
+}
+
 /**
  * Group executions into Trade positions.
  *
@@ -606,6 +692,12 @@ export function parseFlexXml(xml: string): FlexParseResult {
   const positions = parseOpenPositions(doc, warnings, warnedExchanges);
   const cashCents = parseCashCents(doc);
   const nav = parseNavHistory(doc, warnings);
+  const { flows: cashFlows, present: hasCashFlowData } = parseCashFlows(doc);
+  if (nav.length > 0 && !hasCashFlowData) {
+    warnings.push(
+      "Add the Cash Transactions and Transfers sections to your Flex query so returns exclude deposits, withdrawals and moves between sub-accounts (like IBKR's own figures).",
+    );
+  }
   const baseCurrencyByAccount = parseBaseCurrencies(doc);
 
   const tradeEls = Array.from(doc.getElementsByTagName("Trade"));
@@ -633,6 +725,8 @@ export function parseFlexXml(xml: string): FlexParseResult {
     positions,
     cashCents,
     nav,
+    cashFlows,
+    hasCashFlowData,
     warnings,
     accountIds: Array.from(accountIds),
     baseCurrencyByAccount,

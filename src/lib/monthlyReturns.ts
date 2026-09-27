@@ -1,22 +1,24 @@
 /**
- * Calendar-period returns from a daily value series: month-over-month,
- * chained into years, plus since-inception. Same model as the Overview
- * return chart (value vs value) — deposits and withdrawals inside a month
- * move the number too, since broker NAV history carries no cash flows.
+ * Calendar-period returns from a daily value series: months, chained into
+ * years, plus since-inception. Time-weighted — pass the account's cash flows
+ * (deposits, withdrawals, sub-account transfers) and they're taken out, which
+ * is how IBKR reports returns. Without flows it's plain value change.
  * Ratios are fractions (0.032 = +3.2%).
  */
 
-export type ValuePoint = { time: string; valueCents: number };
+import { dailyReturns, type CashFlow, type ValuePoint } from "./twr";
+
+export type { ValuePoint } from "./twr";
 
 export type YearReturns = {
   year: number;
   /** Jan…Dec; null where the series has no data for that month. */
   months: (number | null)[];
-  /** Same months as absolute value change, integer cents. */
+  /** Same months in money: value change minus flows (P&L), integer cents. */
   monthsCents: (number | null)[];
   /** Months chained; null if the year has no months. */
   total: number | null;
-  /** Sum of the year's monthly value changes, cents. */
+  /** Sum of the year's monthly P&L, cents. */
   totalCents: number | null;
 };
 
@@ -28,57 +30,50 @@ export type PeriodReturns = {
   ytdYear: number | null;
   /** Last day in the series (YYYY-MM-DD) — the YTD "as of". */
   asOf: string | null;
-  /** First non-zero value → latest value. */
+  /** First non-zero value → latest, chained. */
   inception: number | null;
 };
 
-/** Newest-first years, each month = last close vs the prior month's last close. */
-export function periodReturns(series: ValuePoint[]): PeriodReturns {
-  const pts = series.filter((p) => p.valueCents > 0);
-  const empty = { years: [], ytd: null, ytdYear: null, asOf: null, inception: null };
-  if (pts.length < 2) return empty;
+/** Newest-first years of monthly returns, chained from daily returns. */
+export function periodReturns(series: ValuePoint[], flows: CashFlow[] = []): PeriodReturns {
+  const days = dailyReturns(series, flows);
+  if (days.length === 0) return { years: [], ytd: null, ytdYear: null, asOf: null, inception: null };
 
-  // Last value of each YYYY-MM, in order.
-  const monthEnds = new Map<string, number>();
-  for (const p of pts) monthEnds.set(p.time.slice(0, 7), p.valueCents);
-
-  const byYear = new Map<number, { pct: (number | null)[]; cents: (number | null)[] }>();
-  // The first month's base is the series' first value (partial month).
-  let prev = pts[0]!.valueCents;
-  for (const [ym, end] of monthEnds) {
-    const year = Number(ym.slice(0, 4));
-    const month = Number(ym.slice(5, 7)) - 1;
+  const byYear = new Map<number, { growth: (number | null)[]; cents: (number | null)[] }>();
+  let inceptionGrowth = 1;
+  for (const d of days) {
+    const year = Number(d.time.slice(0, 4));
+    const month = Number(d.time.slice(5, 7)) - 1;
     const row = byYear.get(year) ?? {
-      pct: Array<number | null>(12).fill(null),
+      growth: Array<number | null>(12).fill(null),
       cents: Array<number | null>(12).fill(null),
     };
-    row.pct[month] = end / prev - 1;
-    row.cents[month] = end - prev;
+    row.growth[month] = (row.growth[month] ?? 1) * (1 + d.r);
+    row.cents[month] = (row.cents[month] ?? 0) + d.pnlCents;
     byYear.set(year, row);
-    prev = end;
+    inceptionGrowth *= 1 + d.r;
   }
 
   const years: YearReturns[] = [...byYear.entries()]
     .sort((a, b) => b[0] - a[0])
     .map(([year, row]) => {
-      const present = row.pct.filter((m): m is number => m != null);
-      const cents = row.cents.filter((m): m is number => m != null);
+      const months = row.growth.map((g) => (g == null ? null : g - 1));
+      const present = months.filter((m): m is number => m != null);
+      const cents = row.cents.filter((c): c is number => c != null);
       return {
         year,
-        months: row.pct,
+        months,
         monthsCents: row.cents,
         total: present.length ? present.reduce((acc, m) => acc * (1 + m), 1) - 1 : null,
         totalCents: cents.length ? cents.reduce((a, b) => a + b, 0) : null,
       };
     });
 
-  const first = pts[0]!.valueCents;
-  const last = pts[pts.length - 1]!;
   return {
     years,
     ytd: years[0]?.total ?? null,
     ytdYear: years[0]?.year ?? null,
-    asOf: last.time,
-    inception: last.valueCents / first - 1,
+    asOf: days[days.length - 1]!.time,
+    inception: inceptionGrowth - 1,
   };
 }

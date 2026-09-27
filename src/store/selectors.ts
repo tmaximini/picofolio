@@ -1211,7 +1211,41 @@ export const useTradeStats = (scope: string = ALL_ACCOUNTS): JournalStats => {
  *  scope's daily value series — the same curve the Overview chart draws. */
 export const usePeriodReturns = (scope: string = ALL_ACCOUNTS): PeriodReturns => {
   const series = useScopeValueSeries(scope);
-  return useMemo(() => periodReturns(series), [series]);
+  const { flows } = useScopeCashFlows(scope);
+  return useMemo(() => periodReturns(series, flows), [series, flows]);
+};
+
+/**
+ * Cash flows (deposits, withdrawals, sub-account transfers) for a scope, in
+ * the scope's currency — what time-weighted returns take out. `known` is
+ * false when an account with broker NAV history has no flow data yet (its
+ * Flex query lacks the Cash Transactions / Transfers sections), so the UI can
+ * say its returns still include money moved in and out.
+ */
+export const useScopeCashFlows = (
+  scope: string = ALL_ACCOUNTS,
+): { flows: ValuePoint[]; known: boolean } => {
+  const cashFlows = useStore((s) => s.cashFlows);
+  const navHistory = useStore((s) => s.navHistory);
+  const accounts = useStore((s) => s.accounts);
+  const prices = useStore((s) => s.prices);
+  return useMemo(() => {
+    const scoped = scope === ALL_ACCOUNTS ? accounts : accounts.filter((a) => a.id === scope);
+    const base = scope === ALL_ACCOUNTS ? portfolioBaseOf(accounts) : null;
+    let known = true;
+    const flows: ValuePoint[] = [];
+    for (const a of scoped) {
+      const hasNav = (navHistory[a.id]?.length ?? 0) >= 2;
+      const rec = cashFlows[a.id];
+      if (hasNav && rec == null) known = false;
+      if (!rec?.length) continue;
+      const pts = rec.map((f) => ({ time: f.time, valueCents: f.valueCents }));
+      // Portfolio scope sums across bases — convert at each flow's day rate.
+      const converted = base ? convertCurve(pts, a.baseCurrency ?? "USD", base, prices) : pts;
+      if (converted) flows.push(...converted);
+    }
+    return { flows, known };
+  }, [cashFlows, navHistory, accounts, prices, scope]);
 };
 
 /** Daily value series for a scope: the whole portfolio or one account. */

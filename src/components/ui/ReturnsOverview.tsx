@@ -17,6 +17,8 @@ type ReturnsOverviewProps = {
   avgHoldMs: number | null;
   /** Scope base currency for the absolute view. */
   currency: string;
+  /** Whether deposits/withdrawals/transfers are known (and taken out). */
+  flowsKnown: boolean;
 };
 
 /**
@@ -29,6 +31,7 @@ export function ReturnsOverview({
   closedPositions,
   avgHoldMs,
   currency,
+  flowsKnown,
 }: ReturnsOverviewProps) {
   const { years, ytd, ytdYear, asOf, inception } = returns;
   const [unit, setUnit] = useState<Unit>("pct");
@@ -65,8 +68,9 @@ export function ReturnsOverview({
             <>
               Since inception
               <InfoTip>
-                Latest account value vs the first value on record. Deposits and
-                withdrawals count as returns — IBKR's value history carries no cash flows.
+                {flowsKnown
+                  ? "Time-weighted return since the first value on record: deposits, withdrawals and moves between sub-accounts are taken out, like IBKR's figures."
+                  : "Change in account value since the first value on record. Deposits and transfers still count as returns until the Flex query includes Cash Transactions and Transfers."}
               </InfoTip>
             </>
           }
@@ -147,8 +151,11 @@ export function ReturnsOverview({
             </div>
           </div>
           <p className="returns__foot">
-            {unit === "pct" ? "Month-end value vs the prior month-end" : "Change in account value per month"}.
-            Deposits and withdrawals aren't netted out.
+            {flowsKnown
+              ? unit === "pct"
+                ? "Time-weighted, like IBKR: deposits, withdrawals and transfers between sub-accounts are taken out."
+                : "Profit and loss per month — value change with deposits, withdrawals and transfers taken out."
+              : "Deposits, withdrawals and transfers between sub-accounts still count here. Add the Cash Transactions and Transfers sections to your Flex query, then sync, to take them out."}
           </p>
         </div>
       )}

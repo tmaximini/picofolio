@@ -5,6 +5,7 @@
  */
 
 import type { ValuePoint } from "@/store/selectors";
+import { growthIndex, type CashFlow } from "./twr";
 
 export type PerfRange = "7D" | "MTD" | "YTD" | "1Y" | "All";
 
@@ -48,10 +49,14 @@ export type PctPoint = { time: string | number; value: number; valueCents: numbe
  * percent base. When the data starts after the window does (e.g. YTD on an
  * account opened in June), a flat 0% anchor at the window start draws a
  * straight line up to the first real point instead of an empty chart.
+ *
+ * Time-weighted when `flows` are given: deposits, withdrawals and transfers
+ * are taken out, so moving money never reads as performance (IBKR's method).
  */
 export function computePctSeries(
   series: ValuePoint[],
   range: PerfRange,
+  flows: CashFlow[] = [],
 ): PctPoint[] {
   if (series.length === 0) return [];
   const cutoff = startCutoff(range, series);
@@ -60,11 +65,14 @@ export function computePctSeries(
   if (firstReal === -1) return [];
   const kept = sliced.slice(firstReal);
   const base = kept[0]!.valueCents;
-  const pct: PctPoint[] = kept.map((p) => ({
-    time: p.time,
-    value: ((p.valueCents - base) / base) * 100,
-    valueCents: p.valueCents,
-  }));
+  const index = growthIndex(kept, flows);
+  const pct: PctPoint[] = kept
+    .filter((p) => p.valueCents > 0)
+    .map((p, i) => ({
+      time: p.time,
+      value: (index[i]!.index - 1) * 100,
+      valueCents: p.valueCents,
+    }));
   if (kept[0]!.time > cutoff) {
     pct.unshift({ time: cutoff, value: 0, valueCents: base });
   }
