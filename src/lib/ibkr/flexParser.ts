@@ -86,10 +86,30 @@ export type ParsedCashFlow = {
   valueCents: number;
   /** Stable id for merge/dedupe across syncs. */
   id: string;
+  /** Where it came from: a deposit/withdrawal, or a transfer between accounts. */
+  kind: "deposit" | "transfer";
+  /** IBKR's description, for the "flows used" list in Settings. */
+  note?: string;
 };
+
+/** The Flex query sections Picofolio reads, keyed by their XML container. */
+export const FLEX_SECTIONS = [
+  { tag: "Trades", label: "Trades" },
+  { tag: "OpenPositions", label: "Open Positions" },
+  { tag: "CashReport", label: "Cash Report" },
+  { tag: "EquitySummaryInBase", label: "Net Asset Value (NAV) in Base" },
+  { tag: "CashTransactions", label: "Cash Transactions" },
+  { tag: "Transfers", label: "Transfers" },
+] as const;
+
+export type FlexSectionLabel = (typeof FLEX_SECTIONS)[number]["label"];
 
 export type FlexParseResult = {
   trades: Trade[];
+  /** Sections the query should include but the statement didn't carry.
+   *  IBKR emits a section's container even when it has no rows, so absence
+   *  means the section isn't ticked in the query. */
+  missingSections: FlexSectionLabel[];
   /** Underlying executions in document order — useful for debugging or future re-grouping. */
   executions: ParsedExecution[];
   /** Current open positions (from <OpenPositions>), if the query includes them. */
@@ -100,6 +120,9 @@ export type FlexParseResult = {
   nav: ParsedNavPoint[];
   /** Deposits, withdrawals and inter-account transfers, date-ascending. */
   cashFlows: ParsedCashFlow[];
+  /** First day the statement covers (FlexStatement fromDate, else the
+   *  earliest NAV/flow date). Flows on/after it are authoritative. */
+  periodFrom: string | null;
   /** True when the statement carries a Cash Transactions or Transfers
    *  section — i.e. an empty `cashFlows` means "none", not "unknown". */
   hasCashFlowData: boolean;
@@ -440,6 +463,8 @@ function parseCashFlows(doc: Document): { flows: ParsedCashFlow[]; present: bool
 
   for (const el of cashTx) {
     if (isSummary(el)) continue;
+    // Base-currency roll-ups repeat the per-currency rows.
+    if (/summary/i.test(el.getAttribute("currency") ?? "")) continue;
     if (!/deposit|withdraw/i.test(el.getAttribute("type") ?? "")) continue;
     const time = flexDateKey(el.getAttribute("reportDate")) ?? flexDateKey(el.getAttribute("dateTime"));
     const amount = num(el.getAttribute("amount"));
@@ -450,6 +475,8 @@ function parseCashFlows(doc: Document): { flows: ParsedCashFlow[]; present: bool
       time,
       valueCents: Math.round(amount * fx * 100),
       id: `ct:${el.getAttribute("transactionID") || `${time}:${amount}:${el.getAttribute("currency") ?? ""}`}`,
+      kind: "deposit",
+      note: el.getAttribute("description") ?? undefined,
     });
   }
 
@@ -471,11 +498,34 @@ function parseCashFlows(doc: Document): { flows: ParsedCashFlow[]; present: bool
       time,
       valueCents: Math.round(sign * base * 100),
       id: `tr:${el.getAttribute("transactionID") || `${time}:${el.getAttribute("symbol") ?? ""}:${sign * base}`}`,
+      kind: "transfer",
+      note:
+        [el.getAttribute("type"), el.getAttribute("symbol"), el.getAttribute("account") || el.getAttribute("company")]
+          .filter(Boolean)
+          .join(" · ") || undefined,
     });
   }
 
-  flows.sort((a, b) => a.time.localeCompare(b.time));
-  return { flows, present };
+  // IBKR can report one internal transfer twice: in Transfers and again as a
+  // Cash Transaction "Deposits/Withdrawals" row. Counting both takes the money
+  // out twice (a +14% month read −1%). Drop a deposit row that mirrors a
+  // transfer on the same account: same direction, amount within 1%, dates
+  // within 3 days (report vs settle date).
+  const transfersOnly = flows.filter((f) => f.kind === "transfer");
+  const dayMs = 86_400_000;
+  const deduped = flows.filter((f) => {
+    if (f.kind !== "deposit") return true;
+    return !transfersOnly.some(
+      (t) =>
+        t.accountId === f.accountId &&
+        Math.sign(t.valueCents) === Math.sign(f.valueCents) &&
+        Math.abs(Math.abs(t.valueCents) - Math.abs(f.valueCents)) <= Math.abs(f.valueCents) * 0.01 &&
+        Math.abs(Date.parse(t.time) - Date.parse(f.time)) <= 3 * dayMs,
+    );
+  });
+
+  deduped.sort((a, b) => a.time.localeCompare(b.time));
+  return { flows: deduped, present };
 }
 
 /**
@@ -703,11 +753,6 @@ export function parseFlexXml(xml: string): FlexParseResult {
   const cashCents = parseCashCents(doc);
   const nav = parseNavHistory(doc, warnings);
   const { flows: cashFlows, present: hasCashFlowData } = parseCashFlows(doc);
-  if (nav.length > 0 && !hasCashFlowData) {
-    warnings.push(
-      "Add the Cash Transactions and Transfers sections to your Flex query so returns exclude deposits, withdrawals and moves between sub-accounts (like IBKR's own figures).",
-    );
-  }
   const baseCurrencyByAccount = parseBaseCurrencies(doc);
 
   const tradeEls = Array.from(doc.getElementsByTagName("Trade"));
@@ -729,14 +774,29 @@ export function parseFlexXml(xml: string): FlexParseResult {
 
   const trades = groupIntoTrades(executions);
 
+  const fromAttrs = Array.from(doc.getElementsByTagName("FlexStatement"))
+    .map((el) => flexDateKey(el.getAttribute("fromDate")))
+    .filter((d): d is string => d != null)
+    .sort();
+  const periodFrom =
+    fromAttrs[0] ??
+    [...nav.map((n) => n.time), ...cashFlows.map((f) => f.time)].sort()[0] ??
+    null;
+
+  const missingSections = FLEX_SECTIONS.filter(
+    (sec) => doc.getElementsByTagName(sec.tag).length === 0,
+  ).map((sec) => sec.label);
+
   return {
     trades,
+    missingSections,
     executions,
     positions,
     cashCents,
     nav,
     cashFlows,
     hasCashFlowData,
+    periodFrom,
     warnings,
     accountIds: Array.from(accountIds),
     baseCurrencyByAccount,

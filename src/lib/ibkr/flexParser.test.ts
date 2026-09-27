@@ -135,11 +135,11 @@ describe("parseFlexXml cash flows", () => {
     ]);
   });
 
-  it("warns when NAV is present but cash-flow sections are missing", () => {
-    const xml = wrap(`<EquitySummaryInBase><EquitySummaryByReportDateInBase accountId="U1" reportDate="20260601" total="1000" /></EquitySummaryInBase>`);
+  it("reports which query sections the statement lacks", () => {
+    const xml = wrap(`<Trades /><EquitySummaryInBase><EquitySummaryByReportDateInBase accountId="U1" reportDate="20260601" total="1000" /></EquitySummaryInBase><Transfers />`);
     const r = parseFlexXml(xml);
-    expect(r.hasCashFlowData).toBe(false);
-    expect(r.warnings.some((w) => /Cash Transactions/.test(w))).toBe(true);
+    expect(r.hasCashFlowData).toBe(true); // an empty <Transfers /> still counts: "none", not "unknown"
+    expect(r.missingSections).toEqual(["Open Positions", "Cash Report", "Cash Transactions"]);
   });
 });
 
@@ -170,3 +170,28 @@ describe("parseFlexXml option lifecycle", () => {
     expect(r.warnings.some((w) => /invalid tradePrice/.test(w))).toBe(true);
   });
 });
+
+describe("parseFlexXml cash-flow dedupe", () => {
+  const wrap = (inner: string) =>
+    `<FlexQueryResponse><FlexStatements><FlexStatement accountId="U1" fromDate="20250928" toDate="20260927">${inner}</FlexStatement></FlexStatements></FlexQueryResponse>`;
+
+  it("counts an internal transfer once even when IBKR also lists it as a deposit", () => {
+    const r = parseFlexXml(
+      wrap(`
+      <CashTransactions>
+        <CashTransaction accountId="U1" type="Deposits/Withdrawals" amount="5000" currency="EUR" fxRateToBase="1" reportDate="20260512" transactionID="1" description="INTERNAL TRANSFER FROM U2" />
+        <CashTransaction accountId="U1" type="Deposits/Withdrawals" amount="5000" currency="BASE_SUMMARY" fxRateToBase="1" reportDate="20260512" />
+        <CashTransaction accountId="U1" type="Deposits/Withdrawals" amount="1000" currency="EUR" fxRateToBase="1" reportDate="20260201" transactionID="2" description="CASH RECEIPTS" />
+      </CashTransactions>
+      <Transfers>
+        <Transfer accountId="U1" type="INTERNAL" direction="IN" assetCategory="CASH" cashTransfer="5000" currency="EUR" fxRateToBase="1" reportDate="20260513" transactionID="9" />
+      </Transfers>`),
+    );
+    expect(r.cashFlows.map((f) => [f.time, f.valueCents, f.kind])).toEqual([
+      ["2026-02-01", 100000, "deposit"],
+      ["2026-05-13", 500000, "transfer"],
+    ]);
+    expect(r.periodFrom).toBe("2025-09-28");
+  });
+});
+

@@ -1,10 +1,13 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, Link2, Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/primitives";
 import { formatRelativeTime } from "@/lib/dateRange";
 import type { Account } from "@/lib/mock";
 import type { IbkrConnection } from "@/store/index";
+import { formatMoneyDelta } from "@/lib/money";
 import {
+  useAccountCashFlows,
   useAccounts,
   useAddIbkrConnection,
   useIbkrConnections,
@@ -14,7 +17,8 @@ import {
   useUpdateIbkrConnection,
 } from "@/store/selectors";
 import { AccountXmlImport } from "./AccountXmlImport";
-import { IbkrSetupGuide } from "./IbkrSetupGuide";
+import { IbkrSetupGuide, SECTION_PURPOSE } from "./IbkrSetupGuide";
+import type { FlexSectionLabel } from "@/lib/ibkr/flexParser";
 
 /**
  * The account's Interactive Brokers link: status up top with the one primary
@@ -24,14 +28,36 @@ import { IbkrSetupGuide } from "./IbkrSetupGuide";
 export function IbkrSyncCard({ account }: { account: Account }) {
   const connections = useIbkrConnections();
   const conn = connections.find((c) => c.id === account.flexConnectionId) ?? null;
-  // A connection that has never pulled and has no token yet needs the guide.
+  // A connection that has never pulled and has no token yet needs the guide;
+  // so does anyone arriving from a "How to fix" link (?guide=open).
+  const [params] = useSearchParams();
   const fresh = conn != null && !conn.lastSyncAt && !conn.token;
+  const [guideOpen, setGuideOpen] = useState(fresh || params.get("guide") === "open");
+  const guideRef = useRef<HTMLDetailsElement | null>(null);
+
+  const showGuide = () => {
+    setGuideOpen(true);
+    requestAnimationFrame(() => guideRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+  useEffect(() => {
+    if (params.get("guide") === "open") showGuide();
+    // Only on arrival — the link is a one-shot.
+  }, []);
 
   return (
     <section className="settingsCard">
-      {conn ? <Connected account={account} connection={conn} /> : <NotConnected account={account} />}
+      {conn ? (
+        <Connected account={account} connection={conn} onShowGuide={showGuide} />
+      ) : (
+        <NotConnected account={account} />
+      )}
       <div className="disclosures">
-        <Disclosure label="Setup guide — getting a Flex token and Query ID" defaultOpen={fresh}>
+        <Disclosure
+          label="Setup guide — token, query and the six sections"
+          open={guideOpen}
+          onToggle={setGuideOpen}
+          detailsRef={guideRef}
+        >
           <IbkrSetupGuide />
         </Disclosure>
         <Disclosure label="Import a Flex XML file instead">
@@ -42,7 +68,15 @@ export function IbkrSyncCard({ account }: { account: Account }) {
   );
 }
 
-function Connected({ account, connection }: { account: Account; connection: IbkrConnection }) {
+function Connected({
+  account,
+  connection,
+  onShowGuide,
+}: {
+  account: Account;
+  connection: IbkrConnection;
+  onShowGuide: () => void;
+}) {
   const update = useUpdateIbkrConnection();
   const sync = useSyncIbkrConnection();
   const pushToast = usePushToast();
@@ -173,6 +207,31 @@ function Connected({ account, connection }: { account: Account; connection: Ibkr
         </p>
       )}
 
+      {summary?.missingSections && summary.missingSections.length > 0 && (
+        <div className="syncMissing">
+          <div className="syncMissing__title">
+            Your Flex query is missing {summary.missingSections.length === 1 ? "a section" : `${summary.missingSections.length} sections`}
+          </div>
+          <ul>
+            {summary.missingSections.map((label) => (
+              <li key={label}>
+                <strong>{label}</strong> — {SECTION_PURPOSE[label as FlexSectionLabel] ?? ""}
+              </li>
+            ))}
+          </ul>
+          <p>
+            In IBKR Client Portal: <strong>Performance &amp; Reports → Flex Queries</strong>, click the
+            pencil next to your query, tick {summary.missingSections.length === 1 ? "it" : "them"}, save,
+            then sync again.{" "}
+            <button type="button" className="linkBtn" onClick={onShowGuide}>
+              Full setup guide
+            </button>
+          </p>
+        </div>
+      )}
+
+      <CashFlowList account={account} />
+
       {warnings.length > 0 && (
         <details className="syncWarnings">
           <summary>
@@ -196,6 +255,49 @@ function Connected({ account, connection }: { account: Account; connection: Ibkr
         </details>
       )}
     </>
+  );
+}
+
+/**
+ * Every deposit, withdrawal and transfer Picofolio takes out of the returns —
+ * so a number that disagrees with IBKR can be checked line by line.
+ */
+function CashFlowList({ account }: { account: Account }) {
+  const flows = useAccountCashFlows(account.id);
+  if (!flows) return null;
+  const base = account.baseCurrency ?? "USD";
+  const net = flows.reduce((a, f) => a + f.valueCents, 0);
+  return (
+    <details className="syncWarnings">
+      <summary>
+        {flows.length === 0
+          ? "No deposits, withdrawals or transfers in the statement"
+          : `${flows.length} deposit${flows.length === 1 ? "" : "s"}, withdrawal${flows.length === 1 ? "" : "s"} & transfers taken out of returns · net ${formatMoneyDelta(net, base)}`}
+        {flows.length > 0 && <span className="syncWarnings__more">Details</span>}
+      </summary>
+      {flows.length > 0 && (
+        <>
+          <p className="syncWarnings__why">
+            Returns are time-weighted: these amounts don't count as gains or losses. If one
+            is missing or appears twice compared with IBKR's statement, the returns will be off.
+          </p>
+          <table className="flowTable">
+            <tbody>
+              {[...flows].reverse().map((f) => (
+                <tr key={f.id}>
+                  <td className="mono">{f.time}</td>
+                  <td>{f.kind === "transfer" ? "Transfer" : f.valueCents >= 0 ? "Deposit" : "Withdrawal"}</td>
+                  <td className="flowTable__note">{f.note ?? ""}</td>
+                  <td className={f.valueCents >= 0 ? "num flowTable__in" : "num flowTable__out"}>
+                    {formatMoneyDelta(f.valueCents, base)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </details>
   );
 }
 
@@ -273,15 +375,25 @@ function SyncStatus({ connection }: { connection: IbkrConnection }) {
 
 function Disclosure({
   label,
-  defaultOpen = false,
+  open,
+  onToggle,
+  detailsRef,
   children,
 }: {
   label: string;
-  defaultOpen?: boolean;
+  /** Controlled open state; omit for a plain uncontrolled disclosure. */
+  open?: boolean;
+  onToggle?: (open: boolean) => void;
+  detailsRef?: React.Ref<HTMLDetailsElement>;
   children: ReactNode;
 }) {
   return (
-    <details className="disclosure" open={defaultOpen || undefined}>
+    <details
+      className="disclosure"
+      ref={detailsRef}
+      open={open}
+      onToggle={(e) => onToggle?.((e.currentTarget as HTMLDetailsElement).open)}
+    >
       <summary>{label}</summary>
       <div className="disclosure__body">{children}</div>
     </details>

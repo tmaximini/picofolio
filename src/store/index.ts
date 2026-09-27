@@ -86,12 +86,20 @@ export type IbkrConnection = {
     skipped: number;
     warnings: string[];
     accountIds: string[];
+    /** Flex sections the last statement lacked (see FLEX_SECTIONS). */
+    missingSections?: string[];
   } | null;
 };
 
 /** One day of broker-reported account value (IBKR NAV-in-Base). */
 export type NavPoint = { time: string; valueCents: number };
-export type CashFlowRecord = { id: string; time: string; valueCents: number };
+export type CashFlowRecord = {
+  id: string;
+  time: string;
+  valueCents: number;
+  kind?: "deposit" | "transfer";
+  note?: string;
+};
 
 /** Sentinel scope = the consolidated "All Accounts" roll-up. */
 export const ALL_ACCOUNTS = "ALL" as const;
@@ -366,10 +374,26 @@ function watchlistSeed(): WatchItem[] {
  * one Picofolio account); fresh dates overwrite, older history outside the
  * query window is kept — so a 365-day query never erodes a longer record.
  */
-/** Merge parsed cash flows into an account's record, deduped by id. */
-function mergeCashFlows(prev: CashFlowRecord[] | undefined, rows: ParsedCashFlow[]): CashFlowRecord[] {
-  const byId = new Map((prev ?? []).map((f) => [f.id, f]));
-  for (const r of rows) byId.set(r.id, { id: r.id, time: r.time, valueCents: r.valueCents });
+/**
+ * Fold a statement's cash flows into an account's record. Inside the period
+ * the statement covers it is authoritative — stored flows there are replaced,
+ * so a corrected parse (e.g. a removed duplicate) actually takes effect;
+ * older history outside the window is kept.
+ */
+function mergeCashFlows(
+  prev: CashFlowRecord[] | undefined,
+  rows: ParsedCashFlow[],
+  periodFrom: string | null,
+): CashFlowRecord[] {
+  const kept = (prev ?? []).filter((f) => periodFrom != null && f.time < periodFrom);
+  const fresh = rows.map((r) => ({
+    id: r.id,
+    time: r.time,
+    valueCents: r.valueCents,
+    kind: r.kind,
+    ...(r.note ? { note: r.note } : {}),
+  }));
+  const byId = new Map([...kept, ...fresh].map((f) => [f.id, f]));
   return [...byId.values()].sort((a, b) => a.time.localeCompare(b.time));
 }
 
@@ -1223,7 +1247,7 @@ export const useStore = create<StoreState>()(
           for (const f of result.cashFlows) flowsByAccount.get(resolve(f.accountId))!.push(f);
           set((s) => {
             const cashFlows = { ...s.cashFlows };
-            for (const [accId, rows] of flowsByAccount) cashFlows[accId] = mergeCashFlows(cashFlows[accId], rows);
+            for (const [accId, rows] of flowsByAccount) cashFlows[accId] = mergeCashFlows(cashFlows[accId], rows, result.periodFrom);
             return { cashFlows };
           });
         }
@@ -1364,7 +1388,7 @@ export const useStore = create<StoreState>()(
             set((s) => ({
               cashFlows: {
                 ...s.cashFlows,
-                [accountId]: mergeCashFlows(s.cashFlows[accountId], result.cashFlows),
+                [accountId]: mergeCashFlows(s.cashFlows[accountId], result.cashFlows, result.periodFrom),
               },
             }));
           }
@@ -1399,6 +1423,7 @@ export const useStore = create<StoreState>()(
             skipped: result.trades.length - fresh.length - updated.length,
             warnings: result.warnings,
             accountIds: result.accountIds,
+            missingSections: result.missingSections,
           };
           patch({
             status: "idle",

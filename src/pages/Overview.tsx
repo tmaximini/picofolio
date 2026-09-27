@@ -9,7 +9,6 @@ import {
   JournalStats,
   PerformanceCard,
   PortfolioPerformanceCard,
-  SyncButton,
 } from "@/components/ui";
 import { TradeViewModal } from "@/features/trades/TradeViewModal";
 import { rangeToParam } from "@/lib/dateRange";
@@ -84,7 +83,7 @@ function ConsolidatedOverview() {
 
   return (
     <>
-      <Topbar title="Overview" subtitle="All accounts" actions={<SyncButton />} />
+      <Topbar title="Overview" subtitle="All accounts" />
 
       <PortfolioPerformanceCard />
 
@@ -120,7 +119,7 @@ function AccountOverview({ accountId }: { accountId: string }) {
   const monthDelta = useAccountDeltaCents(accountId, "1M");
 
   if (!account) {
-    return <Topbar title="Account not found" subtitle="Pick another from the switcher" />;
+    return <Topbar title="Account not found" subtitle="Pick another from the switcher" sync={false} />;
   }
 
   const positions = allHoldings.filter((h) => h.accountId === accountId).length;
@@ -132,7 +131,7 @@ function AccountOverview({ accountId }: { accountId: string }) {
       <Topbar
         title={account.name}
         subtitle={`${formatMoney(account.cashCents, baseCurrency)} cash · ${positions} ${positions === 1 ? "position" : "positions"}`}
-        actions={<SyncButton accountId={accountId} />}
+        sync={accountId}
       />
 
       {isEmpty ? (

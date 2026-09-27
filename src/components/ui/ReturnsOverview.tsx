@@ -1,4 +1,5 @@
 import { useMemo, useState, type CSSProperties } from "react";
+import { Link } from "react-router-dom";
 import { Card, InfoTip, Stat } from "@/components/primitives";
 import { formatMoney, formatMoneyDelta, formatPct, toneOf } from "@/lib/money";
 import type { PeriodReturns } from "@/lib/monthlyReturns";
@@ -155,7 +156,15 @@ export function ReturnsOverview({
               ? unit === "pct"
                 ? "Time-weighted, like IBKR: deposits, withdrawals and transfers between sub-accounts are taken out."
                 : "Profit and loss per month — value change with deposits, withdrawals and transfers taken out."
-              : "Deposits, withdrawals and transfers between sub-accounts still count here. Add the Cash Transactions and Transfers sections to your Flex query, then sync, to take them out."}
+              : (
+                <>
+                  Deposits, withdrawals and transfers between sub-accounts still count here — your
+                  Flex query needs the Cash Transactions and Transfers sections.{" "}
+                  <Link to="/settings?guide=open" className="returns__fix">
+                    How to add them →
+                  </Link>
+                </>
+              )}
           </p>
         </div>
       )}
