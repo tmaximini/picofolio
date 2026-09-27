@@ -107,7 +107,7 @@ export function App() {
  * included. Set-up users hitting "/" go straight to /overview, unless they
  * came via About.
  */
-function AppInner() {
+export function AppInner() {
   const firstRun = useIsFirstRun();
   const location = useLocation();
   const atRoot = location.pathname === "/";

@@ -17,6 +17,28 @@ function mockUpstream(res = new Response("<ok/>", { headers: { "content-type": "
 
 afterEach(() => vi.unstubAllGlobals());
 
+describe("worker navigation", () => {
+  const seen: string[] = [];
+  const assetsEnv = {
+    ASSETS: {
+      fetch: async (r: Request) => {
+        seen.push(new URL(r.url).pathname);
+        return new Response("asset");
+      },
+    },
+  };
+  const nav = (path: string) =>
+    worker.fetch(new Request(`https://picofolio.app${path}`, { headers: { Accept: "text/html" } }), assetsEnv);
+
+  it("serves the app shell for app routes, index for / and files as-is", async () => {
+    await nav("/overview");
+    await nav("/watchlist");
+    await nav("/");
+    await nav("/og.png");
+    expect(seen).toEqual(["/app", "/app", "/", "/og.png"]);
+  });
+});
+
 describe("worker proxy", () => {
   it("moves the Flex token from header to IBKR's t= param", async () => {
     const f = mockUpstream();

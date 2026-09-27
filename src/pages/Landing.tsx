@@ -27,6 +27,7 @@ const NAV_LINKS = [
   { href: "#calendar", label: "Calendar" },
   { href: "#keys", label: "Keyboard" },
   { href: "#privacy", label: "Privacy" },
+  { href: "#faq", label: "FAQ" },
 ];
 
 const HEADLINE: { text: string; em?: boolean }[][] = [
@@ -40,6 +41,45 @@ const FACTS = [
   { k: "No telemetry", v: "No analytics, no trackers, no pixels." },
   { k: "AGPL-3.0", v: "Every line is public. Read it, fork it, self-host it." },
 ];
+
+/** Rendered on the page and as FAQPage structured data — one source, so the
+ *  markup search engines read always matches what visitors see. */
+const FAQ: { q: string; a: string }[] = [
+  {
+    q: "Is Picofolio free?",
+    a: "Yes. Picofolio is free and open source under the AGPL-3.0 licence. There's no account, no subscription and no paid tier.",
+  },
+  {
+    q: "Where is my portfolio data stored?",
+    a: "In your browser's local storage, on your device. There is no Picofolio database. Broker and price requests pass through a stateless relay only because brokers refuse requests made directly from a browser — it stores nothing.",
+  },
+  {
+    q: "Do I need an Interactive Brokers account?",
+    a: "No. You can add positions and trades by hand for any broker. If you use Interactive Brokers, you can connect a Flex Query to sync trades, positions, cash and daily account value automatically.",
+  },
+  {
+    q: "How does the Interactive Brokers sync work?",
+    a: "Create a Flex Query and a Flex Web Service token in IBKR Client Portal, then paste both into Picofolio's Settings. Picofolio pulls the statement when you sync. Access is read-only: it can't place orders or move money.",
+  },
+  {
+    q: "Does it handle options and non-US stocks?",
+    a: "Yes. Stocks and ETFs on major exchanges show in their native currency and convert into your base currency at daily FX rates. Open options can be marked live with your own MarketData.app key.",
+  },
+  {
+    q: "Is there a desktop app?",
+    a: "Picofolio runs in any modern desktop browser today. A native desktop app is planned.",
+  },
+];
+
+const FAQ_JSONLD = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQ.map((f) => ({
+    "@type": "Question",
+    name: f.q,
+    acceptedAnswer: { "@type": "Answer", text: f.a },
+  })),
+}).replace(/</g, "\\u003c");
 
 const SPECS: { k: string; v: string }[] = [
   { k: "Broker sync", v: "Interactive Brokers (Flex Query) — more to come" },
@@ -350,6 +390,37 @@ export function Landing({ mode }: LandingProps) {
               </Reveal>
             ))}
           </dl>
+        </section>
+
+        {/* ---------------- FAQ ---------------- */}
+        <section className="lsec lsec--split lsec--top" id="faq">
+          <div className="lsec__intro">
+            <Reveal as="p" className="lsec__eyebrow">
+              <span className="num">06</span> Questions
+            </Reveal>
+            <Reveal as="h2" className="lsec__title" delay={1}>
+              Asked, <em>answered.</em>
+            </Reveal>
+            <Reveal as="p" className="lsec__lede" delay={2}>
+              Anything else? Open an issue on GitHub — it's the whole support desk.
+            </Reveal>
+          </div>
+          <div className="faq">
+            {FAQ.map((f, i) => (
+              <Reveal as="details" className="faq__item" key={f.q} delay={i * 0.5}>
+                <summary className="faq__q">
+                  <span>{f.q}</span>
+                  <i className="faq__icon" aria-hidden />
+                </summary>
+                <p className="faq__a">{f.a}</p>
+              </Reveal>
+            ))}
+          </div>
+          <script
+            type="application/ld+json"
+            // Static, JSON-escaped constant — structured data, never executed.
+            dangerouslySetInnerHTML={{ __html: FAQ_JSONLD }}
+          />
         </section>
 
         {/* ---------------- CLOSE ---------------- */}

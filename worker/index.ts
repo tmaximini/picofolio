@@ -99,6 +99,13 @@ function isAllowedCaller(request: Request, env: Env): boolean {
   return request.headers.get("Sec-Fetch-Site") === "same-origin";
 }
 
+/** A browser navigation to a client-side route other than the landing page. */
+function isAppNavigation(request: Request, url: URL): boolean {
+  if (request.method !== "GET" && request.method !== "HEAD") return false;
+  if (url.pathname === "/" || /\.[a-z0-9]+$/i.test(url.pathname)) return false;
+  return (request.headers.get("Accept") ?? "").includes("text/html");
+}
+
 function deny(status: number, text: string): Response {
   return new Response(text, { status, headers: { "Cache-Control": "no-store" } });
 }
@@ -166,8 +173,13 @@ export default {
       return proxy(request, route);
     }
 
-    // Everything else → the SPA's static assets (with SPA fallback configured
-    // in wrangler.jsonc so deep links resolve to index.html).
+    // App routes (/overview, /holdings, …) get the plain SPA shell; "/" keeps
+    // index.html, which carries the prerendered landing page. Otherwise a
+    // set-up user deep-linking into the app would see landing markup flash
+    // before the bundle takes over. (html_handling serves app.html at /app.)
+    if (isAppNavigation(request, url)) {
+      return env.ASSETS.fetch(new Request(new URL("/app", url), request));
+    }
     return env.ASSETS.fetch(request);
   },
 };
