@@ -22,4 +22,3 @@ export { Toaster } from "./Toaster";
 export { TradeSetupRow } from "./TradeSetupRow";
 export { TradeTable } from "./TradeTable";
 export { WeeklyPLSparks } from "./WeeklyPLSparks";
-export { Welcome } from "./Welcome";

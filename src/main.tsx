@@ -12,7 +12,7 @@ import "./styles/cmdk.css";
 import "./styles/toast.css";
 import "./styles/switcher.css";
 import "./styles/mobile.css";
-import "./styles/welcome.css";
+import "./styles/landing.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

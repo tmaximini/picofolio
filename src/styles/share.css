@@ -175,10 +175,7 @@
   opacity: 0.85;
 }
 .shareCard__wordmark {
-  font-family: var(--font-display);
-  font-size: 17px;
-  font-weight: 500;
-  letter-spacing: var(--tracking-tight);
+  font-size: 19px;
   color: var(--text-tertiary);
 }
 

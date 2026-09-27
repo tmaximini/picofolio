@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import { Menu } from "lucide-react";
+import { BrandMark } from "@/components/primitives";
 
 type NavItem = {
   id: string;
@@ -39,10 +40,8 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="sidebar__top">
         <div className="brand">
-          <div className="brand__mark" aria-hidden>
-            <span className="brand__markGlyph">P</span>
-          </div>
-          <div className="brand__name">Picofolio</div>
+          <BrandMark size={26} className="brand__mark" />
+          <div className="brand__name wordmark">picofolio</div>
         </div>
         <button
           type="button"

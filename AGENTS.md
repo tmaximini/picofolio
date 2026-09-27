@@ -69,7 +69,8 @@ Single source of truth: `src/styles/tokens.css`. Read it before writing any UI c
 
 ### Typography rules
 
-- Display font: **Fraunces** (variable serif) for page titles, hero headlines, brand. Italic optical-size variant has personality without being precious.
+- Brand font: **Bodoni Moda** italic (`--font-brand`) — the lowercase `picofolio` wordmark and landing-page headlines only. The mark is `BrandMark` (a "p" whose bowl ends in the red live-price dot).
+- Display font: **Fraunces** (variable serif) for in-app page titles and hero numbers. Italic optical-size variant has personality without being precious.
 - UI font: **Geist** for buttons, labels, body. **Never Inter** — it screams "AI-generated SaaS dashboard."
 - Mono font: **Berkeley Mono** if licensed, else **JetBrains Mono**. Used for ALL numbers, all the time.
 - Small caps with letter-spacing for category labels (`--tracking-caps`). Bloomberg-terminal energy.

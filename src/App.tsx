@@ -24,8 +24,8 @@ import {
   CommandPalette,
   ShortcutsHelp,
   Toaster,
-  Welcome,
 } from "@/components/ui";
+import { Landing } from "@/pages/Landing";
 import { Overview } from "@/pages/Overview";
 import { Trading } from "@/pages/Trading";
 import { Holdings } from "@/pages/Holdings";
@@ -40,10 +40,8 @@ import type { Note } from "@/lib/notes";
 import { ALL_ACCOUNTS } from "@/store";
 import {
   useIsFirstRun,
-  useOpenWelcome,
   useSelectedAccountId,
   useSyncAll,
-  useWelcomeVisible,
 } from "@/store/selectors";
 
 // Nav grouped into lenses, not a flat list. Trading and Investing are two
@@ -99,7 +97,16 @@ export function App() {
   );
 }
 
+/** First run shows only the landing page; afterwards it lives at /about. */
 function AppInner() {
+  const firstRun = useIsFirstRun();
+  const location = useLocation();
+  if (firstRun) return <Landing mode="first-run" />;
+  if (location.pathname === "/about") return <Landing mode="about" />;
+  return <Workspace />;
+}
+
+function Workspace() {
   const navigate = useNavigate();
   const location = useLocation();
   const [newTradeOpen, setNewTradeOpen] = useState(false);
@@ -112,9 +119,6 @@ function AppInner() {
   const syncAll = useSyncAll();
   const scope = useSelectedAccountId();
   const scopedAccountId = scope === ALL_ACCOUNTS ? undefined : scope;
-  const firstRun = useIsFirstRun();
-  const welcomeVisible = useWelcomeVisible();
-  const openWelcome = useOpenWelcome();
   // undefined = closed; { editId?: string } = open (create when editId absent).
   const [accountModal, setAccountModal] = useState<{ editId?: string } | null>(null);
   // Sidebar visibility — open on desktop, collapsed (drawer) on small screens.
@@ -145,11 +149,11 @@ function AppInner() {
     setNewTradeSymbol(undefined);
   };
 
-  // Auto-sync on load: every linked account + prices, once the user is past
-  // the first-run screen. Quiet — only real outcomes (new trades, errors) toast.
+  // Auto-sync on load: every linked account + prices. The workspace only
+  // mounts past first run. Quiet — only real outcomes (new trades, errors) toast.
   useEffect(() => {
-    if (!firstRun) void syncAll({ quiet: true });
-  }, [firstRun, syncAll]);
+    void syncAll({ quiet: true });
+  }, [syncAll]);
 
   const bindings = useMemo(
     () => [
@@ -230,7 +234,7 @@ function AppInner() {
               <button
                 type="button"
                 className="sidebarCta sidebarCta--ghost"
-                onClick={openWelcome}
+                onClick={() => navigate("/about")}
               >
                 <Info size={13} strokeWidth={1.75} />
                 <span>About</span>
@@ -282,7 +286,6 @@ function AppInner() {
         />
       )}
       <Toaster />
-      {welcomeVisible && <Welcome />}
     </Shell>
   );
 }

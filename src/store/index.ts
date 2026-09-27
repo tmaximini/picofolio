@@ -161,12 +161,9 @@ type StoreState = {
   /** Transient: a full sync (IBKR pulls + prices) is in flight. */
   syncingAll: boolean;
 
-  /** First-run gate. False until the user picks a path in the welcome screen
+  /** First-run gate. False until the user picks a path on the landing page
    *  (demo data or empty). Persisted so it only shows once. */
   onboarded: boolean;
-  /** Transient (not persisted): the welcome screen was re-opened via "About"
-   *  after onboarding. The screen is visible when `!onboarded || welcomeOpen`. */
-  welcomeOpen: boolean;
 
   // Price actions
   loadPrice: (symbol: string, opts?: { force?: boolean }) => Promise<void>;
@@ -253,17 +250,15 @@ type StoreState = {
   clearDemoPortfolio: () => void;
   restoreDemoPortfolio: () => void;
   /** Load the full demo seed (accounts, holdings, trades, setups, weekly P&L)
-   *  on demand — wired to the welcome screen's "Start with Demo Data" CTA.
+   *  on demand — wired to the landing page's "Start with Demo Data" CTA.
    *  Merges by id so it's idempotent and never clobbers real entries. */
   seedDemoData: () => void;
 
-  // Onboarding / welcome
+  // Onboarding / landing
   completeOnboarding: () => void;
-  openWelcome: () => void;
-  dismissWelcome: () => void;
   /** Wipe every local slice (accounts, trades, notes, connections, prices,
    *  tokens, settings) back to the fresh first-run state. Persisted storage is
-   *  overwritten with the empty state, so the welcome screen shows again. */
+   *  overwritten with the empty state, so the landing page shows again. */
   clearAllData: () => void;
 
   // IBKR actions — per-connection
@@ -407,7 +402,7 @@ function isFresh(entry: PriceEntry | undefined): boolean {
 export const useStore = create<StoreState>()(
   persist(
     (set, get) => ({
-      // Start empty: a brand-new user lands on the welcome screen and chooses
+      // Start empty: a brand-new user lands on the landing page and chooses
       // demo data or an empty portfolio. Demo seeds load on demand via
       // seedDemoData(); existing users keep their data (migrate sets onboarded).
       accounts: [],
@@ -430,7 +425,6 @@ export const useStore = create<StoreState>()(
       syncing: false,
       syncingAll: false,
       onboarded: false,
-      welcomeOpen: false,
 
       loadPrice: async (symbol, opts) => {
         // Option (OCC) symbols have no Yahoo daily history — they'd just 404.
@@ -966,13 +960,10 @@ export const useStore = create<StoreState>()(
             setups: [...s.setups, ...setupsSeed.filter((x) => !setupIds.has(x.id))],
             weeklyPnl: s.weeklyPnl.length ? s.weeklyPnl : weeklyPnlSeed,
             onboarded: true,
-            welcomeOpen: false,
           };
         }),
 
-      completeOnboarding: () => set({ onboarded: true, welcomeOpen: false }),
-      openWelcome: () => set({ welcomeOpen: true }),
-      dismissWelcome: () => set({ welcomeOpen: false }),
+      completeOnboarding: () => set({ onboarded: true }),
 
       clearAllData: () =>
         set({
@@ -993,9 +984,8 @@ export const useStore = create<StoreState>()(
           marketDataToken: null,
           lastSyncAt: null,
           syncing: false,
-          // Drop straight back to the first-run welcome.
+          // Drop straight back to the first-run landing page.
           onboarded: false,
-          welcomeOpen: false,
         }),
 
       // ---------- IBKR (multi-connection) ----------
