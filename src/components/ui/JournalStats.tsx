@@ -46,7 +46,7 @@ function capBreakdown(
 }
 
 const TIPS = {
-  pnl: "Sum of realized P/L across all closed trades in the selected range.",
+  pnl: "Sum of realized P/L across closed trades in the selected range — trading profit only, no unrealized gains on open positions. The % is relative to the capital put into those trades, not your account's return (see Performance for that).",
   winRate: "Share of closed trades that were profitable.",
   trades: "Trades with activity in the selected range.",
   avg: "Average realized profit per winning trade / loss per losing trade.",
@@ -221,7 +221,8 @@ export function JournalStats({ scope, onOpenTrade, onOpenJournal }: JournalStats
           label="P&L"
           tip={TIPS.pnl}
           value={stats.pnlCents !== 0 ? formatMoney(stats.pnlCents, baseCurrency, true) : "—"}
-          sub={stats.returnPct !== 0 ? formatPct(stats.returnPct) : undefined}
+          // Relative to capital put into these trades — not an account return.
+          sub={stats.returnPct !== 0 ? `${formatPct(stats.returnPct)} on capital traded` : undefined}
           tone={pnlTone === "neutral" ? undefined : pnlTone}
           subTone={pnlTone === "neutral" ? undefined : pnlTone}
           className={
