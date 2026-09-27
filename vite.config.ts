@@ -51,10 +51,22 @@ export default defineConfig({
         target: "https://gdcdyn.interactivebrokers.com",
         changeOrigin: true,
         secure: true,
-        rewrite: (path) =>
-          path.replace(/^\/api\/ibkr\/flex/, "/Universal/servlet"),
+        // The client sends the token in X-Flex-Token (never the URL); move
+        // it into IBKR's required `t=` param here. Any `t=` the caller put
+        // in the URL is dropped. Mirrors worker/index.ts.
+        rewrite: (path) => {
+          const u = new URL(path, "http://x");
+          u.searchParams.delete("t");
+          return u.pathname.replace(/^\/api\/ibkr\/flex/, "/Universal/servlet") + u.search;
+        },
         configure: (proxy) => {
-          proxy.on("proxyReq", (proxyReq) => {
+          proxy.on("proxyReq", (proxyReq, req) => {
+            const token = req.headers["x-flex-token"];
+            if (typeof token === "string" && token) {
+              const sep = proxyReq.path.includes("?") ? "&" : "?";
+              proxyReq.path += `${sep}t=${encodeURIComponent(token)}`;
+            }
+            proxyReq.removeHeader("x-flex-token");
             proxyReq.removeHeader("origin");
             proxyReq.removeHeader("referer");
             proxyReq.setHeader(

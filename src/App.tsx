@@ -52,7 +52,7 @@ import {
 const NAV_SECTIONS = [
   {
     label: "Portfolio",
-    items: [{ id: "/", label: "Overview", icon: <GlyphOverview />, shortcut: "g o" }],
+    items: [{ id: "/overview", label: "Overview", icon: <GlyphOverview />, shortcut: "g o" }],
   },
   {
     label: "Investing",
@@ -74,20 +74,19 @@ const NAV_SECTIONS = [
 
 /**
  * Pick which sidebar item is "active" based on the current pathname.
- * Longest-id-first match supports nested routes. The "/" item only matches
- * the literal root path.
+ * Longest-id-first match supports nested routes.
  */
 function activeIdFor(pathname: string, ids: string[]): string | null {
   const sorted = [...ids].sort((a, b) => b.length - a.length);
   for (const id of sorted) {
-    if (id === "/") {
-      if (pathname === "/") return id;
-      continue;
-    }
     if (pathname === id || pathname.startsWith(id + "/")) return id;
   }
   return null;
 }
+
+/** Router state the sidebar's About link sets, so "/" shows the landing page
+ *  instead of forwarding a set-up user into the app. */
+export type LandingState = { about?: boolean };
 
 export function App() {
   return (
@@ -97,12 +96,23 @@ export function App() {
   );
 }
 
-/** First run shows only the landing page; afterwards it lives at /about. */
+/**
+ * "/" is the landing page; the app lives at top-level routes (/overview,
+ * /holdings, …). New visitors always get the landing page — deep links
+ * included. Set-up users hitting "/" go straight to /overview, unless they
+ * came via About.
+ */
 function AppInner() {
   const firstRun = useIsFirstRun();
   const location = useLocation();
-  if (firstRun) return <Landing mode="first-run" />;
-  if (location.pathname === "/about") return <Landing mode="about" />;
+  const atRoot = location.pathname === "/";
+  if (firstRun) {
+    return atRoot ? <Landing mode="first-run" /> : <Navigate to="/" replace />;
+  }
+  if (atRoot) {
+    const about = (location.state as LandingState | null)?.about === true;
+    return about ? <Landing mode="about" /> : <Navigate to="/overview" replace />;
+  }
   return <Workspace />;
 }
 
@@ -138,7 +148,7 @@ function Workspace() {
     () => NAV_SECTIONS.flatMap((s) => s.items.map((i) => i.id)),
     [],
   );
-  const normalizedActive = activeIdFor(location.pathname, allNavIds) ?? "/";
+  const normalizedActive = activeIdFor(location.pathname, allNavIds) ?? "/overview";
 
   const openNewTrade = (symbol?: string) => {
     setNewTradeSymbol(symbol);
@@ -166,7 +176,7 @@ function Workspace() {
       { combo: "?", handler: () => setHelpOpen((v) => !v) },
       { combo: "cmd+k", handler: () => setPaletteOpen((v) => !v) },
       { combo: "ctrl+k", handler: () => setPaletteOpen((v) => !v) },
-      { combo: "g o", handler: () => navigate("/") },
+      { combo: "g o", handler: () => navigate("/overview") },
       { combo: "g a", handler: () => navigate("/activity") },
       { combo: "g c", handler: () => navigate("/calendar") },
       { combo: "g h", handler: () => navigate("/holdings") },
@@ -234,7 +244,7 @@ function Workspace() {
               <button
                 type="button"
                 className="sidebarCta sidebarCta--ghost"
-                onClick={() => navigate("/about")}
+                onClick={() => navigate("/", { state: { about: true } satisfies LandingState })}
               >
                 <Info size={13} strokeWidth={1.75} />
                 <span>About</span>
@@ -245,7 +255,7 @@ function Workspace() {
       }
     >
       <Routes>
-        <Route path="/" element={<Overview />} />
+        <Route path="/overview" element={<Overview />} />
         <Route path="/activity" element={<Trading />} />
         <Route path="/calendar" element={<Calendar />} />
         <Route path="/holdings" element={<Holdings />} />
@@ -253,8 +263,9 @@ function Workspace() {
         <Route path="/settings" element={<Settings />} />
         {/* Legacy paths → new IA */}
         <Route path="/trading" element={<Navigate to="/activity" replace />} />
-        <Route path="/accounts/*" element={<Navigate to="/" replace />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/accounts/*" element={<Navigate to="/overview" replace />} />
+        <Route path="/about" element={<Navigate to="/" replace state={{ about: true }} />} />
+        <Route path="*" element={<Navigate to="/overview" replace />} />
       </Routes>
 
       {newTradeOpen && (

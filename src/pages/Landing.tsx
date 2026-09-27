@@ -61,7 +61,7 @@ type LandingProps = {
 
 /**
  * The front door. On first run it stands in for the whole app until the
- * visitor picks demo data or an empty start; afterwards it lives at /about.
+ * visitor picks demo data or an empty start. Set-up users reach it via About.
  * Every illustration is a live miniature of the real UI, not a screenshot.
  */
 export function Landing({ mode }: LandingProps) {
@@ -74,17 +74,17 @@ export function Landing({ mode }: LandingProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const firstRun = mode === "first-run";
 
-  // Seed, then hard-reload at the root: the store persists synchronously, so
+  // Seed, then hard-load the overview: the store persists synchronously, so
   // the reload rehydrates with the demo portfolio and pages fetch prices on mount.
   const startWithDemo = useCallback(() => {
     seedDemo();
-    window.location.assign("/");
+    window.location.assign("/overview");
   }, [seedDemo]);
   const startEmpty = useCallback(() => {
     complete();
-    navigate("/", { replace: true });
+    navigate("/overview", { replace: true });
   }, [complete, navigate]);
-  const backToApp = useCallback(() => navigate("/"), [navigate]);
+  const backToApp = useCallback(() => navigate("/overview"), [navigate]);
 
   const bindings = useMemo(
     () =>

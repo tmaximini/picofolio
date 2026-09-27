@@ -19,6 +19,14 @@ const SEND_PATH = `${FLEX_BASE}/FlexStatementService.SendRequest`;
 const GET_PATH = `${FLEX_BASE}/FlexStatementService.GetStatement`;
 
 /**
+ * The Flex token rides in this header on the browser → proxy hop, never in
+ * the URL: URLs end up in proxy/edge request logs, the HTTP cache and HAR
+ * exports. The proxy (vite.config.ts / worker) moves it into IBKR's `t=`
+ * param on the server-side hop, which IBKR requires.
+ */
+export const FLEX_TOKEN_HEADER = "X-Flex-Token";
+
+/**
  * Transient IBKR-side errors worth retrying (on both SendRequest and the
  * GetStatement poll — the statement is still being generated):
  *   1001 — Statement could not be generated at this time
@@ -57,13 +65,18 @@ const NET_BACKOFF_MS = 1_000;
  */
 async function fetchWithRetry(
   url: string,
+  token: string,
   opts: FlexClientOptions,
   label: string,
 ): Promise<Response> {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < NET_MAX_ATTEMPTS; attempt++) {
     try {
-      const res = await fetch(url, { signal: opts.signal });
+      const res = await fetch(url, {
+        signal: opts.signal,
+        headers: { [FLEX_TOKEN_HEADER]: token },
+        cache: "no-store",
+      });
       if (res.status >= 500 && attempt < NET_MAX_ATTEMPTS - 1) {
         lastError = new Error(`IBKR ${label} HTTP ${res.status}`);
       } else {
@@ -106,11 +119,11 @@ export async function sendFlexRequest(
   queryId: string,
   opts: FlexClientOptions = {},
 ): Promise<{ referenceCode: string }> {
-  const url = `${SEND_PATH}?t=${encodeURIComponent(token)}&q=${encodeURIComponent(queryId)}&v=3`;
+  const url = `${SEND_PATH}?q=${encodeURIComponent(queryId)}&v=3`;
 
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < SEND_MAX_ATTEMPTS; attempt++) {
-    const res = await fetchWithRetry(url, opts, "SendRequest");
+    const res = await fetchWithRetry(url, token, opts, "SendRequest");
     if (!res.ok) {
       throw new Error(`IBKR SendRequest HTTP ${res.status}`);
     }
@@ -148,8 +161,8 @@ export async function pollFlexStatement(
   const deadline = Date.now() + pollTimeoutMs;
 
   while (true) {
-    const url = `${GET_PATH}?t=${encodeURIComponent(token)}&q=${encodeURIComponent(referenceCode)}&v=3`;
-    const res = await fetchWithRetry(url, opts, "GetStatement");
+    const url = `${GET_PATH}?q=${encodeURIComponent(referenceCode)}&v=3`;
+    const res = await fetchWithRetry(url, token, opts, "GetStatement");
     if (!res.ok) {
       throw new Error(`IBKR GetStatement HTTP ${res.status}`);
     }
