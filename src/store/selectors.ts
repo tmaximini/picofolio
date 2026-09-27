@@ -27,6 +27,7 @@ import { contractMultiplier, parseOccSymbol } from "@/lib/optionSymbol";
 import { inRange, resolveRange, type RangeValue } from "@/lib/dateRange";
 import { computePerformance, type Performance } from "@/lib/performance";
 import { periodReturns, type PeriodReturns } from "@/lib/monthlyReturns";
+import { dailyReturns } from "@/lib/twr";
 import type { PctPoint, PerfRange } from "@/lib/perf";
 
 export type DeltaPeriod = "1D" | "1W" | "1M" | "YTD" | "1Y";
@@ -427,10 +428,18 @@ export const useAccountDeltaCents = (
   );
 
 /**
- * Rate-of-return headline: derived value vs. net contributions.
- * `gainCents = value − contributions`; `returnPct = gain / contributions`.
- * Returns null until the account's value is fully priced. This — NOT the
- * sum of realized closed trades — is the account's headline number.
+ * Rate-of-return headline for an account.
+ *
+ * Accounts with broker NAV history (IBKR) are measured from that history —
+ * the same basis as their performance chart: gain = value change since the
+ * first day on record minus deposits/withdrawals/transfers (when the Flex
+ * query reports them), and the percent is time-weighted. The hand-entered
+ * contributions figure is ignored there: it's easy to leave stale (e.g. an
+ * account first created from the demo seed) and a stale basis rendered as a
+ * −80% "return".
+ *
+ * Manual accounts fall back to value vs. net contributions, and show nothing
+ * (null) when no contributions are on record rather than a wrong number.
  */
 export type ReturnStat = { gainCents: number | null; returnPct: number | null };
 
@@ -440,8 +449,23 @@ export type ReturnStat = { gainCents: number | null; returnPct: number | null };
 export const useAccountReturn = (accountId: string): ReturnStat | null => {
   const value = useAccountValueCents(accountId);
   const account = useAccountById(accountId);
+  const nav = useStore((s) => s.navHistory[accountId]);
+  const flows = useStore((s) => s.cashFlows[accountId]);
+  const series = useAccountValueSeries(accountId);
   return useMemo(() => {
     if (account == null || value == null) return null;
+
+    if ((nav?.length ?? 0) >= 2) {
+      // Wait for the full curve (NAV + today's live value) before showing anything.
+      const days = dailyReturns(series, flows ?? []);
+      if (days.length === 0) return { gainCents: null, returnPct: null };
+      const growth = days.reduce((g, d) => g * (1 + d.r), 1);
+      return {
+        gainCents: days.reduce((a, d) => a + d.pnlCents, 0),
+        returnPct: growth - 1,
+      };
+    }
+
     const contrib = account.netContributionsCents;
     // No contributions on record = unknown cost basis. `value − 0` would render
     // the entire account value as "return" (e.g. a $1M paper balance reads as a
@@ -451,7 +475,7 @@ export const useAccountReturn = (accountId: string): ReturnStat | null => {
       gainCents: value - contrib,
       returnPct: (value - contrib) / contrib,
     };
-  }, [value, account]);
+  }, [value, account, nav, flows, series]);
 };
 
 // ---------- portfolio totals ----------
@@ -616,10 +640,19 @@ function buildValueSeries(
  * session the curve would lag behind the headline value — append (or replace)
  * today's point with the live computed value when it's fully priced.
  */
+/** A live value this far from the last broker NAV is treated as a data
+ *  problem (prices half-loaded, holdings mismatched), not a market move. */
+const LIVE_VS_NAV_MAX_DEVIATION = 0.25;
+
 function withLiveToday(nav: ValuePoint[], liveCents: number | null): ValuePoint[] {
   if (liveCents == null) return nav;
   const today = new Date().toISOString().slice(0, 10);
   const last = nav[nav.length - 1]!;
+  // Never let one suspicious live figure rewrite the whole curve's return —
+  // stop at the broker's last value instead; the next sync catches up.
+  if (last.valueCents > 0 && Math.abs(liveCents / last.valueCents - 1) > LIVE_VS_NAV_MAX_DEVIATION) {
+    return nav;
+  }
   if (last.time >= today) {
     return [...nav.slice(0, -1), { time: last.time, valueCents: liveCents }];
   }
