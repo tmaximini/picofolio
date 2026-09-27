@@ -29,6 +29,15 @@ interface Env {
   ALLOW_LOCALHOST?: string;
 }
 
+/** An upstream host + how to map the incoming path onto it. */
+type Upstream = {
+  origin: string;
+  /** Map the incoming pathname to the upstream pathname. */
+  rewrite: (pathname: string) => string;
+  /** Upstream paths this host may be asked for (checked after rewrite). */
+  allow: RegExp;
+};
+
 /** One upstream route: the `/api/*` prefix → target origin + path rewrite + UA. */
 type Route = {
   prefix: string;
@@ -37,6 +46,8 @@ type Route = {
   allow: RegExp;
   /** Map the incoming pathname to the upstream pathname. */
   rewrite: (pathname: string) => string;
+  /** Alternate hosts tried, in order, when the primary fails transiently. */
+  fallbacks?: Upstream[];
   userAgent: string;
   /** Header carrying a token to move into the upstream query string. */
   tokenHeader?: { name: string; param: string };
@@ -61,10 +72,21 @@ const ROUTES: Route[] = [
     userAgent: "picofolio/0.1 options-client",
   },
   {
+    // IBKR's current Flex Web Service host. The legacy gdcdyn host is kept as
+    // a fallback: its DNS rotates through addresses Cloudflare refuses to
+    // connect to from a Worker (error 1000), failing ~1 in 4 requests.
     prefix: "/api/ibkr/flex",
-    origin: "https://gdcdyn.interactivebrokers.com",
-    allow: /^\/Universal\/servlet\/FlexStatementService\.(SendRequest|GetStatement)$/,
-    rewrite: (p) => p.replace(/^\/api\/ibkr\/flex/, "/Universal/servlet"),
+    origin: "https://ndcdyn.interactivebrokers.com",
+    allow: /^\/AccountManagement\/FlexWebService\/(SendRequest|GetStatement)$/,
+    rewrite: (p) =>
+      p.replace(/^\/api\/ibkr\/flex\/FlexStatementService\./, "/AccountManagement/FlexWebService/"),
+    fallbacks: [
+      {
+        origin: "https://gdcdyn.interactivebrokers.com",
+        allow: /^\/Universal\/servlet\/FlexStatementService\.(SendRequest|GetStatement)$/,
+        rewrite: (p) => p.replace(/^\/api\/ibkr\/flex/, "/Universal/servlet"),
+      },
+    ],
     userAgent: "picofolio/0.1 flex-client",
     tokenHeader: { name: "X-Flex-Token", param: "t" },
   },
@@ -110,26 +132,46 @@ function deny(status: number, text: string): Response {
   return new Response(text, { status, headers: { "Cache-Control": "no-store" } });
 }
 
+/** Upstream failures worth another attempt: Cloudflare's own fetch errors
+ *  (e.g. 1000 "DNS points to prohibited IP", surfaced as a 403 with an
+ *  "error code: 10xx" body) and 5xx. */
+async function isTransient(res: Response): Promise<boolean> {
+  if (res.status >= 500) return true;
+  if (res.status !== 403) return false;
+  const text = await res.clone().text().catch(() => "");
+  return /^error code: 10\d\d/.test(text.trim());
+}
+
+const MAX_ATTEMPTS = 3;
+
 async function proxy(request: Request, route: Route): Promise<Response> {
   const url = new URL(request.url);
-  const target = new URL(route.origin);
-  target.pathname = route.rewrite(url.pathname);
-  // The URL setter normalizes dot-segments — check the result, not the input.
-  if (target.origin !== route.origin || !route.allow.test(target.pathname)) {
-    return deny(404, "Not found");
-  }
-  target.search = url.search;
+  const upstreams: Upstream[] = [
+    { origin: route.origin, rewrite: route.rewrite, allow: route.allow },
+    ...(route.fallbacks ?? []),
+  ];
 
-  if (route.tokenHeader) {
-    const { name, param } = route.tokenHeader;
-    // Current clients send the token in the header. A `t=` in the URL comes
-    // from a tab still running a pre-header build: rejecting it can't un-send
-    // the token, and the old bundle can't show a useful error — so honour it
-    // (invocation logs are off) and let the reload migrate the tab.
-    const token = request.headers.get(name) ?? url.searchParams.get(param);
-    target.searchParams.delete(param);
-    if (token) target.searchParams.set(param, token);
+  // Build (and allow-list) every candidate URL before touching the network.
+  const targets: URL[] = [];
+  for (const u of upstreams) {
+    const target = new URL(u.origin);
+    target.pathname = u.rewrite(url.pathname);
+    // The URL setter normalizes dot-segments — check the result, not the input.
+    if (target.origin !== u.origin || !u.allow.test(target.pathname)) continue;
+    target.search = url.search;
+    if (route.tokenHeader) {
+      const { name, param } = route.tokenHeader;
+      // Current clients send the token in the header. A `t=` in the URL comes
+      // from a tab still running a pre-header build: rejecting it can't un-send
+      // the token, and the old bundle can't show a useful error — so honour it
+      // (invocation logs are off) and let the reload migrate the tab.
+      const token = request.headers.get(name) ?? url.searchParams.get(param);
+      target.searchParams.delete(param);
+      if (token) target.searchParams.set(param, token);
+    }
+    targets.push(target);
   }
+  if (targets.length === 0) return deny(404, "Not found");
 
   // Forward only what the upstream needs; never reflect arbitrary headers.
   const headers = new Headers();
@@ -139,11 +181,21 @@ async function proxy(request: Request, route: Route): Promise<Response> {
   const accept = request.headers.get("Accept");
   if (accept) headers.set("Accept", accept);
 
-  const upstream = await fetch(target.toString(), {
-    method: request.method,
-    headers,
-    redirect: "manual",
-  });
+  let upstream: Response | null = null;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const target = targets[attempt % targets.length]!;
+    try {
+      const res = await fetch(target.toString(), { method: request.method, headers, redirect: "manual" });
+      if (attempt < MAX_ATTEMPTS - 1 && (await isTransient(res))) continue;
+      upstream = res;
+      break;
+    } catch {
+      // Network-level failure — try the next candidate.
+    }
+  }
+  if (!upstream || (await isTransient(upstream))) {
+    return deny(502, "Upstream unreachable from the sync proxy — try again in a minute.");
+  }
 
   const respHeaders = new Headers();
   for (const h of PASS_HEADERS) {

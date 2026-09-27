@@ -48,7 +48,8 @@ describe("worker proxy", () => {
     });
     expect(res.status).toBe(200);
     const target = new URL(String(f.mock.calls[0]![0]));
-    expect(target.host).toBe("gdcdyn.interactivebrokers.com");
+    expect(target.host).toBe("ndcdyn.interactivebrokers.com");
+    expect(target.pathname).toBe("/AccountManagement/FlexWebService/SendRequest");
     expect(target.searchParams.get("t")).toBe("secret");
     expect(target.searchParams.get("q")).toBe("123");
   });
@@ -111,5 +112,32 @@ describe("worker proxy", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
     mockUpstream(new Response(null, { status: 302, headers: { location: "https://evil.com" } }));
     expect((await call("/api/yahoo/v1/finance/search?q=x")).status).toBe(502);
+  });
+
+  it("retries Cloudflare error 1000 on the fallback host, then succeeds", async () => {
+    const f = vi.fn(async (..._args: unknown[]) => new Response("<ok/>", { headers: { "content-type": "text/xml" } }));
+    f.mockResolvedValueOnce(new Response("error code: 1000", { status: 403 }));
+    vi.stubGlobal("fetch", f);
+    const res = await call("/api/ibkr/flex/FlexStatementService.GetStatement?q=9&v=3", { ...SAME, "X-Flex-Token": "t" });
+    expect(res.status).toBe(200);
+    expect(f).toHaveBeenCalledTimes(2);
+    const second = new URL(String(f.mock.calls[1]![0]));
+    expect(second.host).toBe("gdcdyn.interactivebrokers.com");
+    expect(second.pathname).toBe("/Universal/servlet/FlexStatementService.GetStatement");
+    expect(second.searchParams.get("t")).toBe("t");
+  });
+
+  it("gives a clear 502 when every attempt fails, and never retries a real 403", async () => {
+    const down = vi.fn(async (..._args: unknown[]) => {
+      throw new Error("connect failed");
+    });
+    vi.stubGlobal("fetch", down);
+    const res = await call("/api/ibkr/flex/FlexStatementService.SendRequest?q=1", SAME);
+    expect(res.status).toBe(502);
+    expect(down).toHaveBeenCalledTimes(3);
+
+    const forbidden = mockUpstream(new Response("Access denied", { status: 403 }));
+    expect((await call("/api/yahoo/v1/finance/search?q=x")).status).toBe(403);
+    expect(forbidden).toHaveBeenCalledTimes(1);
   });
 });
