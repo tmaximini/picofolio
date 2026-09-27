@@ -46,16 +46,18 @@ export default defineConfig({
         },
       },
       // IBKR Flex Web Service. Two endpoints: SendRequest + GetStatement.
-      // Maps /api/ibkr/flex/FlexStatementService.* → gdcdyn.interactivebrokers.com/Universal/servlet/*
+      // Maps /api/ibkr/flex/FlexStatementService.* → IBKR's current Flex Web
+      // Service host (ndcdyn …/AccountManagement/FlexWebService/*). The
+      // production Worker also falls back to the legacy gdcdyn host.
       "/api/ibkr/flex": {
-        target: "https://gdcdyn.interactivebrokers.com",
+        target: "https://ndcdyn.interactivebrokers.com",
         changeOrigin: true,
         secure: true,
         // The client sends the token in X-Flex-Token (never the URL); it is
         // moved into IBKR's required `t=` param below. A legacy `t=` from a
         // stale tab passes through untouched. Mirrors worker/index.ts.
         rewrite: (path) =>
-          path.replace(/^\/api\/ibkr\/flex/, "/Universal/servlet"),
+          path.replace(/^\/api\/ibkr\/flex\/FlexStatementService\./, "/AccountManagement/FlexWebService/"),
         configure: (proxy) => {
           proxy.on("proxyReq", (proxyReq, req) => {
             const token = req.headers["x-flex-token"];
