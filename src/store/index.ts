@@ -76,6 +76,8 @@ export type IbkrConnection = {
   token: string;
   queryId: string;
   lastSyncAt: number | null;
+  /** Last pull attempt, successful or not — throttles the automatic sync. */
+  lastAttemptAt?: number | null;
   status: IbkrStatus;
   error: string | null;
   lastSummary: {
@@ -112,7 +114,23 @@ export type Toast = {
   body?: string;
   /** Auto-dismiss after this many ms. Omit = sticky (errors). */
   duration?: number;
+  /** Toasts sharing a key replace each other in place instead of stacking.
+   *  Defaults to kind + title + body, so exact repeats always merge. */
+  key?: string;
+  /** How many times this toast has fired (shown as ×N when > 1). */
+  count?: number;
+  /** Bumped on every repeat — restarts the dismiss timer. */
+  seq?: number;
 };
+
+/** The on-load auto-sync skips a connection pulled (or tried) this recently.
+ *  Flex statements are end-of-day data and IBKR rate-limits pulls (1018);
+ *  re-pulling on every reload only burns quota and replays failures. An
+ *  explicit sync (button / r) always runs. */
+const AUTO_SYNC_MIN_INTERVAL_MS = 15 * 60_000;
+
+/** More than this and the oldest toast makes room. */
+const MAX_TOASTS = 3;
 
 type StoreState = {
   // Raw, seeded from mock; real data via actions
@@ -655,11 +673,19 @@ export const useStore = create<StoreState>()(
           const scoped = opts?.accountId
             ? accounts.filter((a) => a.id === opts.accountId)
             : accounts;
+          const now = Date.now();
           const connIds = scoped
             .map((a) => a.flexConnectionId)
-            .filter((id): id is string => Boolean(id));
+            .filter((id): id is string => Boolean(id))
+            .filter((id) => {
+              if (!opts?.quiet) return true;
+              const c = get().ibkrConnections.find((x) => x.id === id);
+              const last = c?.lastAttemptAt ?? c?.lastSyncAt ?? null;
+              return last == null || now - last > AUTO_SYNC_MIN_INTERVAL_MS;
+            });
           if (connIds.length > 0 && !opts?.quiet) {
             pushToast({
+              key: "sync:progress",
               kind: "info",
               title:
                 connIds.length === 1
@@ -1199,13 +1225,14 @@ export const useStore = create<StoreState>()(
         if (!conn.token || !conn.queryId) {
           patch({ status: "error", error: "Missing token or Query ID" });
           pushToast({
+            key: `sync:${conn.id}`,
             kind: "error",
             title: `${conn.label}: missing credentials`,
             body: "Add a Flex token and Query ID before syncing.",
           });
           return;
         }
-        patch({ status: "sending", error: null });
+        patch({ status: "sending", error: null, lastAttemptAt: Date.now() });
         try {
           patch({ status: "polling" });
           const xml = await fetchFlexStatement(conn.token, conn.queryId);
@@ -1333,6 +1360,7 @@ export const useStore = create<StoreState>()(
                 ? `synced ${summary.added} trade${summary.added === 1 ? "" : "s"}`
                 : `updated ${updated.length} trade${updated.length === 1 ? "" : "s"}`;
             pushToast({
+              key: `sync:${conn.id}`,
               kind: "success",
               title: `${conn.label}: ${headline}`,
               body: join(
@@ -1346,6 +1374,7 @@ export const useStore = create<StoreState>()(
             });
           } else if (!quiet) {
             pushToast({
+              key: `sync:${conn.id}`,
               kind: "info",
               title: `${conn.label}: up to date`,
               body: join(
@@ -1361,6 +1390,7 @@ export const useStore = create<StoreState>()(
           const msg = err instanceof Error ? err.message : String(err);
           patch({ status: "error", error: msg });
           pushToast({
+            key: `sync:${conn.id}`,
             kind: "error",
             title: `${conn.label}: sync failed`,
             body: msg,
@@ -1376,8 +1406,25 @@ export const useStore = create<StoreState>()(
       },
 
       pushToast: (t) => {
+        const key = t.key ?? `${t.kind}|${t.title}|${t.body ?? ""}`;
+        const existing = get().toasts.find((x) => x.key === key);
+        if (existing) {
+          // Same toast again (a retry loop, repeated auto-syncs, a newer
+          // status for the same connection): update it in place. An identical
+          // message counts up; a changed one replaces the text and resets.
+          const same = existing.title === t.title && existing.body === t.body && existing.kind === t.kind;
+          const next: Toast = {
+            ...t,
+            id: existing.id,
+            key,
+            count: same ? (existing.count ?? 1) + 1 : 1,
+            seq: (existing.seq ?? 0) + 1,
+          };
+          set((s) => ({ toasts: s.toasts.map((x) => (x.id === existing.id ? next : x)) }));
+          return existing.id;
+        }
         const id = `toast-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-        set((s) => ({ toasts: [...s.toasts, { ...t, id }] }));
+        set((s) => ({ toasts: [...s.toasts, { ...t, id, key, count: 1, seq: 0 }].slice(-MAX_TOASTS) }));
         return id;
       },
       dismissToast: (id) =>

@@ -15,8 +15,8 @@
  *  - only allow-listed paths on the three known upstream hosts are reachable;
  *  - only our own pages may call it (Origin / Sec-Fetch-Site), GET/HEAD only;
  *  - the Flex token arrives in a header and is moved into IBKR's `t=` param
- *    here, so it never appears in a request URL we receive (and thus never
- *    in Workers logs, caches or HAR files);
+ *    here, so current clients never put it in a request URL (and thus never
+ *    in logs, caches or HAR files);
  *  - only a handful of response headers pass back, redirects aren't followed
  *    (a bearer must not ride a redirect), and nothing is cacheable.
  * It is NOT a general-purpose open proxy.
@@ -115,10 +115,12 @@ async function proxy(request: Request, route: Route): Promise<Response> {
 
   if (route.tokenHeader) {
     const { name, param } = route.tokenHeader;
-    // A token in the incoming URL means a stale or foreign client — refuse
-    // rather than forward something that was just written to our logs.
-    if (url.searchParams.has(param)) return deny(400, "Token must be sent in a header");
-    const token = request.headers.get(name);
+    // Current clients send the token in the header. A `t=` in the URL comes
+    // from a tab still running a pre-header build: rejecting it can't un-send
+    // the token, and the old bundle can't show a useful error — so honour it
+    // (invocation logs are off) and let the reload migrate the tab.
+    const token = request.headers.get(name) ?? url.searchParams.get(param);
+    target.searchParams.delete(param);
     if (token) target.searchParams.set(param, token);
   }
 

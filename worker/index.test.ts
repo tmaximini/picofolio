@@ -31,10 +31,12 @@ describe("worker proxy", () => {
     expect(target.searchParams.get("q")).toBe("123");
   });
 
-  it("refuses a Flex token in the URL", async () => {
-    mockUpstream();
-    const res = await call("/api/ibkr/flex/FlexStatementService.SendRequest?t=secret&q=1");
-    expect(res.status).toBe(400);
+  it("still accepts a legacy t= from stale tabs; header wins when both are sent", async () => {
+    const f = mockUpstream();
+    expect((await call("/api/ibkr/flex/FlexStatementService.SendRequest?t=old&q=1")).status).toBe(200);
+    expect(new URL(String(f.mock.calls[0]![0])).searchParams.get("t")).toBe("old");
+    await call("/api/ibkr/flex/FlexStatementService.SendRequest?t=old&q=1", { ...SAME, "X-Flex-Token": "new" });
+    expect(new URL(String(f.mock.calls[1]![0])).searchParams.getAll("t")).toEqual(["new"]);
   });
 
   it("only reaches allow-listed upstream paths", async () => {

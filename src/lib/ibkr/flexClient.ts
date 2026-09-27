@@ -48,6 +48,60 @@ const TRANSIENT_CODES = new Set([
   "1021",
 ]);
 
+/**
+ * What the user should do about a failed sync. IBKR's own messages are terse
+ * ("Token is invalid.") and a bare "HTTP 400" says nothing — every error that
+ * reaches a toast goes through here, so it reads as a next step.
+ */
+const IBKR_ERROR_HINTS: Record<string, string> = {
+  "1003": "The statement isn't available for this period yet.",
+  "1012": "Your Flex token has expired. Generate a new one in IBKR Client Portal → Performance & Reports → Flex Queries → Flex Web Service.",
+  "1013": "IBKR rejected the request's IP address. Remove the IP restriction on your Flex Web Service token — requests come from Picofolio's proxy, not your computer.",
+  "1014": "IBKR doesn't recognise this Query ID. Check it under Flex Queries (the number next to the query name).",
+  "1015": "IBKR says the Flex token is invalid. Paste it again from Flex Web Service in Client Portal.",
+  "1016": "IBKR says the account behind this token is invalid or closed.",
+  "1017": "IBKR lost track of the statement request. Sync again.",
+  "1020": "IBKR couldn't validate the request — usually a mistyped token or Query ID.",
+};
+
+/** A sync failure with a human message; `code` is IBKR's code or `HTTP <n>`. */
+export class FlexError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+  ) {
+    super(message);
+    this.name = "FlexError";
+  }
+}
+
+function ibkrError(code: string, ibkrMessage: string): FlexError {
+  const hint = IBKR_ERROR_HINTS[code];
+  return new FlexError(hint ? `${hint} (IBKR ${code})` : `IBKR: ${ibkrMessage} (${code})`, code);
+}
+
+/** Non-2xx from our proxy (Vite in dev, the Worker in production). */
+async function httpError(res: Response, label: string): Promise<FlexError> {
+  const body = (await res.text().catch(() => "")).slice(0, 200);
+  const code = `HTTP ${res.status}`;
+  if (res.status === 400 && /header/i.test(body)) {
+    return new FlexError("This tab is running an older version of Picofolio. Reload the page and sync again.", code);
+  }
+  if (res.status === 403) {
+    return new FlexError("The sync proxy refused this page. Open Picofolio from its own address and try again.", code);
+  }
+  if (res.status === 404) {
+    return new FlexError("The sync proxy isn't reachable at this address. If you're running locally, restart the dev server.", code);
+  }
+  if (res.status === 429) {
+    return new FlexError("Too many sync requests. Wait a minute and try again.", code);
+  }
+  if (res.status >= 500) {
+    return new FlexError(`IBKR's Flex service didn't respond (${label}, HTTP ${res.status}). Try again in a few minutes.`, code);
+  }
+  return new FlexError(`Sync request failed (${label}, HTTP ${res.status})${body ? `: ${body}` : ""}`, code);
+}
+
 const SEND_MAX_ATTEMPTS = 4;
 const SEND_INITIAL_BACKOFF_MS = 5_000;
 
@@ -85,11 +139,11 @@ async function fetchWithRetry(
     } catch (err) {
       // An intentional cancel is not a transient failure — never retry it.
       if (err instanceof DOMException && err.name === "AbortError") throw err;
-      lastError = err instanceof Error ? err : new Error(String(err));
+      lastError = new FlexError("Couldn't reach the sync proxy. Check your connection and try again.", "network");
     }
     await delay(NET_BACKOFF_MS * 2 ** attempt, opts.signal);
   }
-  throw lastError ?? new Error(`IBKR ${label} network failure`);
+  throw lastError ?? new FlexError(`IBKR ${label} network failure`, "network");
 }
 
 export type FlexClientOptions = {
@@ -124,17 +178,14 @@ export async function sendFlexRequest(
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < SEND_MAX_ATTEMPTS; attempt++) {
     const res = await fetchWithRetry(url, token, opts, "SendRequest");
-    if (!res.ok) {
-      throw new Error(`IBKR SendRequest HTTP ${res.status}`);
-    }
+    if (!res.ok) throw await httpError(res, "SendRequest");
     const xml = await res.text();
     const ref = extractTag(xml, "ReferenceCode");
     if (ref) return { referenceCode: ref };
 
     const code = extractTag(xml, "ErrorCode") ?? "?";
     const msg = extractTag(xml, "ErrorMessage") ?? "No reference code in response";
-    const errMsg = `IBKR SendRequest failed (${code}): ${msg}`;
-    lastError = new Error(errMsg);
+    lastError = ibkrError(code, msg);
 
     // Retry on transient codes; bail fast on token/permission errors.
     const isTransient = TRANSIENT_CODES.has(code);
@@ -146,7 +197,7 @@ export async function sendFlexRequest(
     const backoff = SEND_INITIAL_BACKOFF_MS * 2 ** attempt;
     await delay(backoff, opts.signal);
   }
-  throw lastError ?? new Error("IBKR SendRequest exhausted retries");
+  throw lastError ?? new FlexError("IBKR SendRequest exhausted retries", "retries");
 }
 
 export async function pollFlexStatement(
@@ -163,9 +214,7 @@ export async function pollFlexStatement(
   while (true) {
     const url = `${GET_PATH}?q=${encodeURIComponent(referenceCode)}&v=3`;
     const res = await fetchWithRetry(url, token, opts, "GetStatement");
-    if (!res.ok) {
-      throw new Error(`IBKR GetStatement HTTP ${res.status}`);
-    }
+    if (!res.ok) throw await httpError(res, "GetStatement");
     const xml = await res.text();
 
     // Is this an error envelope? The real report (<FlexQueryResponse>) has no
@@ -178,8 +227,9 @@ export async function pollFlexStatement(
     // shortly"). Both are transient: keep polling within the time budget.
     if ((status === "warn" || status === "fail") && errorCode && TRANSIENT_CODES.has(errorCode)) {
       if (Date.now() + pollIntervalMs > deadline) {
-        throw new Error(
-          `IBKR is still generating the statement (code ${errorCode}). Give it a minute and Sync again.`,
+        throw new FlexError(
+          `IBKR is still generating the statement (code ${errorCode}). Give it a minute and sync again.`,
+          errorCode,
         );
       }
       await delay(pollIntervalMs, opts.signal);
@@ -187,7 +237,7 @@ export async function pollFlexStatement(
     }
     if (status === "fail") {
       const msg = extractTag(xml, "ErrorMessage") ?? "Unknown failure";
-      throw new Error(`IBKR GetStatement failed (${errorCode ?? "?"}): ${msg}`);
+      throw ibkrError(errorCode ?? "?", msg);
     }
 
     // Anything else: assume it's the actual report.

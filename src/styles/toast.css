@@ -114,3 +114,22 @@
   border-color: rgba(196, 69, 54, 0.40);
 }
 .toast--info .toast__icon { color: var(--accent); }
+
+/* Repeat counter — identical toasts merge instead of stacking. */
+.toast__count {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 0 5px;
+  font-size: 10.5px;
+  line-height: 16px;
+  color: var(--text-secondary);
+  background: var(--glass-thick);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  vertical-align: 1px;
+  animation: toastCount var(--duration-base) var(--ease-out);
+}
+@keyframes toastCount {
+  from { transform: scale(1.35); color: var(--text-primary); }
+  to { transform: none; }
+}
