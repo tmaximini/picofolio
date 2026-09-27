@@ -718,3 +718,16 @@
 .flowTable td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .flowTable__in { color: var(--text-primary) !important; }
 .flowTable__out { color: var(--text-secondary) !important; }
+
+.connectClean {
+  margin-bottom: var(--space-3);
+  padding: 14px 16px;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text-secondary);
+  background: var(--glass-medium);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+.connectClean__title { font-weight: 500; color: var(--text-primary); }
+.connectClean p { margin: 4px 0 12px; }

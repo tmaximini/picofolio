@@ -10,6 +10,9 @@ import {
   useAccountCashFlows,
   useAccounts,
   useAddIbkrConnection,
+  useClearNonIbkrForAccount,
+  useHoldings,
+  useTrades,
   useIbkrConnections,
   usePushToast,
   useSyncIbkrConnection,
@@ -304,52 +307,103 @@ function CashFlowList({ account }: { account: Account }) {
 function NotConnected({ account }: { account: Account }) {
   const connections = useIbkrConnections();
   const accounts = useAccounts();
+  const trades = useTrades();
+  const holdings = useHoldings();
   const addConnection = useAddIbkrConnection();
   const updateAccount = useUpdateAccount();
   const updateConnection = useUpdateIbkrConnection();
+  const clearNonIbkr = useClearNonIbkrForAccount();
+  const pushToast = usePushToast();
   // Connections not feeding any account can be re-linked here.
   const orphans = connections.filter((c) => !accounts.some((a) => a.flexConnectionId === c.id));
+  // What's already in the account that didn't come from IBKR. Left in place,
+  // it mixes with the synced trades (sample trades turning up in review…).
+  const count = (src: "demo" | "manual") => ({
+    trades: trades.filter((t) => t.accountId === account.id && (t.source ?? "manual") === src).length,
+    positions: holdings.filter((h) => h.accountId === account.id && (h.source ?? "manual") === src).length,
+  });
+  const demo = count("demo");
+  const manual = count("manual");
+  const existing = demo.trades + demo.positions + manual.trades + manual.positions;
+  // "new" = create a connection; otherwise the id of one to link.
+  const [pending, setPending] = useState<string | null>(null);
+
+  const connect = (target: string, clear: boolean) => {
+    if (clear) clearNonIbkr(account.id);
+    if (target === "new") {
+      updateAccount(account.id, { flexConnectionId: addConnection(account.name) });
+    } else {
+      updateAccount(account.id, { flexConnectionId: target });
+      updateConnection(target, { label: account.name });
+    }
+    setPending(null);
+    if (clear) pushToast({ kind: "info", title: `Cleared existing data from ${account.name}`, duration: 3000 });
+  };
+  const start = (target: string) => (existing > 0 ? setPending(target) : connect(target, false));
+
+  const describe = (c: { trades: number; positions: number }, kind: string) =>
+    [
+      c.trades ? `${c.trades} ${kind} trade${c.trades === 1 ? "" : "s"}` : "",
+      c.positions ? `${c.positions} ${kind} position${c.positions === 1 ? "" : "s"}` : "",
+    ].filter(Boolean);
+  const parts = [...describe(demo, "sample"), ...describe(manual, "hand-entered")];
 
   return (
-    <div className="settingsCard__head">
-      <div>
-        <h2 className="settingsCard__title">Interactive Brokers sync</h2>
-        <div className="settingsCard__sub">
-          Not connected — {account.name} is kept by hand. Connect a Flex Query to pull
-          trades, positions, cash and daily account value automatically. Read-only:
-          Picofolio can't trade or move money.
+    <>
+      <div className="settingsCard__head">
+        <div>
+          <h2 className="settingsCard__title">Interactive Brokers sync</h2>
+          <div className="settingsCard__sub">
+            Not connected — {account.name} is kept by hand. Connect a Flex Query to pull
+            trades, positions, cash and daily account value automatically. Read-only:
+            Picofolio can't trade or move money.
+          </div>
         </div>
-      </div>
-      <div className="ibkrActions">
-        {orphans.length > 0 && (
-          <select
-            className="tradeForm__select"
-            value=""
-            aria-label="Link an existing connection"
-            onChange={(e) => {
-              const id = e.target.value;
-              if (!id) return;
-              updateAccount(account.id, { flexConnectionId: id });
-              updateConnection(id, { label: account.name });
-            }}
-          >
-            <option value="">Link existing…</option>
-            {orphans.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+        {!pending && (
+          <div className="ibkrActions">
+            {orphans.length > 0 && (
+              <select
+                className="tradeForm__select"
+                value=""
+                aria-label="Link an existing connection"
+                onChange={(e) => e.target.value && start(e.target.value)}
+              >
+                <option value="">Link existing…</option>
+                {orphans.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            <Button variant="primary" onClick={() => start("new")}>
+              {orphans.length > 0 ? <Plus size={13} strokeWidth={1.75} /> : <Link2 size={13} strokeWidth={1.75} />}
+              <span>Connect IBKR</span>
+            </Button>
+          </div>
         )}
-        <Button
-          variant="primary"
-          onClick={() => updateAccount(account.id, { flexConnectionId: addConnection(account.name) })}
-        >
-          {orphans.length > 0 ? <Plus size={13} strokeWidth={1.75} /> : <Link2 size={13} strokeWidth={1.75} />}
-          <span>Connect IBKR</span>
-        </Button>
       </div>
-    </div>
+
+      {pending && (
+        <div className="connectClean" role="dialog" aria-label="Existing data">
+          <div className="connectClean__title">Start {account.name} clean?</div>
+          <p>
+            It already holds {parts.join(", ")}. Once connected, IBKR adds its own trades and
+            positions — anything left from before would mix in with them. Sample data is
+            removed on the first sync either way.
+          </p>
+          <div className="ibkrActions">
+            <Button variant="primary" onClick={() => connect(pending, true)}>
+              Clear and connect
+            </Button>
+            <Button onClick={() => connect(pending, false)}>Keep and connect</Button>
+            <Button variant="ghost" onClick={() => setPending(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
