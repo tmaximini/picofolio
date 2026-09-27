@@ -26,6 +26,7 @@ import {
 import { contractMultiplier, parseOccSymbol } from "@/lib/optionSymbol";
 import { inRange, rangeFor, type DateRangeKey } from "@/lib/dateRange";
 import { computePerformance, type Performance } from "@/lib/performance";
+import { periodReturns, type PeriodReturns } from "@/lib/monthlyReturns";
 import type { PctPoint, PerfRange } from "@/lib/perf";
 
 export type DeltaPeriod = "1D" | "1W" | "1M" | "YTD" | "1Y";
@@ -1197,6 +1198,24 @@ export const useTradeStats = (scope: string = ALL_ACCOUNTS): JournalStats => {
   return useMemo(
     () => computeStats(trades, scopeBaseOf(accounts, scope), prices),
     [trades, accounts, prices, scope],
+  );
+};
+
+/** Calendar-period returns (monthly heatmap, YTD, since inception) from the
+ *  scope's daily value series — the same curve the Overview chart draws. */
+export const usePeriodReturns = (scope: string = ALL_ACCOUNTS): PeriodReturns => {
+  const portfolio = usePortfolioValueSeries();
+  const account = useAccountValueSeries(scope);
+  const series = scope === ALL_ACCOUNTS ? portfolio : account;
+  return useMemo(() => periodReturns(series), [series]);
+};
+
+/** Open positions in scope (trades with no closing execution yet). */
+export const useOpenTradeCount = (scope: string = ALL_ACCOUNTS): number => {
+  const trades = useStore((s) => s.trades);
+  return useMemo(
+    () => scopeTrades(trades, scope).filter((t) => deriveTotals(t).status === "OPEN").length,
+    [trades, scope],
   );
 };
 

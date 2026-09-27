@@ -1262,3 +1262,95 @@
   font-size: 10px;
   color: var(--text-tertiary);
 }
+
+/* ---------- Returns overview (Performance) ----------
+   Six headline figures, then a month × year heatmap. Tints are the muted
+   gain/loss tokens scaled by magnitude (--m, 0–1) — calm months nearly
+   vanish, big ones glow. */
+.returns {
+  margin-bottom: var(--space-6);
+}
+.returns__stats {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.returns__stats .stat__value {
+  font-size: var(--text-xl);
+}
+
+.returns__heat {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+}
+.returns__scroll {
+  overflow-x: auto;
+}
+.returns__grid {
+  display: grid;
+  gap: 4px;
+  min-width: 760px;
+}
+.returns__row {
+  display: grid;
+  grid-template-columns: 52px repeat(12, minmax(0, 1fr)) 84px;
+  gap: 4px;
+  align-items: center;
+}
+.returns__row--head span {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-tertiary);
+  text-align: center;
+  padding-bottom: 2px;
+}
+.returns__row--head .returns__yearHead { text-align: right; }
+.returns__year {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.returns__cell {
+  display: grid;
+  place-items: center;
+  height: 36px;
+  font-size: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.returns__cell--empty {
+  background: var(--glass-thin);
+}
+.returns__cell--neutral {
+  background: var(--glass-medium);
+  color: var(--text-tertiary);
+}
+.returns__cell--gain {
+  color: var(--gain-strong);
+  background: color-mix(in srgb, var(--gain) calc(var(--m) * 30% + 6%), transparent);
+  border-color: color-mix(in srgb, var(--gain) calc(var(--m) * 30% + 6%), transparent);
+}
+.returns__cell--loss {
+  color: var(--loss-strong);
+  background: color-mix(in srgb, var(--loss) calc(var(--m) * 30% + 6%), transparent);
+  border-color: color-mix(in srgb, var(--loss) calc(var(--m) * 30% + 6%), transparent);
+}
+.returns__cell:not(.returns__cell--empty):hover {
+  border-color: var(--border-focus);
+}
+.returns__total {
+  text-align: right;
+  font-size: var(--text-sm);
+}
+.returns__foot {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 1100px) {
+  .returns__stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .returns__stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

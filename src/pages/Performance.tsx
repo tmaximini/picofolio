@@ -1,14 +1,21 @@
 import { useMemo, useState } from "react";
 import { Topbar } from "@/components/layout";
 import { Card, Stat } from "@/components/primitives";
-import { BreakdownBars, PerformanceChart, type BreakdownBar } from "@/components/ui";
+import {
+  BreakdownBars,
+  PerformanceChart,
+  ReturnsOverview,
+  type BreakdownBar,
+} from "@/components/ui";
 import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import { breakdownBy, type BreakdownDimension } from "@/lib/performance";
 import { ALL_ACCOUNTS } from "@/store";
 import {
   useAccountBaseCurrency,
   useAccountById,
+  useOpenTradeCount,
   usePerformanceStats,
+  usePeriodReturns,
   useSelectedAccountId,
 } from "@/store/selectors";
 
@@ -21,7 +28,7 @@ const DIMENSIONS: { key: BreakdownDimension; label: string }[] = [
   { key: "hold", label: "Hold" },
 ];
 
-/** Trading edge & risk analytics — all-time, range-independent. The aggregate
+/** Period returns, then trading edge & risk analytics — all-time, range-independent. The aggregate
  *  "where does my edge come from" view that the descriptive tabs don't cover. */
 export function Performance() {
   const scope = useSelectedAccountId();
@@ -31,6 +38,21 @@ export function Performance() {
   const baseCurrency = useAccountBaseCurrency(scope);
   const s = perf.summary;
   const [dim, setDim] = useState<BreakdownDimension>("tag");
+  const periods = usePeriodReturns(scope);
+  const openCount = useOpenTradeCount(scope);
+  const avgHoldMs = useMemo(() => {
+    const holds = perf.rows.flatMap((r) => (r.holdMs != null ? [r.holdMs] : []));
+    return holds.length ? holds.reduce((a, b) => a + b, 0) / holds.length : null;
+  }, [perf.rows]);
+
+  const overview = (
+    <ReturnsOverview
+      returns={periods}
+      openPositions={openCount}
+      closedPositions={s.trades}
+      avgHoldMs={avgHoldMs}
+    />
+  );
 
   // Collapse the per-trade equity to one point per day (last cumulative) and
   // anchor at $0 the day before the first close — Lightweight Charts needs
@@ -74,6 +96,7 @@ export function Performance() {
     return (
       <>
         <Topbar title="Performance" subtitle={subtitle} />
+        {overview}
         <Card>
           <div className="emptyState">
             <div className="emptyState__title">No closed trades yet</div>
@@ -90,6 +113,9 @@ export function Performance() {
   return (
     <>
       <Topbar title="Performance" subtitle={subtitle} />
+
+      {/* Period returns: headline figures + the month-by-year heatmap. */}
+      {overview}
 
       {/* Hero: all-time equity curve + the headline edge/risk figures. Net P&L
           is the one number that matters most — it leads at display scale; the
