@@ -300,3 +300,4 @@
   .insights__cols { grid-template-columns: minmax(0, 1fr); }
   .reviewBar__keys { display: none; }
 }
+.reviewPanel__footLeft { display: flex; align-items: center; gap: var(--space-2); }

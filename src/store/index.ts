@@ -158,6 +158,8 @@ type StoreState = {
   notes: Note[];
   /** Symbols followed but not held — newest first. */
   watchlist: WatchItem[];
+  /** IBKR trades the user deleted — never re-imported by a later sync. */
+  deletedTradeIds: string[];
   /** Trade review: labels available for tagging (user-editable)… */
   reviewLabels: ReviewLabel[];
   /** …and per-trade reviews, keyed by trade id. */
@@ -472,6 +474,34 @@ function detectedBaseCurrency(
 
 /** Earliest execution timestamp across a parsed pull — the start of the
  *  span the Flex window actually covers. null when the pull has no trades. */
+/**
+ * Drop stored IBKR trades a fresh statement makes obsolete. The pull is
+ * authoritative for trades it fully covers: a trade whose fills ALL fall
+ * inside the statement window but which the fresh parse no longer produces is
+ * stale (another sub-account's leftover, an older parser's mistake). On
+ * `replace` (re-import) every fully-covered trade goes and is rebuilt from the
+ * pull. Trades opened before the window are always KEPT — the statement can't
+ * reproduce them (their opening fill is outside it), and a narrow query must
+ * never erase history. Other accounts and non-IBKR trades are untouched.
+ */
+export function reconcileIbkrTrades(
+  existing: Trade[],
+  fresh: Trade[],
+  opts: { accountId: string; windowStart: string | null; replace: boolean },
+): Trade[] {
+  const { accountId, windowStart, replace } = opts;
+  if (windowStart == null) return existing;
+  const freshIds = new Set(fresh.map((t) => t.id));
+  return existing.filter((t) => {
+    const covered =
+      t.source === "ibkr" &&
+      t.accountId === accountId &&
+      t.executions.length > 0 &&
+      t.executions.every((e) => e.at >= windowStart);
+    return !(covered && (replace || !freshIds.has(t.id)));
+  });
+}
+
 function pullWindowStart(trades: Trade[]): string | null {
   let min: string | null = null;
   for (const t of trades) {
@@ -512,6 +542,7 @@ export const useStore = create<StoreState>()(
       watchlist: [],
       reviewLabels: DEFAULT_REVIEW_LABELS,
       reviews: {},
+      deletedTradeIds: [],
       journalRange: DEFAULT_DATE_RANGE,
       calendarMonth: firstOfThisMonthISO(),
       ibkrConnections: [],
@@ -978,7 +1009,16 @@ export const useStore = create<StoreState>()(
           trades: s.trades.map((t) => (t.id === id ? { ...t, ...patch } : t)),
         })),
       deleteTrade: (id) =>
-        set((s) => ({ trades: s.trades.filter((t) => t.id !== id) })),
+        set((s) => {
+          const t = s.trades.find((x) => x.id === id);
+          return {
+            trades: s.trades.filter((x) => x.id !== id),
+            // An IBKR trade would come straight back on the next sync —
+            // remember the deletion.
+            deletedTradeIds:
+              t?.source === "ibkr" && !s.deletedTradeIds.includes(id) ? [...s.deletedTradeIds, id] : s.deletedTradeIds,
+          };
+        }),
 
       addSetup: (sp) => set((s) => ({ setups: [sp, ...s.setups] })),
       updateSetup: (id, patch) =>
@@ -1140,6 +1180,7 @@ export const useStore = create<StoreState>()(
           watchlist: [],
           reviewLabels: DEFAULT_REVIEW_LABELS,
           reviews: {},
+          deletedTradeIds: [],
           journalRange: DEFAULT_DATE_RANGE,
           calendarMonth: firstOfThisMonthISO(),
           ibkrConnections: [],
@@ -1230,7 +1271,8 @@ export const useStore = create<StoreState>()(
         }));
         const parsedById = new Map(stamped.map((t) => [t.id, t]));
         const existingIds = new Set(get().trades.map((t) => t.id));
-        const fresh = stamped.filter((t) => !existingIds.has(t.id));
+        const deletedIds = new Set(get().deletedTradeIds);
+        const fresh = stamped.filter((t) => !existingIds.has(t.id) && !deletedIds.has(t.id));
         if (stamped.length > 0) {
           set((s) => {
             const hadReal = s.trades.some((t) => t.source !== "demo");
@@ -1398,24 +1440,13 @@ export const useStore = create<StoreState>()(
           if (stamped.length > 0) {
             set((s) => {
               const hadReal = s.trades.some((t) => t.source !== "demo");
-              // `replace` (resync): the fresh pull is authoritative for the
-              // span it covers — drop this account's IBKR trades inside that
-              // window and re-add from the pull. Trades older than the window
-              // (e.g. a month-to-date query) are KEPT: a narrow query must
-              // never erase longer history. Runs only after a successful
-              // fetch+parse, so a failed resync never loses data.
-              const windowStart = pullWindowStart(stamped);
-              let base = replace
-                ? s.trades.filter(
-                    (t) =>
-                      !(
-                        t.source === "ibkr" &&
-                        t.accountId === accountId &&
-                        windowStart != null &&
-                        t.executions.some((e) => e.at >= windowStart)
-                      ),
-                  )
-                : s.trades;
+              // Trades the user deleted stay deleted, even if IBKR sends them again.
+              const deleted = new Set(s.deletedTradeIds);
+              let base = reconcileIbkrTrades(s.trades, stamped, {
+                accountId,
+                windowStart: result.periodFrom ?? pullWindowStart(stamped),
+                replace,
+              });
               if (!hadReal) base = base.filter((t) => t.source !== "demo");
               // Upsert: refresh broker fields on already-imported trades so an
               // open trade picks up the closing executions a later pull brings.
@@ -1425,7 +1456,7 @@ export const useStore = create<StoreState>()(
                 return p ? mergeIbkrTrade(t, p) : t;
               });
               const baseIds = new Set(base.map((t) => t.id));
-              const toAdd = stamped.filter((t) => !baseIds.has(t.id));
+              const toAdd = stamped.filter((t) => !baseIds.has(t.id) && !deleted.has(t.id));
               return { trades: [...toAdd, ...base] };
             });
           }
@@ -1614,6 +1645,7 @@ export const useStore = create<StoreState>()(
         // Additive keys — shallow merge fills the defaults for older states.
         reviewLabels: s.reviewLabels,
         reviews: s.reviews,
+        deletedTradeIds: s.deletedTradeIds,
         selectedAccountId: s.selectedAccountId,
         // A "loading" entry persisted mid-flight would rehydrate as a permanent
         // block (loadPrice early-returns on loading) — freeze the symbol's

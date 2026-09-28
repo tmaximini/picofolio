@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
-import { ArrowUpRight, CheckCircle2, RotateCcw } from "lucide-react";
-import { Button, Kbd } from "@/components/primitives";
+import { ArrowUpRight, CheckCircle2, RotateCcw, Trash2 } from "lucide-react";
+import { Button, ConfirmButton, Kbd } from "@/components/primitives";
 import { formatMoney, formatPct, toneOf } from "@/lib/money";
 import { formatOptionLabel, parseOccSymbol } from "@/lib/optionSymbol";
 import { isReviewed, type TradeReview } from "@/lib/review";
@@ -17,6 +17,8 @@ type ReviewPanelProps = {
   onMarkReviewed: () => void;
   onUnmark: () => void;
   onOpenTrade: () => void;
+  /** Remove a trade that never happened (import leftovers, sample data). */
+  onDelete: () => void;
 };
 
 const dateFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
@@ -24,7 +26,7 @@ const fmtDay = (key: string) => (key ? dateFmt.format(new Date(`${key}T00:00:00Z
 
 /** One closed trade under review: what happened, what it was, what you think. */
 export const ReviewPanel = forwardRef<HTMLTextAreaElement, ReviewPanelProps>(function ReviewPanel(
-  { trade, review, position, onToggleLabel, onNote, onMarkReviewed, onUnmark, onOpenTrade },
+  { trade, review, position, onToggleLabel, onNote, onMarkReviewed, onUnmark, onOpenTrade, onDelete },
   noteRef,
 ) {
   const tot = deriveTotals(trade);
@@ -112,11 +114,25 @@ export const ReviewPanel = forwardRef<HTMLTextAreaElement, ReviewPanelProps>(fun
       />
 
       <footer className="reviewPanel__foot">
-        <Button variant="ghost" onClick={onOpenTrade}>
-          <ArrowUpRight size={13} strokeWidth={1.75} />
-          <span>Trade details</span>
-          <Kbd>o</Kbd>
-        </Button>
+        <div className="reviewPanel__footLeft">
+          <Button variant="ghost" onClick={onOpenTrade}>
+            <ArrowUpRight size={13} strokeWidth={1.75} />
+            <span>Trade details</span>
+            <Kbd>o</Kbd>
+          </Button>
+          <ConfirmButton
+            confirmLabel="Delete this trade?"
+            onConfirm={onDelete}
+            title={
+              trade.source === "ibkr"
+                ? "For trades that never happened. It won't come back on the next IBKR sync."
+                : "Delete this trade"
+            }
+          >
+            <Trash2 size={13} strokeWidth={1.75} />
+            <span>Delete</span>
+          </ConfirmButton>
+        </div>
         <div className="reviewPanel__footRight">
           {done ? (
             <>
