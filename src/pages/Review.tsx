@@ -10,6 +10,8 @@ import { parseOccSymbol } from "@/lib/optionSymbol";
 import { isReviewed } from "@/lib/review";
 import { deriveTotals, tradeDateKey } from "@/lib/tradeMath";
 import {
+  useDeleteTrade,
+  usePushToast,
   useReviewLabels,
   useReviews,
   useSelectedAccountId,
@@ -39,6 +41,8 @@ export function Review() {
   const reviews = useReviews();
   const labels = useReviewLabels();
   const setReview = useSetTradeReview();
+  const deleteTrade = useDeleteTrade();
+  const pushToast = usePushToast();
   const [outcome, setOutcome] = useState<Outcome>("all");
   const [unreviewedOnly, setUnreviewedOnly] = useState(true);
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -226,6 +230,13 @@ export function Review() {
               onMarkReviewed={markAndNext}
               onUnmark={() => setReview(current.t.id, { reviewedAt: undefined })}
               onOpenTrade={() => setOpenTrade(current.t.id)}
+              onDelete={() => {
+                const successor = queue[index + 1] ?? queue[index - 1] ?? null;
+                const sym = current.t.symbol;
+                deleteTrade(current.t.id);
+                setCurrentId(successor?.t.id ?? null);
+                pushToast({ kind: "info", title: `Deleted ${parseOccSymbol(sym)?.underlying ?? sym} trade`, duration: 2500 });
+              }}
             />
           )}
         </div>
