@@ -21,6 +21,8 @@ export type OptionQuote = {
   bidCents?: number;
   askCents?: number;
   lastCents?: number;
+  /** Quote date (YYYY-MM-DD, UTC) when the provider reports one. */
+  time?: string;
 };
 
 export interface OptionsPriceProvider {

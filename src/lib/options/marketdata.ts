@@ -111,6 +111,7 @@ export const marketDataProvider: OptionsPriceProvider = {
       bidCents: dollarsToCents(json.bid?.[0]),
       askCents: dollarsToCents(json.ask?.[0]),
       lastCents: dollarsToCents(json.last?.[0]),
+      time: json.updated?.[0] != null ? new Date(json.updated[0] * 1000).toISOString().slice(0, 10) : undefined,
     } satisfies OptionQuote;
   },
 

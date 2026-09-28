@@ -518,6 +518,14 @@ const STALE_MS = 15 * 60 * 1000;
 // Intraday bars grow throughout the session; refresh more eagerly.
 const INTRADAY_STALE_MS = 5 * 60 * 1000;
 
+/** Replace or append the quote day's point with a live mark (dollars). */
+function withLiveMark(points: PricePoint[], mark: number, time = new Date().toISOString().slice(0, 10)): PricePoint[] {
+  const last = points[points.length - 1];
+  if (last && last.time > time) return points;
+  if (last && last.time === time) return [...points.slice(0, -1), { time, value: mark }];
+  return [...points, { time, value: mark }];
+}
+
 function isFresh(entry: PriceEntry | undefined): boolean {
   return (
     entry?.status === "ready" &&
@@ -680,7 +688,14 @@ export const useStore = create<StoreState>()(
         const to = toDate.toISOString().slice(0, 10);
 
         try {
-          const points = await optionsPriceProvider.getHistory(symbol, token, from, to);
+          const [history, live] = await Promise.all([
+            optionsPriceProvider.getHistory(symbol, token, from, to),
+            // History is end-of-day only — mid-session its last point is the
+            // previous close, which left today's option moves out of the
+            // account value and day P&L. Top it up with the current mark.
+            optionsPriceProvider.getQuote(symbol, token).catch(() => null),
+          ]);
+          const points = live ? withLiveMark(history, live.markCents / 100, live.time) : history;
           set((s) => ({
             optionPrices: {
               ...s.optionPrices,
