@@ -1,16 +1,14 @@
 import { RefreshCw } from "lucide-react";
 import { Button, Kbd } from "@/components/primitives";
-import { ALL_ACCOUNTS } from "@/store";
 import {
-  useSelectedAccountId,
   useSyncAll,
   useSyncing,
   useSyncingAll,
 } from "@/store/selectors";
 
 type SyncButtonProps = {
-  /** Account to sync. Defaults to the account switcher's current scope
-   *  (every linked account at "All accounts"). */
+  /** Account to sync. Defaults to every linked account — "Sync" means
+   *  "bring everything up to date", whatever the switcher shows. */
   accountId?: string;
 };
 
@@ -20,12 +18,11 @@ type SyncButtonProps = {
  * `R` hotkey and the command palette do. Same label, same icon, same state.
  */
 export function SyncButton({ accountId }: SyncButtonProps) {
-  const scope = useSelectedAccountId();
   const syncAll = useSyncAll();
   const syncingAll = useSyncingAll();
   const pricesSyncing = useSyncing();
   const busy = syncingAll || pricesSyncing;
-  const target = accountId ?? (scope === ALL_ACCOUNTS ? undefined : scope);
+  const target = accountId;
 
   return (
     <Button onClick={() => void syncAll({ accountId: target })} disabled={busy}>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bookmark, CircleHelp, Info, Plus, Terminal } from "lucide-react";
 import {
   BrowserRouter,
@@ -179,10 +179,29 @@ function Workspace() {
     setNewTradeSymbol(undefined);
   };
 
-  // Auto-sync on load: every linked account + prices. The workspace only
-  // mounts past first run. Quiet — only real outcomes (new trades, errors) toast.
+  // Automatic, quiet syncs keep data fresh without anyone pressing Sync.
+  // Each is throttled per connection (15 min, see syncAll's quiet mode), so
+  // switching accounts back and forth never hammers IBKR's rate limit.
+  //  - on load: every linked account + prices
+  //  - on switching accounts: that account, if its data is stale
+  //  - on returning to the tab: everything stale
   useEffect(() => {
     void syncAll({ quiet: true });
+  }, [syncAll]);
+  const firstScope = useRef(true);
+  useEffect(() => {
+    if (firstScope.current) {
+      firstScope.current = false; // the on-load sync already covered it
+      return;
+    }
+    void syncAll({ accountId: scopedAccountId, quiet: true });
+  }, [scopedAccountId, syncAll]);
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void syncAll({ quiet: true });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [syncAll]);
 
   const bindings = useMemo(
@@ -190,9 +209,9 @@ function Workspace() {
       { combo: "n", handler: () => openNewTrade() },
       { combo: "s", handler: () => setNewSetupOpen(true) },
       { combo: "b", handler: () => setNoteModal({}) },
-      // "r" (not ⌘R — the browser owns that) runs the full sync for the
-      // current scope: IBKR pulls + prices, same as the Sync button.
-      { combo: "r", handler: () => void syncAll({ accountId: scopedAccountId }) },
+      // "r" (not ⌘R — the browser owns that) syncs every account: IBKR
+      // pulls + prices, same as the Sync button.
+      { combo: "r", handler: () => void syncAll() },
       { combo: "?", handler: () => setHelpOpen((v) => !v) },
       { combo: "cmd+k", handler: () => setPaletteOpen((v) => !v) },
       { combo: "ctrl+k", handler: () => setPaletteOpen((v) => !v) },
@@ -315,7 +334,7 @@ function Workspace() {
             if (id === "new-trade") openNewTrade();
             else if (id === "new-setup") setNewSetupOpen(true);
             else if (id === "new-note") setNoteModal({});
-            else void syncAll({ accountId: scopedAccountId });
+            else void syncAll();
           }}
           onEditNote={(note) => setNoteModal({ note })}
         />

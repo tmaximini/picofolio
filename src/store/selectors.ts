@@ -414,11 +414,17 @@ function holdingsDeltaCents(
   return total;
 }
 
-export const useAccountDeltaCents = (
-  accountId: string,
-  period: DeltaPeriod,
-): number | null =>
-  useStore((s) =>
+/** Trading days each delta period spans — matches refPriceFor's offsets. */
+const PERIOD_SESSIONS: Record<Exclude<DeltaPeriod, "YTD">, number> = { "1D": 1, "1W": 5, "1M": 21, "1Y": 251 };
+
+/**
+ * Account value change over a period. Accounts with broker NAV history (IBKR)
+ * use it — value change minus deposits/withdrawals/transfers, same basis as
+ * the returns headline — so options without a MarketData series can't blank
+ * the tile. Others fall back to price-based holdings deltas.
+ */
+export const useAccountDeltaCents = (accountId: string, period: DeltaPeriod): number | null => {
+  const priceDelta = useStore((s) =>
     holdingsDeltaCents(
       s.holdings.filter((h) => h.accountId === accountId),
       period,
@@ -427,6 +433,20 @@ export const useAccountDeltaCents = (
       scopeBaseOf(s.accounts, accountId),
     ),
   );
+  const nav = useStore((s) => s.navHistory[accountId]);
+  const flows = useStore((s) => s.cashFlows[accountId]);
+  const series = useAccountValueSeries(accountId);
+  return useMemo(() => {
+    if ((nav?.length ?? 0) < 2) return priceDelta;
+    const days = dailyReturns(series, flows ?? []);
+    if (days.length === 0) return null;
+    const window =
+      period === "YTD"
+        ? days.filter((d) => d.time >= `${new Date().getFullYear()}-01-01`)
+        : days.slice(-PERIOD_SESSIONS[period]);
+    return window.reduce((a, d) => a + d.pnlCents, 0);
+  }, [nav, flows, series, period, priceDelta]);
+};
 
 /**
  * Rate-of-return headline for an account.

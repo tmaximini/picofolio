@@ -790,7 +790,9 @@ export const useStore = create<StoreState>()(
           // pushes its own result toast.
           await Promise.allSettled([
             ...connIds.map((id) => get().syncIbkrConnection(id, { quiet: opts?.quiet })),
-            get().refreshAll({ force: true }),
+            // A button press re-pulls every price; automatic (quiet) syncs only
+            // fetch what's stale, so switching accounts or tabs stays cheap.
+            get().refreshAll({ force: !opts?.quiet }),
           ]);
           if (connIds.length > 0) {
             // Second pass (freshness-guarded, so only new symbols hit the

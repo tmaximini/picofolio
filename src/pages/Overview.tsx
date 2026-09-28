@@ -131,7 +131,6 @@ function AccountOverview({ accountId }: { accountId: string }) {
       <Topbar
         title={account.name}
         subtitle={`${formatMoney(account.cashCents, baseCurrency)} cash · ${positions} ${positions === 1 ? "position" : "positions"}`}
-        sync={accountId}
       />
 
       {isEmpty ? (
