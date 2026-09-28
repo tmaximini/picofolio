@@ -1740,7 +1740,7 @@ html:has(.landing) {
   font-size: var(--text-sm);
   color: var(--text-primary);
 }
-.spec__price { color: var(--gain) !important; }
+
 
 /* ---------- close ---------- */
 
@@ -1806,27 +1806,23 @@ html:has(.landing) {
   margin-top: 36px;
 }
 
-.close__danger {
+
+
+
+
+.close__trust {
   position: relative;
-  margin-top: 48px;
-}
-.close__danger p {
-  max-width: 420px;
-  margin: 0 auto 16px;
-  font-size: var(--text-sm);
-  line-height: 1.55;
-  color: var(--text-secondary);
-}
-.close__dangerRow {
-  display: flex;
-  justify-content: center;
-  gap: var(--space-2);
+  margin: 22px 0 0;
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
 }
 
 /* ---------- footer ---------- */
 
 .lfoot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-6);
   max-width: 1200px;
@@ -2249,3 +2245,13 @@ html:has(.landing) {
   .rdemo__keys { display: none; }
   .rdemo__sym { display: block; margin-bottom: 2px; }
 }
+
+.lfoot__legal {
+  flex-basis: 100%;
+  max-width: 88ch;
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-disabled);
+}
+.lfoot__legal a { color: var(--text-tertiary); }

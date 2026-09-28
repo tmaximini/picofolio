@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, ArrowUpRight, Github, Trash2 } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Github } from "lucide-react";
 import { BrandMark, Kbd } from "@/components/primitives";
 import {
   AllocationDemo,
@@ -14,9 +14,9 @@ import {
   WeeklyBars,
 } from "@/components/landing";
 import { useHotkeys } from "@/lib/hotkeys";
+import { prefersReducedMotion } from "@/lib/useInView";
 import { ACCOUNT_LONG_TERM_COLOR, ACCOUNT_TRADING_COLOR } from "@/lib/mock";
 import {
-  useClearAllData,
   useCompleteOnboarding,
   useSeedDemoData,
 } from "@/store/selectors";
@@ -94,7 +94,6 @@ const SPECS: { k: string; v: string }[] = [
   { k: "Review", v: "Tag mistakes and habits, see what each one costs" },
   { k: "Storage", v: "Browser local storage, snapshot per sync" },
   { k: "Numerals", v: "Tabular, monospaced, right-aligned — always" },
-  { k: "Price", v: "€0.00" },
 ];
 
 type LandingProps = {
@@ -111,8 +110,6 @@ export function Landing({ mode }: LandingProps) {
   const navigate = useNavigate();
   const seedDemo = useSeedDemoData();
   const complete = useCompleteOnboarding();
-  const clearAllData = useClearAllData();
-  const [confirmingClear, setConfirmingClear] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const firstRun = mode === "first-run";
 
@@ -148,6 +145,23 @@ export function Landing({ mode }: LandingProps) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // In-page anchors scroll without touching the URL. A hash change is a
+  // navigation, and in About mode that drops the router state that keeps "/"
+  // on the landing page — the links used to bounce a set-up user into the app.
+  const scrollTo = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    const id = e.currentTarget.getAttribute("href")?.slice(1);
+    const behavior = prefersReducedMotion() ? "auto" : "smooth";
+    if (id === "top") {
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior });
+      return;
+    }
+    const el = id ? document.getElementById(id) : null;
+    if (!el) return;
+    e.preventDefault();
+    el.scrollIntoView({ behavior, block: "start" });
+  };
+
   const primaryCtas = firstRun ? (
     <>
       <button type="button" className="lcta lcta--primary" onClick={startWithDemo}>
@@ -173,13 +187,13 @@ export function Landing({ mode }: LandingProps) {
       <div className="landing__grain" aria-hidden />
 
       <header className={scrolled ? "lnav lnav--scrolled" : "lnav"}>
-        <a className="lnav__brand" href="#top" aria-label="Picofolio — back to top">
+        <a className="lnav__brand" href="#top" onClick={scrollTo} aria-label="Picofolio — back to top">
           <BrandMark size={26} />
           <span className="wordmark">picofolio</span>
         </a>
         <nav className="lnav__links" aria-label="Sections">
           {NAV_LINKS.map((l) => (
-            <a key={l.href} href={l.href}>
+            <a key={l.href} href={l.href} onClick={scrollTo}>
               {l.label}
             </a>
           ))}
@@ -395,10 +409,10 @@ export function Landing({ mode }: LandingProps) {
         <section className="lsec lsec--split">
           <div className="lsec__intro">
             <Reveal as="p" className="lsec__eyebrow">
-              <span className="num">06</span> The fine print
+              <span className="num">06</span> What's inside
             </Reveal>
             <Reveal as="h2" className="lsec__title" delay={1}>
-              The details <em>are the product.</em>
+              Focus on what's <em>essential.</em>
             </Reveal>
             <Reveal as="p" className="lsec__lede" delay={2}>
               Fewer features, each done properly. What's in the
@@ -410,7 +424,7 @@ export function Landing({ mode }: LandingProps) {
             {SPECS.map((s, i) => (
               <Reveal className="spec__row" key={s.k} delay={i * 0.5}>
                 <dt>{s.k}</dt>
-                <dd className={s.k === "Price" ? "num spec__price" : "num"}>{s.v}</dd>
+                <dd className="num">{s.v}</dd>
               </Reveal>
             ))}
           </dl>
@@ -455,48 +469,26 @@ export function Landing({ mode }: LandingProps) {
           <Reveal as="h2" className="close__title">
             {firstRun ? (
               <>
-                Open it. <em>Look around.</em>
+                See your trading <em>for what it is.</em>
               </>
             ) : (
               <>
-                Thanks for <em>looking closely.</em>
+                Back to <em>your numbers.</em>
               </>
             )}
           </Reveal>
           <Reveal as="p" className="close__sub" delay={1}>
             {firstRun
-              ? "It's all demo data until you say otherwise — and one click in Settings clears it."
-              : "Everything here lives on this machine. You can take it with you, or wipe it clean."}
+              ? "Explore with sample data in seconds, or start empty and connect Interactive Brokers. Your first review might surprise you."
+              : "Everything is where you left it — on this device, and only here."}
           </Reveal>
           <Reveal className="close__ctas" delay={2}>
             {primaryCtas}
           </Reveal>
-
-          {!firstRun && (
-            <div className="close__danger">
-              {confirmingClear ? (
-                <>
-                  <p>
-                    Erase every account, trade, note, IBKR connection and setting
-                    on this device? This can't be undone.
-                  </p>
-                  <div className="close__dangerRow">
-                    <button type="button" className="lcta lcta--danger" onClick={clearAllData}>
-                      <Trash2 size={13} strokeWidth={1.75} />
-                      <span>Erase everything</span>
-                    </button>
-                    <button type="button" className="lcta lcta--link" onClick={() => setConfirmingClear(false)}>
-                      Cancel
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <button type="button" className="lcta lcta--link lcta--quiet" onClick={() => setConfirmingClear(true)}>
-                  <Trash2 size={13} strokeWidth={1.75} />
-                  <span>Clear all local data</span>
-                </button>
-              )}
-            </div>
+          {firstRun && (
+            <Reveal as="p" className="close__trust" delay={3}>
+              Free · Open source · No account · Your data stays on your device
+            </Reveal>
           )}
         </section>
       </main>
@@ -515,6 +507,17 @@ export function Landing({ mode }: LandingProps) {
           <a href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">AGPL-3.0</a>
           <span className="num">© 2026</span>
         </div>
+        <p className="lfoot__legal">
+          Picofolio is free, open-source software provided “as is”, without warranty of any
+          kind, express or implied. It is not financial, investment or tax advice. Figures are
+          derived from your broker's data and public price feeds and may be incomplete, delayed
+          or wrong — always check your broker's statements before making decisions. You use it
+          at your own risk; the authors aren't liable for any loss arising from its use. See the{" "}
+          <a href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">
+            licence
+          </a>{" "}
+          for the full terms.
+        </p>
       </footer>
     </div>
   );
