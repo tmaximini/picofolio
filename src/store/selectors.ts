@@ -112,8 +112,9 @@ export const useHoldingsMetrics = (accountId?: string): HoldingMetrics[] => {
         nativeValue == null || rate == null ? null : convertCents(nativeValue, rate);
       const unrealCents =
         nativeUnreal == null || rate == null ? null : convertCents(nativeUnreal, rate);
+      // |basis| so a short's percent carries the P&L's sign, not the price's.
       const unrealPct =
-        nativeUnreal != null && basis > 0 ? nativeUnreal / basis : null;
+        nativeUnreal != null && basis !== 0 ? nativeUnreal / Math.abs(basis) : null;
       // 1-day change from the daily series (options use the MarketData series;
       // null when history is too short).
       const pts = parseOccSymbol(h.symbol)
@@ -124,7 +125,8 @@ export const useHoldingsMetrics = (accountId?: string): HoldingMetrics[] => {
       if (pts && pts.length >= 2) {
         const last = pts[pts.length - 1]!.value;
         const prev = pts[pts.length - 2]!.value;
-        if (prev !== 0) dayPct = (last - prev) / prev;
+        // Position return, not price change: a short gains when price falls.
+        if (prev !== 0) dayPct = (Math.sign(h.qty) * (last - prev)) / prev;
         if (rate != null) {
           dayCents = convertCents(Math.round(h.qty * (last - prev) * contractMultiplier(h.symbol) * 100), rate);
         }
