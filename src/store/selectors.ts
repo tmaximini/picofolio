@@ -79,6 +79,8 @@ export type HoldingMetrics = {
    *  price or the FX rate is still loading. */
   valueCents: number | null;
   dayPct: number | null;
+  /** 1-day P&L in the scope's base currency (latest FX rate). */
+  dayCents: number | null;
   /** Unrealized P&L in the scope's base currency. */
   unrealCents: number | null;
   unrealPct: number | null;
@@ -118,10 +120,14 @@ export const useHoldingsMetrics = (accountId?: string): HoldingMetrics[] => {
         ? optionPrices[h.symbol]?.points
         : prices[h.symbol]?.points;
       let dayPct: number | null = null;
+      let dayCents: number | null = null;
       if (pts && pts.length >= 2) {
         const last = pts[pts.length - 1]!.value;
         const prev = pts[pts.length - 2]!.value;
         if (prev !== 0) dayPct = (last - prev) / prev;
+        if (rate != null) {
+          dayCents = convertCents(Math.round(h.qty * (last - prev) * contractMultiplier(h.symbol) * 100), rate);
+        }
       }
       return {
         holding: h,
@@ -130,6 +136,7 @@ export const useHoldingsMetrics = (accountId?: string): HoldingMetrics[] => {
         baseCurrency: base,
         valueCents,
         dayPct,
+        dayCents,
         unrealCents,
         unrealPct,
       };

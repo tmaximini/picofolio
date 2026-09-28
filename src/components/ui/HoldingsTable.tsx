@@ -76,7 +76,7 @@ export function HoldingsTable({ accountId, cashCents }: HoldingsTableProps = {})
       });
     }
     cols.push(
-      { id: "day", header: "Day", accessorFn: (m) => m.dayPct ?? undefined, ...numMeta },
+      { id: "day", header: "Day", accessorFn: (m) => m.dayCents ?? undefined, ...numMeta },
       { id: "unreal", header: "Unreal. P/L", accessorFn: (m) => m.unrealCents ?? undefined, ...numMeta },
     );
     return cols;
@@ -140,7 +140,7 @@ function HoldingRow({
   totalValueCents,
   colSpan,
 }: HoldingRowProps) {
-  const { holding, priceCents, currency, baseCurrency, valueCents, dayPct, unrealCents, unrealPct } =
+  const { holding, priceCents, currency, baseCurrency, valueCents, dayPct, dayCents, unrealCents, unrealPct } =
     metrics;
 
   const weight =
@@ -184,7 +184,11 @@ function HoldingRow({
           </td>
         )}
         <td className="num" data-col="day">
-          <Pct value={dayPct} />
+          {dayCents != null ? (
+            <UnrealizedCell cents={dayCents} pct={dayPct} currency={baseCurrency} />
+          ) : (
+            <Pct value={dayPct} />
+          )}
         </td>
         <td className="num" data-col="unreal">
           <UnrealizedCell cents={unrealCents} pct={unrealPct} currency={baseCurrency} />
@@ -239,6 +243,7 @@ function HoldingSymbolCell({ holding, position }: { holding: Holding; position: 
   );
 }
 
+/** Money over percent, toned by sign — Day and Unreal. P/L cells. */
 function UnrealizedCell({
   cents,
   pct,
