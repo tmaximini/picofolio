@@ -89,6 +89,8 @@ export type IbkrConnection = {
     accountIds: string[];
     /** Flex sections the last statement lacked (see FLEX_SECTIONS). */
     missingSections?: string[];
+    /** Trades section lacks fields (no tradeID on any row). */
+    tradeFieldsMissing?: boolean;
   } | null;
 };
 
@@ -1535,6 +1537,7 @@ export const useStore = create<StoreState>()(
             warnings: result.warnings,
             accountIds: result.accountIds,
             missingSections: result.missingSections,
+            tradeFieldsMissing: result.tradeFieldsMissing,
           };
           patch({
             status: "idle",

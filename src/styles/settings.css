@@ -669,6 +669,39 @@
   color: var(--text-primary);
 }
 .ibkrGuide__sections li { margin-bottom: 2px; }
+.ibkrGuide__ai {
+  margin-bottom: var(--space-3);
+  padding: 12px 14px;
+  background: var(--glass-thin);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+.ibkrGuide__aiHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.ibkrGuide__aiHead .btn { flex-shrink: 0; }
+.ibkrGuide__aiPrompt {
+  display: block;
+  margin-top: var(--space-2);
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--text-primary);
+  background: var(--surface-void);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  user-select: all;
+  white-space: normal;
+}
+.ibkrGuide__aiError {
+  margin-top: 6px;
+  font-size: var(--text-xs);
+  color: var(--loss);
+}
 
 .syncMissing {
   margin-bottom: var(--space-3);

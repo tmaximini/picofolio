@@ -141,6 +141,19 @@ describe("parseFlexXml cash flows", () => {
     expect(r.hasCashFlowData).toBe(true); // an empty <Transfers /> still counts: "none", not "unknown"
     expect(r.missingSections).toEqual(["Open Positions", "Cash Report", "Cash Transactions"]);
   });
+
+  it("flags a Trades section without the Trade ID field instead of per-row warnings", () => {
+    const row = `<Trade accountId="U1" symbol="AAPL" buySell="BUY" quantity="1" tradePrice="10" dateTime="20260601;100000" />`;
+    const r = parseFlexXml(wrap(`<Trades>${row}${row}</Trades>`));
+    expect(r.tradeFieldsMissing).toBe(true);
+    expect(r.executions).toHaveLength(0);
+    expect(r.warnings.some((w) => /tradeID/.test(w))).toBe(false);
+
+    const mixed = parseFlexXml(wrap(`<Trades>${row}${row.replace("<Trade ", '<Trade tradeID="9" ')}</Trades>`));
+    expect(mixed.tradeFieldsMissing).toBe(false);
+    expect(mixed.executions).toHaveLength(1);
+    expect(mixed.warnings).toContain("1 trade row missing tradeID — skipped");
+  });
 });
 
 describe("parseFlexXml option lifecycle", () => {

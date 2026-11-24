@@ -233,6 +233,24 @@ function Connected({
         </div>
       )}
 
+      {summary?.tradeFieldsMissing && (
+        <div className="syncMissing">
+          <div className="syncMissing__title">Your Trades section is missing fields</div>
+          <p>
+            IBKR sent trade rows without a <strong>Trade ID</strong>, so none could be
+            imported — the journal, calendar and review stay empty. Positions and cash are fine.
+          </p>
+          <p>
+            In IBKR Client Portal: <strong>Performance &amp; Reports → Flex Queries</strong>, click the
+            pencil next to your query, open <strong>Trades</strong>, tick <strong>Execution</strong> under
+            Options and the <strong>Select All</strong> box above the fields, save, then sync again.{" "}
+            <button type="button" className="linkBtn" onClick={onShowGuide}>
+              Full setup guide
+            </button>
+          </p>
+        </div>
+      )}
+
       <CashFlowList account={account} />
 
       {warnings.length > 0 && (

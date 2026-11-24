@@ -110,6 +110,9 @@ export type FlexParseResult = {
    *  IBKR emits a section's container even when it has no rows, so absence
    *  means the section isn't ticked in the query. */
   missingSections: FlexSectionLabel[];
+  /** Trade rows arrived but none carry a tradeID — the query's Trades
+   *  section has only a subset of fields (or no Execution detail level). */
+  tradeFieldsMissing: boolean;
   /** Underlying executions in document order — useful for debugging or future re-grouping. */
   executions: ParsedExecution[];
   /** Current open positions (from <OpenPositions>), if the query includes them. */
@@ -775,12 +778,24 @@ export function parseFlexXml(xml: string): FlexParseResult {
   const tradeEls = Array.from(doc.getElementsByTagName("Trade"));
   const executions: ParsedExecution[] = [];
   const accountIds = new Set<string>();
+  let missingTradeIds = 0;
   for (const el of tradeEls) {
+    if (!el.getAttribute("tradeID")) {
+      missingTradeIds++;
+      continue;
+    }
     const parsed = parseTradeElement(el, warnings, warnedExchanges);
     if (parsed) {
       executions.push(parsed);
       if (parsed.accountId) accountIds.add(parsed.accountId);
     }
+  }
+  const tradeFieldsMissing = tradeEls.length > 0 && missingTradeIds === tradeEls.length;
+  // One line, not one per row — a query without the Trade ID field yields hundreds.
+  if (missingTradeIds > 0 && !tradeFieldsMissing) {
+    warnings.push(
+      `${missingTradeIds} trade row${missingTradeIds === 1 ? "" : "s"} missing tradeID — skipped`,
+    );
   }
   for (const p of positions) if (p.accountId) accountIds.add(p.accountId);
   for (const n of nav) if (n.accountId) accountIds.add(n.accountId);
@@ -807,6 +822,7 @@ export function parseFlexXml(xml: string): FlexParseResult {
   return {
     trades,
     missingSections,
+    tradeFieldsMissing,
     executions,
     positions,
     cashCents,
