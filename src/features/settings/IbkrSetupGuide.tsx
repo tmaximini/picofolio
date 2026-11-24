@@ -14,8 +14,12 @@ export const SECTION_PURPOSE: Record<FlexSectionLabel, string> = {
   Transfers: "money and positions moved between your sub-accounts, same reason",
 };
 
-/** Prompt for IBKR's "Configure Flex with AI" — its box caps input at 200 chars. */
-export const FLEX_AI_PROMPT = `Activity Flex Query, XML format, period Last 365 Calendar Days, all fields from: ${FLEX_SECTIONS.map((s) => s.label).join(", ")}`;
+/** Prompt for IBKR's "Configure Flex with AI" — its box caps input at 200
+ *  chars (this is exactly 200). Without the Trades emphasis the AI picks a
+ *  field subset that omits Trade ID; longer phrasings time out. */
+export const FLEX_AI_PROMPT = `Activity Flex Query, XML format, period Last 365 Calendar Days, all fields from: ${FLEX_SECTIONS.map(
+  (s) => (s.label === "Trades" ? "Trades (all fields selected!)" : s.label),
+).join(", ")}`;
 
 /** Step-by-step: from IBKR Client Portal to a working Flex token + Query ID. */
 export function IbkrSetupGuide() {
