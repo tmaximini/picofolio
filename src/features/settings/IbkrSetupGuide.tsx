@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Check, Copy } from "lucide-react";
+import { Button } from "@/components/primitives";
 import { FLEX_SECTIONS, type FlexSectionLabel } from "@/lib/ibkr/flexParser";
 
 /** What each Flex section powers in Picofolio — shown in the guide and in the
@@ -11,6 +13,9 @@ export const SECTION_PURPOSE: Record<FlexSectionLabel, string> = {
   "Cash Transactions": "deposits and withdrawals, so they don't count as gains or losses",
   Transfers: "money and positions moved between your sub-accounts, same reason",
 };
+
+/** Prompt for IBKR's "Configure Flex with AI" — its box caps input at 200 chars. */
+export const FLEX_AI_PROMPT = `Activity Flex Query, XML format, period Last 365 Calendar Days, all fields from: ${FLEX_SECTIONS.map((s) => s.label).join(", ")}`;
 
 /** Step-by-step: from IBKR Client Portal to a working Flex token + Query ID. */
 export function IbkrSetupGuide() {
@@ -53,6 +58,7 @@ export function IbkrSetupGuide() {
           backfills your charts on the first sync. Leave date and time formats at their defaults.
         </Step>
         <Step n={4} title="Tick these six sections">
+          <FlexAiShortcut />
           In each section's popup, tick the box at the top to select all its fields. Leave
           the other sections off.
           <ul className="ibkrGuide__sections">
@@ -73,6 +79,51 @@ export function IbkrSetupGuide() {
           and retries on its own.
         </Step>
       </ol>
+    </div>
+  );
+}
+
+/** Skip the manual ticking: paste our prompt into IBKR's AI query builder. */
+function FlexAiShortcut() {
+  const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = window.setTimeout(() => setCopied(false), 1800);
+    return () => window.clearTimeout(t);
+  }, [copied]);
+
+  const copy = () => {
+    navigator.clipboard
+      .writeText(FLEX_AI_PROMPT)
+      .then(() => {
+        setFailed(false);
+        setCopied(true);
+      })
+      .catch(() => setFailed(true));
+  };
+
+  return (
+    <div className="ibkrGuide__ai">
+      <div className="ibkrGuide__aiHead">
+        <div>
+          <div className="ibkrGuide__updateTitle">Shortcut: let IBKR's AI build it</div>
+          On the Flex Queries page open <strong>Configure Flex with AI</strong>, paste this
+          prompt and press <strong>Generate Flex Query</strong>. Check the sections below are
+          ticked, then save.
+        </div>
+        <Button size="sm" onClick={copy} aria-label="Copy AI prompt">
+          {copied ? <Check size={14} strokeWidth={1.5} /> : <Copy size={14} strokeWidth={1.5} />}
+          {copied ? "Copied" : "Copy prompt"}
+        </Button>
+      </div>
+      <code className="ibkrGuide__aiPrompt">{FLEX_AI_PROMPT}</code>
+      {failed && (
+        <div className="ibkrGuide__aiError">
+          Clipboard blocked by the browser — select the prompt above and copy it manually.
+        </div>
+      )}
     </div>
   );
 }
