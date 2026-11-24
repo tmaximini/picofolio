@@ -15,7 +15,7 @@ export const SECTION_PURPOSE: Record<FlexSectionLabel, string> = {
 };
 
 /** Prompt for IBKR's "Configure Flex with AI" — its box caps input at 200 chars. */
-export const FLEX_AI_PROMPT = `Activity Flex Query, XML format, period Last 365 Calendar Days, all fields from: ${FLEX_SECTIONS.map((s) => s.label).join(", ")}`;
+export const FLEX_AI_PROMPT = `Activity Flex Query, XML, Last 365 Calendar Days. Execution level, Select All fields in: ${FLEX_SECTIONS.map((s) => s.label).join(", ")}`;
 
 /** Step-by-step: from IBKR Client Portal to a working Flex token + Query ID. */
 export function IbkrSetupGuide() {
@@ -110,8 +110,9 @@ function FlexAiShortcut() {
         <div>
           <div className="ibkrGuide__updateTitle">Shortcut: let IBKR's AI build it</div>
           On the Flex Queries page open <strong>Configure Flex with AI</strong>, paste this
-          prompt and press <strong>Generate Flex Query</strong>. Check the sections below are
-          ticked, then save.
+          prompt and press <strong>Generate Flex Query</strong>. Before saving, open{" "}
+          <strong>Trades</strong> and make sure <strong>Execution</strong> and every field are
+          ticked — the AI sometimes picks only a few.
         </div>
         <Button size="sm" onClick={copy} aria-label="Copy AI prompt">
           {copied ? <Check size={14} strokeWidth={1.5} /> : <Copy size={14} strokeWidth={1.5} />}
